@@ -341,3 +341,30 @@ func TestService_Refresh_UnknownToken(t *testing.T) {
 		t.Fatalf("expected ErrInvalidRefreshToken, got %v", err)
 	}
 }
+
+func TestService_Logout(t *testing.T) {
+	svc, _, sessions := newTestService()
+	ctx := context.Background()
+	reg, err := svc.Register(ctx, "alice_01", "password123", "Alice")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := svc.Logout(ctx, reg.RefreshToken); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	if got := sessions.countActiveForUser(reg.User.ID); got != 0 {
+		t.Errorf("active sessions after logout = %d, want 0", got)
+	}
+
+	if _, err := svc.Refresh(ctx, reg.RefreshToken); !errors.Is(err, auth.ErrInvalidRefreshToken) {
+		t.Fatalf("expected Refresh to fail after logout, got %v", err)
+	}
+}
+
+func TestService_Logout_UnknownTokenIsIdempotent(t *testing.T) {
+	svc, _, _ := newTestService()
+	if err := svc.Logout(context.Background(), "does-not-exist"); err != nil {
+		t.Fatalf("expected Logout to be idempotent for unknown tokens, got %v", err)
+	}
+}

@@ -142,3 +142,12 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*Result, er
 		RefreshToken:    plain,
 	}, nil
 }
+
+func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+	hash := s.refresh.Hash(refreshToken)
+	sess, err := s.sessions.GetByRefreshTokenHash(ctx, hash)
+	if err != nil {
+		return nil // unknown token: logout is idempotent, nothing to revoke
+	}
+	return s.sessions.Revoke(ctx, sess.ID)
+}
