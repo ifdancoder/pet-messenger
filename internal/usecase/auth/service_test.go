@@ -266,3 +266,78 @@ func TestService_Login_UnknownUsername(t *testing.T) {
 		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
 	}
 }
+
+func TestService_Refresh(t *testing.T) {
+	svc, _, sessions := newTestService()
+	ctx := context.Background()
+	reg, err := svc.Register(ctx, "alice_01", "password123", "Alice")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	result, err := svc.Refresh(ctx, reg.RefreshToken)
+	if err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if result.User.ID != reg.User.ID {
+		t.Errorf("User.ID = %v, want %v", result.User.ID, reg.User.ID)
+	}
+	if result.RefreshToken == reg.RefreshToken {
+		t.Error("expected Refresh to rotate to a new refresh token")
+	}
+	if got := sessions.countActiveForUser(result.User.ID); got != 1 {
+		t.Errorf("active sessions after rotation = %d, want 1", got)
+	}
+}
+
+func TestService_Refresh_OldTokenRejectedAfterRotation(t *testing.T) {
+	svc, _, _ := newTestService()
+	ctx := context.Background()
+	reg, err := svc.Register(ctx, "alice_01", "password123", "Alice")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if _, err := svc.Refresh(ctx, reg.RefreshToken); err != nil {
+		t.Fatalf("first Refresh: %v", err)
+	}
+
+	if _, err := svc.Refresh(ctx, reg.RefreshToken); !errors.Is(err, auth.ErrInvalidRefreshToken) {
+		t.Fatalf("expected ErrInvalidRefreshToken reusing a rotated-away token, got %v", err)
+	}
+}
+
+func TestService_Refresh_ReuseRevokesWholeChain(t *testing.T) {
+	svc, _, sessions := newTestService()
+	ctx := context.Background()
+	reg, err := svc.Register(ctx, "alice_01", "password123", "Alice")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	rotated, err := svc.Refresh(ctx, reg.RefreshToken)
+	if err != nil {
+		t.Fatalf("first Refresh: %v", err)
+	}
+
+	// reuse of the already-rotated-away token: simulates a stolen token being replayed
+	if _, err := svc.Refresh(ctx, reg.RefreshToken); !errors.Is(err, auth.ErrInvalidRefreshToken) {
+		t.Fatalf("expected ErrInvalidRefreshToken on reuse, got %v", err)
+	}
+
+	// the legitimate, freshly rotated token must now be revoked too
+	if _, err := svc.Refresh(ctx, rotated.RefreshToken); !errors.Is(err, auth.ErrInvalidRefreshToken) {
+		t.Fatalf("expected the rotated token to be revoked after reuse was detected, got %v", err)
+	}
+	if got := sessions.countActiveForUser(reg.User.ID); got != 0 {
+		t.Errorf("active sessions after reuse detection = %d, want 0", got)
+	}
+}
+
+func TestService_Refresh_UnknownToken(t *testing.T) {
+	svc, _, _ := newTestService()
+	_, err := svc.Refresh(context.Background(), "does-not-exist")
+	if !errors.Is(err, auth.ErrInvalidRefreshToken) {
+		t.Fatalf("expected ErrInvalidRefreshToken, got %v", err)
+	}
+}

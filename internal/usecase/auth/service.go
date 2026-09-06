@@ -102,3 +102,43 @@ func (s *Service) issueSession(ctx context.Context, u *user.User, deviceInfo str
 		RefreshToken:    plain,
 	}, nil
 }
+
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (*Result, error) {
+	hash := s.refresh.Hash(refreshToken)
+	sess, err := s.sessions.GetByRefreshTokenHash(ctx, hash)
+	if err != nil {
+		return nil, ErrInvalidRefreshToken
+	}
+	if sess.IsRevoked() {
+		// Presenting an already-rotated-away or already-revoked token is a
+		// sign of theft/replay: kill every session for this user, not just this one.
+		_ = s.sessions.RevokeAllForUser(ctx, sess.UserID)
+		return nil, ErrInvalidRefreshToken
+	}
+
+	u, err := s.users.GetByID(ctx, sess.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	plain, newHash, err := s.refresh.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("generate refresh token: %w", err)
+	}
+	newSess := domainauth.New(u.ID, newHash, sess.DeviceInfo)
+	if err := s.sessions.RotateSession(ctx, sess.ID, newSess); err != nil {
+		return nil, err
+	}
+
+	accessToken, expiresAt, err := s.tokens.IssueAccessToken(u.ID)
+	if err != nil {
+		return nil, fmt.Errorf("issue access token: %w", err)
+	}
+
+	return &Result{
+		User:            u,
+		AccessToken:     accessToken,
+		AccessExpiresAt: expiresAt,
+		RefreshToken:    plain,
+	}, nil
+}
