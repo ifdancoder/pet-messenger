@@ -1,6 +1,7 @@
 package user_test
 
 import (
+	"strings"
 	"testing"
 
 	"pet-messenger/internal/domain/user"
@@ -19,6 +20,7 @@ func TestNew(t *testing.T) {
 		{"too short", "ab", "", true, ""},
 		{"too long", "this_username_is_way_too_long_okay", "", true, ""},
 		{"invalid chars", "alice!", "", true, ""},
+		{"display name too long", "alice_01", strings.Repeat("a", 65), true, ""},
 	}
 
 	for _, tt := range tests {

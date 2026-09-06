@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	domainauth "pet-messenger/internal/domain/auth"
@@ -18,11 +19,12 @@ var (
 )
 
 type Service struct {
-	users    user.Repository
-	sessions domainauth.Repository
-	hasher   PasswordHasher
-	tokens   TokenIssuer
-	refresh  RefreshTokenGenerator
+	users      user.Repository
+	sessions   domainauth.Repository
+	hasher     PasswordHasher
+	tokens     TokenIssuer
+	refresh    RefreshTokenGenerator
+	refreshTTL RefreshTTL
 }
 
 func NewService(
@@ -31,13 +33,15 @@ func NewService(
 	hasher PasswordHasher,
 	tokens TokenIssuer,
 	refresh RefreshTokenGenerator,
+	refreshTTL RefreshTTL,
 ) *Service {
 	return &Service{
-		users:    users,
-		sessions: sessions,
-		hasher:   hasher,
-		tokens:   tokens,
-		refresh:  refresh,
+		users:      users,
+		sessions:   sessions,
+		hasher:     hasher,
+		tokens:     tokens,
+		refresh:    refresh,
+		refreshTTL: refreshTTL,
 	}
 }
 
@@ -112,7 +116,12 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*Result, er
 	if sess.IsRevoked() {
 		// Presenting an already-rotated-away or already-revoked token is a
 		// sign of theft/replay: kill every session for this user, not just this one.
-		_ = s.sessions.RevokeAllForUser(ctx, sess.UserID)
+		if err := s.sessions.RevokeAllForUser(ctx, sess.UserID); err != nil {
+			log.Printf("auth: failed to revoke all sessions for user %s after refresh-token reuse: %v", sess.UserID, err)
+		}
+		return nil, ErrInvalidRefreshToken
+	}
+	if time.Since(sess.CreatedAt) > time.Duration(s.refreshTTL) {
 		return nil, ErrInvalidRefreshToken
 	}
 

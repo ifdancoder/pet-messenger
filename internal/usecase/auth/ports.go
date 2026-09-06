@@ -23,3 +23,7 @@ type RefreshTokenGenerator interface {
 	Generate() (plain string, hash string, err error)
 	Hash(plain string) string
 }
+
+// RefreshTTL is the maximum lifetime of a refresh token since it was last
+// issued or rotated, injected by internal/fx from config.Config.JWT.RefreshTTL.
+type RefreshTTL time.Duration

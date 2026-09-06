@@ -174,7 +174,7 @@ func (g *fakeRefreshGenerator) Hash(plain string) string {
 func newTestService() (*auth.Service, *fakeUserRepo, *fakeSessionRepo) {
 	users := newFakeUserRepo()
 	sessions := newFakeSessionRepo()
-	svc := auth.NewService(users, sessions, fakeHasher{}, fakeTokenIssuer{}, &fakeRefreshGenerator{})
+	svc := auth.NewService(users, sessions, fakeHasher{}, fakeTokenIssuer{}, &fakeRefreshGenerator{}, auth.RefreshTTL(30*24*time.Hour))
 	return svc, users, sessions
 }
 
@@ -331,6 +331,27 @@ func TestService_Refresh_ReuseRevokesWholeChain(t *testing.T) {
 	}
 	if got := sessions.countActiveForUser(reg.User.ID); got != 0 {
 		t.Errorf("active sessions after reuse detection = %d, want 0", got)
+	}
+}
+
+func TestService_Refresh_ExpiredToken(t *testing.T) {
+	svc, _, sessions := newTestService()
+	ctx := context.Background()
+	reg, err := svc.Register(ctx, "alice_01", "password123", "Alice")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	sessions.mu.Lock()
+	for _, s := range sessions.byHash {
+		if s.UserID == reg.User.ID {
+			s.CreatedAt = time.Now().Add(-31 * 24 * time.Hour)
+		}
+	}
+	sessions.mu.Unlock()
+
+	if _, err := svc.Refresh(ctx, reg.RefreshToken); !errors.Is(err, auth.ErrInvalidRefreshToken) {
+		t.Fatalf("expected ErrInvalidRefreshToken for expired session, got %v", err)
 	}
 }
 

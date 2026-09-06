@@ -82,7 +82,7 @@ func toAuthResponse(r *usecaseauth.Result) authResponse {
 
 func writeAuthError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, user.ErrInvalidUsername), errors.Is(err, usecaseauth.ErrWeakPassword):
+	case errors.Is(err, user.ErrInvalidUsername), errors.Is(err, user.ErrInvalidDisplayName), errors.Is(err, usecaseauth.ErrWeakPassword):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, user.ErrUsernameTaken):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})

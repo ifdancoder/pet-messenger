@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	ErrInvalidUsername = errors.New("user: invalid username")
-	ErrUsernameTaken    = errors.New("user: username already taken")
-	ErrNotFound         = errors.New("user: not found")
+	ErrInvalidUsername    = errors.New("user: invalid username")
+	ErrUsernameTaken      = errors.New("user: username already taken")
+	ErrNotFound           = errors.New("user: not found")
+	ErrInvalidDisplayName = errors.New("user: display name must be at most 64 characters")
 )
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
@@ -34,6 +35,9 @@ func New(username, displayName string) (*User, error) {
 	}
 	if displayName == "" {
 		displayName = username
+	}
+	if len(displayName) > 64 {
+		return nil, ErrInvalidDisplayName
 	}
 	return &User{
 		ID:          uuid.New(),
