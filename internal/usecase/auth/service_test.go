@@ -225,3 +225,44 @@ func TestService_Register_DuplicateUsername(t *testing.T) {
 		t.Fatalf("expected ErrUsernameTaken, got %v", err)
 	}
 }
+
+func TestService_Login(t *testing.T) {
+	svc, _, _ := newTestService()
+	ctx := context.Background()
+	reg, err := svc.Register(ctx, "alice_01", "password123", "Alice")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	result, err := svc.Login(ctx, "alice_01", "password123", "device-a")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if result.User.ID != reg.User.ID {
+		t.Errorf("User.ID = %v, want %v", result.User.ID, reg.User.ID)
+	}
+	if result.RefreshToken == reg.RefreshToken {
+		t.Error("expected Login to issue a refresh token distinct from Register's")
+	}
+}
+
+func TestService_Login_WrongPassword(t *testing.T) {
+	svc, _, _ := newTestService()
+	ctx := context.Background()
+	if _, err := svc.Register(ctx, "alice_01", "password123", "Alice"); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	_, err := svc.Login(ctx, "alice_01", "wrong-password", "")
+	if !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestService_Login_UnknownUsername(t *testing.T) {
+	svc, _, _ := newTestService()
+	_, err := svc.Login(context.Background(), "nobody", "password123", "")
+	if !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}

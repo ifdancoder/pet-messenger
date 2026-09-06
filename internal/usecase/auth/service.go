@@ -68,6 +68,20 @@ func (s *Service) Register(ctx context.Context, username, password, displayName 
 	return s.issueSession(ctx, u, "")
 }
 
+func (s *Service) Login(ctx context.Context, username, password, deviceInfo string) (*Result, error) {
+	u, err := s.users.GetByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, user.ErrNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, err
+	}
+	if err := s.hasher.Verify(u.PasswordHash, password); err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	return s.issueSession(ctx, u, deviceInfo)
+}
+
 func (s *Service) issueSession(ctx context.Context, u *user.User, deviceInfo string) (*Result, error) {
 	plain, hash, err := s.refresh.Generate()
 	if err != nil {
