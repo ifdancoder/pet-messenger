@@ -129,3 +129,36 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestAuthHandler_Refresh(t *testing.T) {
+	h := &AuthHandler{svc: &fakeAuthService{result: newTestResult()}}
+	r := setupRouter(h)
+
+	w := doJSON(t, r, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": "some-token"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+func TestAuthHandler_Refresh_Invalid(t *testing.T) {
+	h := &AuthHandler{svc: &fakeAuthService{err: usecaseauth.ErrInvalidRefreshToken}}
+	r := setupRouter(h)
+
+	w := doJSON(t, r, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": "bad"})
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuthHandler_Logout(t *testing.T) {
+	h := &AuthHandler{svc: &fakeAuthService{}}
+	r := setupRouter(h)
+
+	w := doJSON(t, r, http.MethodPost, "/auth/logout", map[string]string{"refresh_token": "some-token"})
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+}
