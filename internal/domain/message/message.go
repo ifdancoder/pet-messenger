@@ -198,6 +198,14 @@ type Repository interface {
 	// contiguous watermark. Soft-deleted messages are returned, with Content
 	// cleared. A limit <= 0 returns ErrInvalidLimit.
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, afterSeq int64, limit int) ([]*Message, error)
+	// ListBeforeSeq returns the conversation's messages ordered by Seq DESCENDING
+	// (newest first), taking those with Seq < beforeSeq; beforeSeq <= 0 means
+	// "from the newest message". This is the history-scroll read — opening a
+	// conversation (beforeSeq 0) and then paging upward (beforeSeq = the oldest
+	// Seq already held). The forward reconnect-catch-up read is
+	// ListByConversation. Soft-deleted messages are returned, with Content
+	// cleared. A limit <= 0 returns ErrInvalidLimit.
+	ListBeforeSeq(ctx context.Context, conversationID uuid.UUID, beforeSeq int64, limit int) ([]*Message, error)
 	// Update persists a mutated message (Edit / MarkDeleted).
 	Update(ctx context.Context, m *Message) error
 }

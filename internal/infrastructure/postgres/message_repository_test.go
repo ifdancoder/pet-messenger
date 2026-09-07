@@ -521,3 +521,146 @@ func TestMessageRepository_Create_ConcurrentSendsAreGapFree(t *testing.T) {
 		t.Fatalf("conversations.last_seq = %d, want %d", lastSeq, n)
 	}
 }
+
+func TestMessageRepository_ListBeforeSeq_NewestFirst(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	for i := 0; i < 5; i++ {
+		m, err := message.NewText(convID, sender, "m", nil)
+		if err != nil {
+			t.Fatalf("NewText %d: %v", i, err)
+		}
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+	}
+
+	page, err := repo.ListBeforeSeq(ctx, convID, 0, 3)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq: %v", err)
+	}
+	if got := seqOf(page); len(got) != 3 || got[0] != 5 || got[1] != 4 || got[2] != 3 {
+		t.Fatalf("seqs = %v, want [5 4 3] (newest first)", got)
+	}
+}
+
+func TestMessageRepository_ListBeforeSeq_PagesUpward(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	for i := 0; i < 5; i++ {
+		m, _ := message.NewText(convID, sender, "m", nil)
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+	}
+
+	page, err := repo.ListBeforeSeq(ctx, convID, 3, 10)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq: %v", err)
+	}
+	if got := seqOf(page); len(got) != 2 || got[0] != 2 || got[1] != 1 {
+		t.Fatalf("seqs = %v, want [2 1] (before seq 3, newest first)", got)
+	}
+}
+
+func TestMessageRepository_ListBeforeSeq_BeforeOldest(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	m, _ := message.NewText(convID, sender, "only", nil)
+	if err := repo.Create(ctx, m); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	page, err := repo.ListBeforeSeq(ctx, convID, 1, 10)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq: %v", err)
+	}
+	if len(page) != 0 {
+		t.Fatalf("seqs = %v, want empty (nothing before seq 1)", seqOf(page))
+	}
+}
+
+func TestMessageRepository_ListBeforeSeq_EmptyConversation(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	convID, _ := seedConversation(t)
+
+	page, err := repo.ListBeforeSeq(context.Background(), convID, 0, 10)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq: %v", err)
+	}
+	if len(page) != 0 {
+		t.Fatalf("seqs = %v, want empty", seqOf(page))
+	}
+}
+
+func TestMessageRepository_ListBeforeSeq_InvalidLimit(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	convID, _ := seedConversation(t)
+	for _, lim := range []int{0, -1} {
+		if _, err := repo.ListBeforeSeq(context.Background(), convID, 0, lim); !errors.Is(err, message.ErrInvalidLimit) {
+			t.Fatalf("limit %d: expected ErrInvalidLimit, got %v", lim, err)
+		}
+	}
+}
+
+func TestMessageRepository_ListBeforeSeq_IncludesSoftDeleted(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	keep, _ := message.NewText(convID, sender, "keep", nil)
+	if err := repo.Create(ctx, keep); err != nil {
+		t.Fatalf("Create keep: %v", err)
+	}
+	gone, _ := message.NewText(convID, sender, "gone", nil)
+	if err := repo.Create(ctx, gone); err != nil {
+		t.Fatalf("Create gone: %v", err)
+	}
+	goneSeq := gone.Seq
+	gone.MarkDeleted(time.Now().UTC())
+	if err := repo.Update(ctx, gone); err != nil {
+		t.Fatalf("Update gone: %v", err)
+	}
+
+	page, err := repo.ListBeforeSeq(ctx, convID, 0, 10)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq: %v", err)
+	}
+	if len(page) != 2 {
+		t.Fatalf("len = %d, want 2 (soft-deleted rows are returned)", len(page))
+	}
+	if page[0].Seq != goneSeq || !page[0].IsDeleted() || page[0].Content != "" {
+		t.Errorf("newest row = %+v, want soft-deleted seq %d with empty content", page[0], goneSeq)
+	}
+}
+
+func TestMessageRepository_ListBeforeSeq_NegativeBeforeSeqSameAsZero(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	for i := 0; i < 3; i++ {
+		m, _ := message.NewText(convID, sender, "m", nil)
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+	}
+
+	zero, err := repo.ListBeforeSeq(ctx, convID, 0, 10)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq(0): %v", err)
+	}
+	neg, err := repo.ListBeforeSeq(ctx, convID, -1, 10)
+	if err != nil {
+		t.Fatalf("ListBeforeSeq(-1): %v", err)
+	}
+	if a, b := seqOf(zero), seqOf(neg); len(a) != len(b) || a[0] != b[0] || a[len(a)-1] != b[len(b)-1] {
+		t.Fatalf("negative beforeSeq (%v) must match zero (%v)", b, a)
+	}
+}

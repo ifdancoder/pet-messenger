@@ -163,6 +163,43 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 	return out, nil
 }
 
+// ListBeforeSeq returns the conversation's messages ordered by seq DESCENDING
+// (newest first), those with seq < beforeSeq. beforeSeq <= 0 means "from the
+// newest message". This is the history-scroll read (open a conversation, then
+// page upward); the forward catch-up read is ListByConversation. It uses the
+// (conversation_id, seq) index via a backward scan. Soft-deleted messages are
+// returned, with Content cleared. limit <= 0 returns message.ErrInvalidLimit.
+func (r *MessageRepository) ListBeforeSeq(ctx context.Context, conversationID uuid.UUID, beforeSeq int64, limit int) ([]*message.Message, error) {
+	if limit <= 0 {
+		return nil, message.ErrInvalidLimit
+	}
+
+	const q = `
+		SELECT ` + messageColumns + `
+		FROM messages
+		WHERE conversation_id = $1 AND ($2 <= 0 OR seq < $2)
+		ORDER BY seq DESC
+		LIMIT $3`
+	rows, err := r.db.QueryContext(ctx, q, conversationID, beforeSeq, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query messages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*message.Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan message row: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate message rows: %w", err)
+	}
+	return out, nil
+}
+
 // Update persists a mutated message (Edit / MarkDeleted).
 func (r *MessageRepository) Update(ctx context.Context, m *message.Message) error {
 	// When m.DeletedAt == nil this is an edit, not a delete: the extra
