@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -21,7 +20,7 @@ func NewMessageRepository(db *sql.DB) message.Repository {
 	return &MessageRepository{db: db}
 }
 
-const messageColumns = `id, conversation_id, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at`
+const messageColumns = `id, conversation_id, seq, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -37,7 +36,7 @@ func scanMessage(s rowScanner) (*message.Message, error) {
 		editedAt  sql.NullTime
 		deletedAt sql.NullTime
 	)
-	if err := s.Scan(&m.ID, &m.ConversationID, &sender, &typ, &m.Content, &replyTo, &editedAt, &deletedAt, &m.CreatedAt); err != nil {
+	if err := s.Scan(&m.ID, &m.ConversationID, &m.Seq, &sender, &typ, &m.Content, &replyTo, &editedAt, &deletedAt, &m.CreatedAt); err != nil {
 		return nil, err
 	}
 	m.Type = message.Type(typ)
@@ -60,17 +59,43 @@ func scanMessage(s rowScanner) (*message.Message, error) {
 	return &m, nil
 }
 
+// Create allocates the message's per-conversation sequence and inserts the row
+// in one transaction. The UPDATE ... RETURNING on the parent conversation takes
+// a row lock held until COMMIT, so concurrent sends to the same conversation are
+// serialized and seq is gap-free and in commit order. On success m.Seq is set.
 func (r *MessageRepository) Create(ctx context.Context, m *message.Message) error {
-	const q = `
-		INSERT INTO messages (id, conversation_id, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at)
-		VALUES ($1, $2, $3, $4::message_type, $5, $6, $7, $8, $9)`
-	_, err := r.db.ExecContext(ctx, q,
-		m.ID, m.ConversationID, nullableUUID(m.SenderID), string(m.Type), m.Content,
-		nullableUUID(m.ReplyToID), m.EditedAt, m.DeletedAt, m.CreatedAt,
-	)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var seq int64
+	err = tx.QueryRowContext(ctx,
+		`UPDATE conversations SET next_seq = next_seq + 1 WHERE id = $1 RETURNING next_seq`,
+		m.ConversationID,
+	).Scan(&seq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("allocate seq: conversation %s does not exist", m.ConversationID)
+	}
+	if err != nil {
+		return fmt.Errorf("allocate seq: %w", err)
+	}
+
+	const insertQ = `
+		INSERT INTO messages (id, conversation_id, seq, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at)
+		VALUES ($1, $2, $3, $4, $5::message_type, $6, $7, $8, $9, $10)`
+	if _, err := tx.ExecContext(ctx, insertQ,
+		m.ID, m.ConversationID, seq, nullableUUID(m.SenderID), string(m.Type), m.Content,
+		nullableUUID(m.ReplyToID), m.EditedAt, m.DeletedAt, m.CreatedAt,
+	); err != nil {
 		return fmt.Errorf("insert message: %w", err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	m.Seq = seq
 	return nil
 }
 
@@ -85,48 +110,28 @@ func (r *MessageRepository) GetByID(ctx context.Context, id uuid.UUID) (*message
 	return m, nil
 }
 
-// ListByConversation returns messages ordered by (created_at, id) ascending.
-// after, when non-nil, is a keyset cursor: only rows strictly greater than that
-// message's (created_at, id) pair are returned. The cursor is resolved by a
-// dedicated query scoped to conversationID, so an unknown, hard-deleted, or
-// foreign-conversation id surfaces as message.ErrInvalidCursor rather than
-// silently filtering out every row. Soft-deleted messages are included (with
-// Content cleared). limit <= 0 returns message.ErrInvalidLimit.
-func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID uuid.UUID, after *uuid.UUID, limit int) ([]*message.Message, error) {
+// ListByConversation returns the conversation's messages ordered by seq
+// ascending, starting after afterSeq (afterSeq <= 0 means from the beginning).
+// seq is a per-conversation monotonic sequence allocated under a row lock at
+// commit time, so the page is gap-free and in commit order — a reconnecting
+// client that passes the highest seq it has seen never misses a message
+// (spec §4). Soft-deleted messages are returned, with Content cleared.
+// limit <= 0 returns message.ErrInvalidLimit.
+func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID uuid.UUID, afterSeq int64, limit int) ([]*message.Message, error) {
 	if limit <= 0 {
 		return nil, message.ErrInvalidLimit
 	}
-
-	var (
-		cursorAt time.Time
-		cursorID uuid.UUID
-	)
-	if after != nil {
-		err := r.db.QueryRowContext(ctx,
-			`SELECT created_at, id FROM messages WHERE id = $1 AND conversation_id = $2`,
-			*after, conversationID,
-		).Scan(&cursorAt, &cursorID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, message.ErrInvalidCursor
-		}
-		if err != nil {
-			return nil, fmt.Errorf("resolve cursor: %w", err)
-		}
-	}
-
-	afterAt := sql.NullTime{}
-	if after != nil {
-		afterAt = sql.NullTime{Time: cursorAt, Valid: true}
+	if afterSeq < 0 {
+		afterSeq = 0
 	}
 
 	const q = `
 		SELECT ` + messageColumns + `
 		FROM messages
-		WHERE conversation_id = $1
-		  AND ($2::timestamptz IS NULL OR (created_at, id) > ($2, $3))
-		ORDER BY created_at, id
-		LIMIT $4`
-	rows, err := r.db.QueryContext(ctx, q, conversationID, afterAt, cursorID, limit)
+		WHERE conversation_id = $1 AND seq > $2
+		ORDER BY seq
+		LIMIT $3`
+	rows, err := r.db.QueryContext(ctx, q, conversationID, afterSeq, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query messages: %w", err)
 	}

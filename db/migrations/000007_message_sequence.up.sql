@@ -18,4 +18,4 @@ UPDATE conversations c
 SET next_seq = COALESCE((SELECT max(m.seq) FROM messages m WHERE m.conversation_id = c.id), 0);
 
 CREATE UNIQUE INDEX idx_messages_conversation_seq ON messages (conversation_id, seq);
-DROP INDEX idx_messages_conversation_created_id;
+DROP INDEX IF EXISTS idx_messages_conversation_created_id;

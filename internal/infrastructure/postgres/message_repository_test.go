@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,9 @@ func TestMessageRepository_CreateTextAndGetByID(t *testing.T) {
 	if err := repo.Create(ctx, m); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	if m.Seq != 1 {
+		t.Errorf("first message Seq = %d, want 1", m.Seq)
+	}
 
 	got, err := repo.GetByID(ctx, m.ID)
 	if err != nil {
@@ -48,6 +52,9 @@ func TestMessageRepository_CreateTextAndGetByID(t *testing.T) {
 	}
 	if got.ID != m.ID || got.ConversationID != convID {
 		t.Errorf("ids = (%v,%v), want (%v,%v)", got.ID, got.ConversationID, m.ID, convID)
+	}
+	if got.Seq != m.Seq {
+		t.Errorf("got.Seq = %d, want %d", got.Seq, m.Seq)
 	}
 	if got.SenderID == nil || *got.SenderID != sender {
 		t.Errorf("SenderID = %v, want %v", got.SenderID, sender)
@@ -97,9 +104,15 @@ func TestMessageRepository_CreateWithReplyTo(t *testing.T) {
 	if err := repo.Create(ctx, first); err != nil {
 		t.Fatalf("Create first: %v", err)
 	}
+	if first.Seq != 1 {
+		t.Errorf("first.Seq = %d, want 1", first.Seq)
+	}
 	reply, _ := message.NewText(convID, sender, "reply", &first.ID)
 	if err := repo.Create(ctx, reply); err != nil {
 		t.Fatalf("Create reply: %v", err)
+	}
+	if reply.Seq != 2 {
+		t.Errorf("reply.Seq = %d, want 2", reply.Seq)
 	}
 
 	got, err := repo.GetByID(ctx, reply.ID)
@@ -174,57 +187,65 @@ func TestMessageRepository_Update_NotFound(t *testing.T) {
 	}
 }
 
+func seqOf(ms []*message.Message) []int64 {
+	out := make([]int64, len(ms))
+	for i, m := range ms {
+		out[i] = m.Seq
+	}
+	return out
+}
+
 func TestMessageRepository_ListByConversation_Keyset(t *testing.T) {
 	repo := NewMessageRepository(testDB)
 	ctx := context.Background()
 	convID, sender := seedConversation(t)
 
-	// 5 messages, oldest to newest, spaced so (created_at) is strictly ordered.
-	var ids []uuid.UUID
+	var seqs []int64
 	for i := 0; i < 5; i++ {
-		m, _ := message.NewText(convID, sender, "m", nil)
-		if err := repo.Create(ctx, m); err != nil {
-			t.Fatalf("Create m%d: %v", i, err)
+		m, err := message.NewText(convID, sender, "m", nil)
+		if err != nil {
+			t.Fatalf("NewText %d: %v", i, err)
 		}
-		ids = append(ids, m.ID)
-		time.Sleep(2 * time.Millisecond)
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+		seqs = append(seqs, m.Seq)
+	}
+	if seqs[0] != 1 || seqs[4] != 5 {
+		t.Fatalf("seqs = %v, want 1..5", seqs)
 	}
 
-	// after=nil, limit 3 -> first three, ascending
-	page, err := repo.ListByConversation(ctx, convID, nil, 3)
+	page, err := repo.ListByConversation(ctx, convID, 0, 3)
 	if err != nil {
 		t.Fatalf("page1: %v", err)
 	}
-	if len(page) != 3 || page[0].ID != ids[0] || page[2].ID != ids[2] {
-		t.Fatalf("page1 = %v, want first three of %v", idsOf(page), ids)
+	if len(page) != 3 || page[0].Seq != 1 || page[2].Seq != 3 {
+		t.Fatalf("page1 seqs = %v, want [1 2 3]", seqOf(page))
 	}
 
-	// after=ids[2], limit 10 -> the remaining two
-	page, err = repo.ListByConversation(ctx, convID, &ids[2], 10)
+	page, err = repo.ListByConversation(ctx, convID, seqs[2], 10)
 	if err != nil {
 		t.Fatalf("page2: %v", err)
 	}
-	if len(page) != 2 || page[0].ID != ids[3] || page[1].ID != ids[4] {
-		t.Fatalf("page2 = %v, want %v", idsOf(page), []uuid.UUID{ids[3], ids[4]})
+	if len(page) != 2 || page[0].Seq != 4 || page[1].Seq != 5 {
+		t.Fatalf("page2 seqs = %v, want [4 5]", seqOf(page))
 	}
 
-	// after=last -> empty
-	page, err = repo.ListByConversation(ctx, convID, &ids[4], 10)
+	page, err = repo.ListByConversation(ctx, convID, seqs[4], 10)
 	if err != nil {
 		t.Fatalf("page3: %v", err)
 	}
 	if len(page) != 0 {
-		t.Fatalf("page3 = %v, want empty", idsOf(page))
+		t.Fatalf("page3 seqs = %v, want empty", seqOf(page))
 	}
 
-	// empty conversation -> empty, no error
 	otherConv, _ := seedConversation(t)
-	page, err = repo.ListByConversation(ctx, otherConv, nil, 10)
+	page, err = repo.ListByConversation(ctx, otherConv, 0, 10)
 	if err != nil {
 		t.Fatalf("empty conv: %v", err)
 	}
 	if len(page) != 0 {
-		t.Fatalf("empty conv page = %v, want empty", idsOf(page))
+		t.Fatalf("empty conv seqs = %v, want empty", seqOf(page))
 	}
 }
 
@@ -247,7 +268,7 @@ func TestMessageRepository_ListByConversation_IncludesSoftDeleted(t *testing.T) 
 		t.Fatalf("Update gone: %v", err)
 	}
 
-	page, err := repo.ListByConversation(ctx, convID, nil, 10)
+	page, err := repo.ListByConversation(ctx, convID, 0, 10)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -263,7 +284,7 @@ func TestMessageRepository_ListByConversation_InvalidLimit(t *testing.T) {
 	repo := NewMessageRepository(testDB)
 	convID, _ := seedConversation(t)
 	for _, lim := range []int{0, -1} {
-		if _, err := repo.ListByConversation(context.Background(), convID, nil, lim); !errors.Is(err, message.ErrInvalidLimit) {
+		if _, err := repo.ListByConversation(context.Background(), convID, 0, lim); !errors.Is(err, message.ErrInvalidLimit) {
 			t.Fatalf("limit %d: expected ErrInvalidLimit, got %v", lim, err)
 		}
 	}
@@ -303,84 +324,117 @@ func TestMessageRepository_Update_DoesNotResurrectSoftDeleted(t *testing.T) {
 	}
 }
 
-func TestMessageRepository_ListByConversation_TieBreakOnID(t *testing.T) {
+func TestMessageRepository_Create_AssignsMonotonicSeq(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+
+	convA, senderA := seedConversation(t)
+	for want := int64(1); want <= 3; want++ {
+		m, err := message.NewText(convA, senderA, "a", nil)
+		if err != nil {
+			t.Fatalf("NewText: %v", err)
+		}
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if m.Seq != want {
+			t.Errorf("convA message Seq = %d, want %d", m.Seq, want)
+		}
+	}
+
+	convB, senderB := seedConversation(t)
+	mb, err := message.NewText(convB, senderB, "b", nil)
+	if err != nil {
+		t.Fatalf("NewText b: %v", err)
+	}
+	if err := repo.Create(ctx, mb); err != nil {
+		t.Fatalf("Create b: %v", err)
+	}
+	if mb.Seq != 1 {
+		t.Errorf("first message of convB Seq = %d, want 1 (per-conversation restart)", mb.Seq)
+	}
+}
+
+func TestMessageRepository_ListByConversation_OrdersBySeqNotCreatedAt(t *testing.T) {
 	repo := NewMessageRepository(testDB)
 	ctx := context.Background()
 	convID, sender := seedConversation(t)
 
 	var ids []uuid.UUID
+	var seqs []int64
 	for i := 0; i < 3; i++ {
-		m, _ := message.NewText(convID, sender, "tie", nil)
+		m, err := message.NewText(convID, sender, "m", nil)
+		if err != nil {
+			t.Fatalf("NewText: %v", err)
+		}
 		if err := repo.Create(ctx, m); err != nil {
-			t.Fatalf("Create m%d: %v", i, err)
+			t.Fatalf("Create: %v", err)
 		}
 		ids = append(ids, m.ID)
+		seqs = append(seqs, m.Seq)
 	}
 
-	// Force an identical created_at on all three so ordering falls entirely to id.
-	sameTS := time.Now().UTC().Add(-time.Hour)
-	if _, err := testDB.ExecContext(ctx,
-		`UPDATE messages SET created_at = $1 WHERE id = ANY($2)`, sameTS, ids,
-	); err != nil {
-		t.Fatalf("force created_at: %v", err)
+	// Force created_at into the REVERSE of seq order.
+	base := time.Now().UTC()
+	for i, id := range ids {
+		ts := base.Add(time.Duration(-i) * time.Hour) // ids[0] newest, ids[2] oldest
+		if _, err := testDB.ExecContext(ctx, `UPDATE messages SET created_at = $1 WHERE id = $2`, ts, id); err != nil {
+			t.Fatalf("tamper created_at: %v", err)
+		}
 	}
 
-	// Postgres orders uuid values byte-wise, which matches lexicographic order
-	// of the canonical string form.
-	byID := append([]uuid.UUID(nil), ids...)
-	sort.Slice(byID, func(i, j int) bool { return byID[i].String() < byID[j].String() })
-
-	page, err := repo.ListByConversation(ctx, convID, nil, 10)
+	page, err := repo.ListByConversation(ctx, convID, 0, 10)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	got := idsOf(page)
-	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3", len(got))
-	}
-	for i := range byID {
-		if got[i] != byID[i] {
-			t.Fatalf("tie-break order = %v, want by id ascending %v", got, byID)
-		}
-	}
-
-	// Exclusive cursor across the tie: after the middle id only the greatest remains.
-	page, err = repo.ListByConversation(ctx, convID, &byID[1], 10)
-	if err != nil {
-		t.Fatalf("list after middle: %v", err)
-	}
-	got = idsOf(page)
-	if len(got) != 1 || got[0] != byID[2] {
-		t.Fatalf("after middle id = %v, want [%v]", got, byID[2])
+	if len(page) != 3 || page[0].Seq != seqs[0] || page[1].Seq != seqs[1] || page[2].Seq != seqs[2] {
+		t.Fatalf("order = %v, want seq order %v despite reversed created_at", seqOf(page), seqs)
 	}
 }
 
-func TestMessageRepository_ListByConversation_UnknownCursor(t *testing.T) {
+func TestMessageRepository_Create_ConcurrentSendsAreGapFree(t *testing.T) {
 	repo := NewMessageRepository(testDB)
 	ctx := context.Background()
-	convID, _ := seedConversation(t)
+	convID, sender := seedConversation(t)
 
-	unknown := uuid.Must(uuid.NewV7())
-	if _, err := repo.ListByConversation(ctx, convID, &unknown, 10); !errors.Is(err, message.ErrInvalidCursor) {
-		t.Fatalf("unknown cursor: expected ErrInvalidCursor, got %v", err)
+	const n = 20
+	var (
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		got   []int64
+		errCh = make(chan error, n)
+	)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m, err := message.NewText(convID, sender, "c", nil)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if err := repo.Create(ctx, m); err != nil {
+				errCh <- err
+				return
+			}
+			mu.Lock()
+			got = append(got, m.Seq)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("concurrent Create: %v", err)
 	}
 
-	// A cursor that identifies a real message in a different conversation is
-	// still invalid for this one.
-	convB, senderB := seedConversation(t)
-	foreign, _ := message.NewText(convB, senderB, "in B", nil)
-	if err := repo.Create(ctx, foreign); err != nil {
-		t.Fatalf("Create foreign: %v", err)
+	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	if len(got) != n {
+		t.Fatalf("got %d seqs, want %d", len(got), n)
 	}
-	if _, err := repo.ListByConversation(ctx, convID, &foreign.ID, 10); !errors.Is(err, message.ErrInvalidCursor) {
-		t.Fatalf("foreign-conversation cursor: expected ErrInvalidCursor, got %v", err)
+	for i := 0; i < n; i++ {
+		if got[i] != int64(i+1) {
+			t.Fatalf("seqs = %v, want exactly 1..%d (gap-free, no dupes)", got, n)
+		}
 	}
-}
-
-func idsOf(ms []*message.Message) []uuid.UUID {
-	out := make([]uuid.UUID, len(ms))
-	for i, m := range ms {
-		out[i] = m.ID
-	}
-	return out
 }

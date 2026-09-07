@@ -90,6 +90,9 @@ func TestNewText(t *testing.T) {
 	if m.CreatedAt.Location().String() != "UTC" {
 		t.Errorf("CreatedAt not UTC: %v", m.CreatedAt.Location())
 	}
+	if m.Seq != 0 {
+		t.Errorf("Seq = %d, want 0 for an unpersisted message", m.Seq)
+	}
 }
 
 func TestNewTextNoReply(t *testing.T) {
@@ -172,6 +175,9 @@ func TestNewSystem(t *testing.T) {
 	if m.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
 	}
+	if m.Seq != 0 {
+		t.Errorf("Seq = %d, want 0 for an unpersisted message", m.Seq)
+	}
 }
 
 func TestNewSystemInvalid(t *testing.T) {
@@ -189,18 +195,6 @@ func TestErrInvalidLimitIsDistinct(t *testing.T) {
 	}
 	if message.ErrInvalidLimit == nil {
 		t.Error("ErrInvalidLimit must be a non-nil sentinel")
-	}
-}
-
-func TestErrInvalidCursorIsDistinct(t *testing.T) {
-	if errors.Is(message.ErrInvalidCursor, message.ErrNotFound) {
-		t.Error("ErrInvalidCursor must not alias ErrNotFound")
-	}
-	if errors.Is(message.ErrInvalidCursor, message.ErrInvalidLimit) {
-		t.Error("ErrInvalidCursor must not alias ErrInvalidLimit")
-	}
-	if message.ErrInvalidCursor == nil {
-		t.Error("ErrInvalidCursor must be a non-nil sentinel")
 	}
 }
 

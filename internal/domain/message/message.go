@@ -49,16 +49,15 @@ var (
 	ErrNotFound            = errors.New("message: not found")
 	// ErrInvalidLimit is returned by Repository.ListByConversation for limit <= 0.
 	ErrInvalidLimit = errors.New("message: limit must be a positive integer")
-	// ErrInvalidCursor is returned by Repository.ListByConversation when the
-	// after cursor does not identify a message in the conversation.
-	ErrInvalidCursor = errors.New("message: cursor does not identify a message in this conversation")
 )
 
 // ErrContentTooLong is reported when trimmed content exceeds maxContentRunes. It
 // is built from the same constant so the limit is stated in exactly one place.
 var ErrContentTooLong = fmt.Errorf("message: content must be at most %d runes", maxContentRunes)
 
-// Message is a single message in a conversation. SenderID is nil for system and
+// Message is a single message in a conversation. Seq is the per-conversation
+// monotonic sequence number assigned by Repository.Create (0 until persisted);
+// it is the ordering and pagination key. SenderID is nil for system and
 // call_event messages. ReplyToID, EditedAt, and DeletedAt are nil until set. A
 // text message read back from storage may also have a nil SenderID if the
 // author's account was later deleted (sender_id is ON DELETE SET NULL);
@@ -66,6 +65,7 @@ var ErrContentTooLong = fmt.Errorf("message: content must be at most %d runes", 
 type Message struct {
 	ID             uuid.UUID
 	ConversationID uuid.UUID
+	Seq            int64
 	SenderID       *uuid.UUID
 	Type           Type
 	Content        string
@@ -178,28 +178,19 @@ func (m *Message) MarkDeleted(now time.Time) {
 // internal/infrastructure/postgres in a later stage. The method set grows as
 // usecases arrive.
 type Repository interface {
+	// Create persists the message, allocating and setting m.Seq (the
+	// per-conversation monotonic sequence) as part of the write.
 	Create(ctx context.Context, m *Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Message, error)
-	// ListByConversation returns messages ordered by (CreatedAt, ID) ascending.
-	// When after is non-nil it is a message id used as a keyset cursor: the
-	// implementation resolves it, scoped to conversationID, to that message's
-	// (CreatedAt, ID) pair and returns only rows strictly greater than that
-	// pair — the tuple, not CreatedAt alone, because CreatedAt is not unique.
-	// IDs are UUIDv7 (uuid.Must(uuid.NewV7())): they embed a millisecond
-	// timestamp and sort by creation time, they are not random, so the
-	// (CreatedAt, ID) tuple guards against CreatedAt collisions within the same
-	// instant rather than against random ids. An after cursor that does not
-	// identify a message in this conversation returns ErrInvalidCursor. This is
-	// the reconnect catch-up from spec §4. Soft-deleted messages ARE returned,
-	// with Content cleared. limit caps the page size; a limit <= 0 returns
-	// ErrInvalidLimit.
-	//
-	// Ordering limitation: CreatedAt is stamped by the application at
-	// construction time, so under multi-writer clock skew or commit-order
-	// inversion a message committed late with an earlier CreatedAt can be missed
-	// by a reader that has already paged past it; a per-conversation monotonic
-	// sequence is the planned fix before this backs a live history endpoint.
-	ListByConversation(ctx context.Context, conversationID uuid.UUID, after *uuid.UUID, limit int) ([]*Message, error)
+	// ListByConversation returns the conversation's messages ordered by Seq
+	// ascending, starting after afterSeq (afterSeq == 0 means from the first
+	// message). Seq is a per-conversation monotonic sequence the Repository
+	// allocates at commit time under a row lock, so the result is gap-free and
+	// in commit order: a reconnecting client that passes the highest Seq it has
+	// stored is guaranteed not to miss a message (the spec §4 catch-up path).
+	// Soft-deleted messages are returned, with Content cleared. A limit <= 0
+	// returns ErrInvalidLimit.
+	ListByConversation(ctx context.Context, conversationID uuid.UUID, afterSeq int64, limit int) ([]*Message, error)
 	// Update persists a mutated message (Edit / MarkDeleted).
 	Update(ctx context.Context, m *Message) error
 }
