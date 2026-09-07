@@ -47,6 +47,8 @@ var (
 	ErrInvalidConversation = errors.New("message: conversation must be a valid conversation id")
 	ErrNotEditable         = errors.New("message: only a non-deleted text message can be edited")
 	ErrNotFound            = errors.New("message: not found")
+	// ErrInvalidLimit is returned by Repository.ListByConversation for limit <= 0.
+	ErrInvalidLimit = errors.New("message: limit must be a positive integer")
 )
 
 // ErrContentTooLong is reported when trimmed content exceeds maxContentRunes. It
@@ -179,7 +181,7 @@ type Repository interface {
 	// CreatedAt alone, because IDs are random UUIDv4 and CreatedAt is not
 	// unique. This is the reconnect catch-up from spec §4. Soft-deleted
 	// messages ARE returned, with Content cleared. limit caps the page size;
-	// limit <= 0 is a caller error.
+	// a limit <= 0 returns ErrInvalidLimit.
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, after *uuid.UUID, limit int) ([]*Message, error)
 	// Update persists a mutated message (Edit / MarkDeleted).
 	Update(ctx context.Context, m *Message) error

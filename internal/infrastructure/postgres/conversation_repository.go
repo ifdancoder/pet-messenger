@@ -72,10 +72,10 @@ func (r *ConversationRepository) GetMember(ctx context.Context, conversationID, 
 		FROM conversation_members
 		WHERE conversation_id = $1 AND user_id = $2`
 	var (
-		m         conversation.Member
-		role      string
+		m          conversation.Member
+		role       string
 		mutedUntil sql.NullTime
-		lastRead  uuid.NullUUID
+		lastRead   uuid.NullUUID
 	)
 	err := r.db.QueryRowContext(ctx, q, conversationID, userID).
 		Scan(&m.ConversationID, &m.UserID, &role, &m.JoinedAt, &mutedUntil, &lastRead)

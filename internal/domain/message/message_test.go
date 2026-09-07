@@ -183,6 +183,15 @@ func TestNewSystemInvalid(t *testing.T) {
 	}
 }
 
+func TestErrInvalidLimitIsDistinct(t *testing.T) {
+	if errors.Is(message.ErrInvalidLimit, message.ErrNotFound) {
+		t.Error("ErrInvalidLimit must not alias ErrNotFound")
+	}
+	if message.ErrInvalidLimit == nil {
+		t.Error("ErrInvalidLimit must be a non-nil sentinel")
+	}
+}
+
 func TestIsEditedIsDeleted(t *testing.T) {
 	m, err := message.NewText(uuid.New(), uuid.New(), "hi", nil)
 	if err != nil {
