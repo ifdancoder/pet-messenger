@@ -63,8 +63,18 @@ func scanMessage(s rowScanner) (*message.Message, error) {
 // in one transaction. The UPDATE ... RETURNING on the parent conversation takes
 // a row lock held until COMMIT, so concurrent sends to the same conversation are
 // serialized and seq is gap-free and in commit order. On success m.Seq is set.
+//
+// The row-lock serialization relies on READ COMMITTED semantics (a blocked
+// UPDATE re-evaluates against the committed row), which this transaction pins
+// explicitly; under a higher isolation level the same interleaving would raise a
+// 40001 serialization error instead.
+//
+// Create locks the conversations row first, then the FK targets (users,
+// messages); any future usecase sharing this transaction must keep that lock
+// order to avoid deadlock. The spec §4 NATS publish happens after Create returns,
+// never inside this transaction (it holds the conversation row lock).
 func (r *MessageRepository) Create(ctx context.Context, m *message.Message) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -72,11 +82,11 @@ func (r *MessageRepository) Create(ctx context.Context, m *message.Message) erro
 
 	var seq int64
 	err = tx.QueryRowContext(ctx,
-		`UPDATE conversations SET next_seq = next_seq + 1 WHERE id = $1 RETURNING next_seq`,
+		`UPDATE conversations SET last_seq = last_seq + 1 WHERE id = $1 RETURNING last_seq`,
 		m.ConversationID,
 	).Scan(&seq)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("allocate seq: conversation %s does not exist", m.ConversationID)
+		return fmt.Errorf("allocate seq: %w", message.ErrConversationNotFound)
 	}
 	if err != nil {
 		return fmt.Errorf("allocate seq: %w", err)
@@ -111,12 +121,14 @@ func (r *MessageRepository) GetByID(ctx context.Context, id uuid.UUID) (*message
 }
 
 // ListByConversation returns the conversation's messages ordered by seq
-// ascending, starting after afterSeq (afterSeq <= 0 means from the beginning).
-// seq is a per-conversation monotonic sequence allocated under a row lock at
-// commit time, so the page is gap-free and in commit order — a reconnecting
-// client that passes the highest seq it has seen never misses a message
-// (spec §4). Soft-deleted messages are returned, with Content cleared.
-// limit <= 0 returns message.ErrInvalidLimit.
+// ascending, starting after afterSeq (afterSeq <= 0 means from the first
+// message). seq is a per-conversation monotonic sequence allocated under a row
+// lock at commit time, so the page is gap-free and in commit order — a client
+// that passes the highest seq of the contiguous prefix it holds never misses a
+// message (spec §4). Because seq is gap-free, a client that receives a seq more
+// than one above its last contiguous seq knows it has a gap and must re-fetch
+// from the contiguous watermark. Soft-deleted messages are returned, with
+// Content cleared. limit <= 0 returns message.ErrInvalidLimit.
 func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID uuid.UUID, afterSeq int64, limit int) ([]*message.Message, error) {
 	if limit <= 0 {
 		return nil, message.ErrInvalidLimit

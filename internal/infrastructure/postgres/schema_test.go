@@ -100,16 +100,29 @@ func TestSchema_MessageSequenceColumns(t *testing.T) {
 	var cDefault *string
 	err = testDB.QueryRowContext(ctx, `
 		SELECT data_type, is_nullable, column_default FROM information_schema.columns
-		WHERE table_schema = 'public' AND table_name = 'conversations' AND column_name = 'next_seq'`).
+		WHERE table_schema = 'public' AND table_name = 'conversations' AND column_name = 'last_seq'`).
 		Scan(&cType, &cNullable, &cDefault)
 	if err != nil {
-		t.Fatalf("conversations.next_seq column: %v", err)
+		t.Fatalf("conversations.last_seq column: %v", err)
 	}
 	if cType != "bigint" || cNullable != "NO" {
-		t.Errorf("conversations.next_seq = %s nullable=%s, want bigint / NO", cType, cNullable)
+		t.Errorf("conversations.last_seq = %s nullable=%s, want bigint / NO", cType, cNullable)
 	}
 	if cDefault == nil || *cDefault != "0" {
-		t.Errorf("conversations.next_seq default = %v, want 0", cDefault)
+		t.Errorf("conversations.last_seq default = %v, want 0", cDefault)
+	}
+}
+
+func TestSchema_MessageSeqPositiveConstraint(t *testing.T) {
+	var contype string
+	err := testDB.QueryRowContext(context.Background(), `
+		SELECT contype FROM pg_constraint WHERE conname = 'messages_seq_positive'`).
+		Scan(&contype)
+	if err != nil {
+		t.Fatalf("messages_seq_positive constraint: %v", err)
+	}
+	if contype != "c" {
+		t.Errorf("messages_seq_positive contype = %q, want %q (CHECK)", contype, "c")
 	}
 }
 

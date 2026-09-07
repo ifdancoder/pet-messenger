@@ -239,6 +239,25 @@ func TestMessageRepository_ListByConversation_Keyset(t *testing.T) {
 		t.Fatalf("page3 seqs = %v, want empty", seqOf(page))
 	}
 
+	// A negative afterSeq is clamped to 0: same result as "from the first message".
+	neg, err := repo.ListByConversation(ctx, convID, -1, 10)
+	if err != nil {
+		t.Fatalf("afterSeq=-1: %v", err)
+	}
+	zero, err := repo.ListByConversation(ctx, convID, 0, 10)
+	if err != nil {
+		t.Fatalf("afterSeq=0: %v", err)
+	}
+	negSeqs, zeroSeqs := seqOf(neg), seqOf(zero)
+	if len(negSeqs) != len(zeroSeqs) {
+		t.Fatalf("afterSeq=-1 seqs = %v, want same as afterSeq=0 seqs %v", negSeqs, zeroSeqs)
+	}
+	for i := range negSeqs {
+		if negSeqs[i] != zeroSeqs[i] {
+			t.Fatalf("afterSeq=-1 seqs = %v, want same as afterSeq=0 seqs %v", negSeqs, zeroSeqs)
+		}
+	}
+
 	otherConv, _ := seedConversation(t)
 	page, err = repo.ListByConversation(ctx, otherConv, 0, 10)
 	if err != nil {
@@ -258,11 +277,11 @@ func TestMessageRepository_ListByConversation_IncludesSoftDeleted(t *testing.T) 
 	if err := repo.Create(ctx, keep); err != nil {
 		t.Fatalf("Create keep: %v", err)
 	}
-	time.Sleep(2 * time.Millisecond)
 	gone, _ := message.NewText(convID, sender, "gone", nil)
 	if err := repo.Create(ctx, gone); err != nil {
 		t.Fatalf("Create gone: %v", err)
 	}
+	goneSeq := gone.Seq
 	gone.MarkDeleted(time.Now().UTC())
 	if err := repo.Update(ctx, gone); err != nil {
 		t.Fatalf("Update gone: %v", err)
@@ -277,6 +296,9 @@ func TestMessageRepository_ListByConversation_IncludesSoftDeleted(t *testing.T) 
 	}
 	if page[1].ID != gone.ID || !page[1].IsDeleted() || page[1].Content != "" {
 		t.Errorf("deleted row = %+v, want id %v, IsDeleted, empty content", page[1], gone.ID)
+	}
+	if page[1].Seq != goneSeq {
+		t.Errorf("soft-deleted row Seq = %d, want %d (seq survives soft-delete)", page[1].Seq, goneSeq)
 	}
 }
 
@@ -352,6 +374,45 @@ func TestMessageRepository_Create_AssignsMonotonicSeq(t *testing.T) {
 	}
 	if mb.Seq != 1 {
 		t.Errorf("first message of convB Seq = %d, want 1 (per-conversation restart)", mb.Seq)
+	}
+}
+
+func TestMessageRepository_Create_SeqRollsBackOnInsertFailure(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	first, _ := message.NewText(convID, sender, "first", nil)
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	if first.Seq != 1 {
+		t.Fatalf("first.Seq = %d, want 1", first.Seq)
+	}
+
+	// This message allocates a seq, then the INSERT fails: reply_to_id points at
+	// a row that does not exist (FK violation on reply_to_id -> messages(id)).
+	danglingReply := uuid.Must(uuid.NewV7())
+	bad, _ := message.NewText(convID, sender, "boom", &danglingReply)
+	if err := repo.Create(ctx, bad); err == nil {
+		t.Fatal("Create with a dangling reply_to_id: expected a non-nil error")
+	}
+
+	third, _ := message.NewText(convID, sender, "third", nil)
+	if err := repo.Create(ctx, third); err != nil {
+		t.Fatalf("Create third: %v", err)
+	}
+	if third.Seq != 2 {
+		t.Fatalf("third.Seq = %d, want 2 (the failed allocation rolled back)", third.Seq)
+	}
+
+	var lastSeq int64
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT last_seq FROM conversations WHERE id = $1`, convID).Scan(&lastSeq); err != nil {
+		t.Fatalf("read conversations.last_seq: %v", err)
+	}
+	if lastSeq != 2 {
+		t.Fatalf("conversations.last_seq = %d, want 2", lastSeq)
 	}
 }
 
@@ -436,5 +497,27 @@ func TestMessageRepository_Create_ConcurrentSendsAreGapFree(t *testing.T) {
 		if got[i] != int64(i+1) {
 			t.Fatalf("seqs = %v, want exactly 1..%d (gap-free, no dupes)", got, n)
 		}
+	}
+
+	page, err := repo.ListByConversation(ctx, convID, 0, 100)
+	if err != nil {
+		t.Fatalf("list after concurrent sends: %v", err)
+	}
+	if len(page) != n {
+		t.Fatalf("persisted %d rows, want %d", len(page), n)
+	}
+	for i, m := range page {
+		if m.Seq != int64(i+1) {
+			t.Fatalf("persisted seqs = %v, want 1..%d in order", seqOf(page), n)
+		}
+	}
+
+	var lastSeq int64
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT last_seq FROM conversations WHERE id = $1`, convID).Scan(&lastSeq); err != nil {
+		t.Fatalf("read conversations.last_seq: %v", err)
+	}
+	if lastSeq != int64(n) {
+		t.Fatalf("conversations.last_seq = %d, want %d", lastSeq, n)
 	}
 }

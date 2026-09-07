@@ -49,6 +49,9 @@ var (
 	ErrNotFound            = errors.New("message: not found")
 	// ErrInvalidLimit is returned by Repository.ListByConversation for limit <= 0.
 	ErrInvalidLimit = errors.New("message: limit must be a positive integer")
+	// ErrConversationNotFound is returned by Repository.Create when the target
+	// conversation does not exist.
+	ErrConversationNotFound = errors.New("message: conversation does not exist")
 )
 
 // ErrContentTooLong is reported when trimmed content exceeds maxContentRunes. It
@@ -57,11 +60,13 @@ var ErrContentTooLong = fmt.Errorf("message: content must be at most %d runes", 
 
 // Message is a single message in a conversation. Seq is the per-conversation
 // monotonic sequence number assigned by Repository.Create (0 until persisted);
-// it is the ordering and pagination key. SenderID is nil for system and
-// call_event messages. ReplyToID, EditedAt, and DeletedAt are nil until set. A
-// text message read back from storage may also have a nil SenderID if the
-// author's account was later deleted (sender_id is ON DELETE SET NULL);
-// consumers rendering a text message must handle that.
+// it is the ordering and pagination key. The sequence is contiguous only while
+// messages are never hard-deleted (today they are only soft-deleted via
+// MarkDeleted); a future hard delete would leave a permanent gap. SenderID is
+// nil for system and call_event messages. ReplyToID, EditedAt, and DeletedAt are
+// nil until set. A text message read back from storage may also have a nil
+// SenderID if the author's account was later deleted (sender_id is ON DELETE SET
+// NULL); consumers rendering a text message must handle that.
 type Message struct {
 	ID             uuid.UUID
 	ConversationID uuid.UUID
@@ -183,13 +188,15 @@ type Repository interface {
 	Create(ctx context.Context, m *Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Message, error)
 	// ListByConversation returns the conversation's messages ordered by Seq
-	// ascending, starting after afterSeq (afterSeq == 0 means from the first
+	// ascending, starting after afterSeq (afterSeq <= 0 means from the first
 	// message). Seq is a per-conversation monotonic sequence the Repository
 	// allocates at commit time under a row lock, so the result is gap-free and
-	// in commit order: a reconnecting client that passes the highest Seq it has
-	// stored is guaranteed not to miss a message (the spec §4 catch-up path).
-	// Soft-deleted messages are returned, with Content cleared. A limit <= 0
-	// returns ErrInvalidLimit.
+	// in commit order: a client that passes the highest Seq of the contiguous
+	// prefix it holds is guaranteed not to miss a message (the spec §4 catch-up
+	// path). Because seq is gap-free, a client that receives a Seq more than one
+	// above its last contiguous Seq knows it has a gap and must re-fetch from the
+	// contiguous watermark. Soft-deleted messages are returned, with Content
+	// cleared. A limit <= 0 returns ErrInvalidLimit.
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, afterSeq int64, limit int) ([]*Message, error)
 	// Update persists a mutated message (Edit / MarkDeleted).
 	Update(ctx context.Context, m *Message) error

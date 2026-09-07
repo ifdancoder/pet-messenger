@@ -198,6 +198,18 @@ func TestErrInvalidLimitIsDistinct(t *testing.T) {
 	}
 }
 
+func TestErrConversationNotFoundIsDistinct(t *testing.T) {
+	if message.ErrConversationNotFound == nil {
+		t.Error("ErrConversationNotFound must be a non-nil sentinel")
+	}
+	if errors.Is(message.ErrConversationNotFound, message.ErrNotFound) {
+		t.Error("ErrConversationNotFound must not alias ErrNotFound")
+	}
+	if errors.Is(message.ErrConversationNotFound, message.ErrInvalidLimit) {
+		t.Error("ErrConversationNotFound must not alias ErrInvalidLimit")
+	}
+}
+
 func TestIsEditedIsDeleted(t *testing.T) {
 	m, err := message.NewText(uuid.New(), uuid.New(), "hi", nil)
 	if err != nil {
