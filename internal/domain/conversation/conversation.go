@@ -16,6 +16,7 @@ import (
 // but get their constructors in a later stage.
 type Kind string
 
+// Conversation kinds.
 const (
 	KindDirect           Kind = "direct"
 	KindGroupChat        Kind = "group_chat"
@@ -36,6 +37,7 @@ func (k Kind) Valid() bool {
 // Role is a member's role within a conversation.
 type Role string
 
+// Member roles.
 const (
 	RoleOwner      Role = "owner"
 	RoleAdmin      Role = "admin"
@@ -123,4 +125,23 @@ type Repository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Conversation, error)
 	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*Member, error)
 	ListForUser(ctx context.Context, userID uuid.UUID) ([]*Conversation, error)
+}
+
+// CanPost reports whether a member with role r may send messages to c. In
+// direct, group_chat, and channel_group anyone but a subscriber may post; in
+// channel_broadcast only owner and admin may.
+func (c *Conversation) CanPost(r Role) bool {
+	switch c.Kind {
+	case KindDirect, KindGroupChat, KindChannelGroup:
+		return r != RoleSubscriber
+	case KindChannelBroadcast:
+		return r == RoleOwner || r == RoleAdmin
+	default:
+		return false
+	}
+}
+
+// IsMuted reports whether the member has muted the conversation at time now.
+func (m *Member) IsMuted(now time.Time) bool {
+	return m.MutedUntil != nil && now.Before(*m.MutedUntil)
 }

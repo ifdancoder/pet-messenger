@@ -3,6 +3,7 @@ package conversation_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -127,5 +128,95 @@ func TestNewGroupChatTitleBoundary(t *testing.T) {
 	creator := uuid.New()
 	if _, _, err := conversation.NewGroupChat(creator, strings.Repeat("x", 256)); err != nil {
 		t.Fatalf("256-char title should be valid, got %v", err)
+	}
+}
+
+func TestConstantValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		got      string
+		expected string
+	}{
+		{"KindDirect", string(conversation.KindDirect), "direct"},
+		{"KindGroupChat", string(conversation.KindGroupChat), "group_chat"},
+		{"KindChannelGroup", string(conversation.KindChannelGroup), "channel_group"},
+		{"KindChannelBroadcast", string(conversation.KindChannelBroadcast), "channel_broadcast"},
+		{"RoleOwner", string(conversation.RoleOwner), "owner"},
+		{"RoleAdmin", string(conversation.RoleAdmin), "admin"},
+		{"RoleMember", string(conversation.RoleMember), "member"},
+		{"RoleSubscriber", string(conversation.RoleSubscriber), "subscriber"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.expected {
+				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCanPost(t *testing.T) {
+	roles := []conversation.Role{
+		conversation.RoleOwner,
+		conversation.RoleAdmin,
+		conversation.RoleMember,
+		conversation.RoleSubscriber,
+	}
+	// want[kind][role] = expected CanPost result
+	want := map[conversation.Kind]map[conversation.Role]bool{
+		conversation.KindDirect: {
+			conversation.RoleOwner: true, conversation.RoleAdmin: true,
+			conversation.RoleMember: true, conversation.RoleSubscriber: false,
+		},
+		conversation.KindGroupChat: {
+			conversation.RoleOwner: true, conversation.RoleAdmin: true,
+			conversation.RoleMember: true, conversation.RoleSubscriber: false,
+		},
+		conversation.KindChannelGroup: {
+			conversation.RoleOwner: true, conversation.RoleAdmin: true,
+			conversation.RoleMember: true, conversation.RoleSubscriber: false,
+		},
+		conversation.KindChannelBroadcast: {
+			conversation.RoleOwner: true, conversation.RoleAdmin: true,
+			conversation.RoleMember: false, conversation.RoleSubscriber: false,
+		},
+	}
+
+	for kind, roleWants := range want {
+		for _, role := range roles {
+			c := &conversation.Conversation{Kind: kind}
+			if got := c.CanPost(role); got != roleWants[role] {
+				t.Errorf("Conversation{Kind:%q}.CanPost(%q) = %v, want %v", kind, role, got, roleWants[role])
+			}
+		}
+	}
+
+	if (&conversation.Conversation{Kind: conversation.Kind("bogus")}).CanPost(conversation.RoleOwner) {
+		t.Error("CanPost on unknown kind should be false")
+	}
+}
+
+func TestIsMuted(t *testing.T) {
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+	past := now.Add(-time.Hour)
+
+	tests := []struct {
+		name       string
+		mutedUntil *time.Time
+		want       bool
+	}{
+		{"nil is not muted", nil, false},
+		{"future is muted", &future, true},
+		{"past is not muted", &past, false},
+		{"exactly now is not muted", &now, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &conversation.Member{MutedUntil: tt.mutedUntil}
+			if got := m.IsMuted(now); got != tt.want {
+				t.Errorf("IsMuted() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
