@@ -6,6 +6,7 @@ package message
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -36,17 +37,21 @@ func (t Type) Valid() bool {
 	}
 }
 
-// Domain errors.
-var (
-	ErrEmptyContent   = errors.New("message: content must not be empty")
-	ErrContentTooLong = errors.New("message: content must be at most 4096 runes")
-	ErrInvalidSender  = errors.New("message: sender must be a valid user id")
-	ErrNotEditable    = errors.New("message: only a non-deleted text message can be edited")
-	ErrNotFound       = errors.New("message: not found")
-)
-
 // maxContentRunes bounds message content length, measured in runes.
 const maxContentRunes = 4096
+
+// Domain errors.
+var (
+	ErrEmptyContent        = errors.New("message: content must not be empty")
+	ErrInvalidSender       = errors.New("message: sender must be a valid user id")
+	ErrInvalidConversation = errors.New("message: conversation must be a valid conversation id")
+	ErrNotEditable         = errors.New("message: only a non-deleted text message can be edited")
+	ErrNotFound            = errors.New("message: not found")
+)
+
+// ErrContentTooLong is reported when trimmed content exceeds maxContentRunes. It
+// is built from the same constant so the limit is stated in exactly one place.
+var ErrContentTooLong = fmt.Errorf("message: content must be at most %d runes", maxContentRunes)
 
 // Message is a single message in a conversation. SenderID is nil for system and
 // call_event messages. ReplyToID, EditedAt, and DeletedAt are nil until set.
@@ -80,12 +85,18 @@ func validateContent(raw string) (string, error) {
 // trimmed and must be 1..4096 runes. replyToID is optional and passed through
 // as-is (existence is a usecase/repository concern).
 func NewText(conversationID, senderID uuid.UUID, content string, replyToID *uuid.UUID) (*Message, error) {
+	if conversationID == uuid.Nil {
+		return nil, ErrInvalidConversation
+	}
 	if senderID == uuid.Nil {
 		return nil, ErrInvalidSender
 	}
 	c, err := validateContent(content)
 	if err != nil {
 		return nil, err
+	}
+	if replyToID != nil && *replyToID == uuid.Nil {
+		replyToID = nil
 	}
 	sid := senderID
 	return &Message{
@@ -102,6 +113,9 @@ func NewText(conversationID, senderID uuid.UUID, content string, replyToID *uuid
 // NewSystem builds a system message (no sender) in conversationID, e.g.
 // "alice joined the group". content is trimmed and must be 1..4096 runes.
 func NewSystem(conversationID uuid.UUID, content string) (*Message, error) {
+	if conversationID == uuid.Nil {
+		return nil, ErrInvalidConversation
+	}
 	c, err := validateContent(content)
 	if err != nil {
 		return nil, err
@@ -134,15 +148,21 @@ func (m *Message) Edit(newContent string, now time.Time) error {
 		return err
 	}
 	m.Content = c
-	m.EditedAt = &now
+	utc := now.UTC()
+	m.EditedAt = &utc
 	return nil
 }
 
-// MarkDeleted soft-deletes the message: it records the deletion time and clears
-// the stored content so deleted text is not retained. Calling it on an
-// already-deleted message just refreshes the timestamp.
+// MarkDeleted soft-deletes the message: it records the deletion time (normalized
+// to UTC) and clears the stored content so deleted text is not retained. It is
+// idempotent — calling it on an already-deleted message is a no-op that keeps
+// the first deletion time.
 func (m *Message) MarkDeleted(now time.Time) {
-	m.DeletedAt = &now
+	if m.IsDeleted() {
+		return
+	}
+	utc := now.UTC()
+	m.DeletedAt = &utc
 	m.Content = ""
 }
 
@@ -152,9 +172,14 @@ func (m *Message) MarkDeleted(now time.Time) {
 type Repository interface {
 	Create(ctx context.Context, m *Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Message, error)
-	// ListByConversation returns messages ordered by CreatedAt ascending. When
-	// after is non-nil, only messages newer than that message id are returned
-	// (the reconnect catch-up from spec §4). limit caps the page size.
+	// ListByConversation returns messages ordered by (CreatedAt, ID) ascending.
+	// When after is non-nil it is a message id used as a keyset cursor: the
+	// implementation resolves it to that message's (CreatedAt, ID) pair and
+	// returns only rows strictly greater than that pair — the tuple, not
+	// CreatedAt alone, because IDs are random UUIDv4 and CreatedAt is not
+	// unique. This is the reconnect catch-up from spec §4. Soft-deleted
+	// messages ARE returned, with Content cleared. limit caps the page size;
+	// limit <= 0 is a caller error.
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, after *uuid.UUID, limit int) ([]*Message, error)
 	// Update persists a mutated message (Edit / MarkDeleted).
 	Update(ctx context.Context, m *Message) error

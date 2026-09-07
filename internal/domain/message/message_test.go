@@ -11,6 +11,26 @@ import (
 	"pet-messenger/internal/domain/message"
 )
 
+// newText builds a valid text message or fails the test.
+func newText(t *testing.T) *message.Message {
+	t.Helper()
+	m, err := message.NewText(uuid.New(), uuid.New(), "hi", nil)
+	if err != nil {
+		t.Fatalf("NewText: unexpected error: %v", err)
+	}
+	return m
+}
+
+// newSystem builds a valid system message or fails the test.
+func newSystem(t *testing.T) *message.Message {
+	t.Helper()
+	m, err := message.NewSystem(uuid.New(), "alice joined")
+	if err != nil {
+		t.Fatalf("NewSystem: unexpected error: %v", err)
+	}
+	return m
+}
+
 func TestTypeValid(t *testing.T) {
 	tests := []struct {
 		typ  message.Type
@@ -79,6 +99,17 @@ func TestNewTextNoReply(t *testing.T) {
 	}
 }
 
+func TestNewTextNilValuedReply(t *testing.T) {
+	nilReply := uuid.Nil
+	m, err := message.NewText(uuid.New(), uuid.New(), "hi", &nilReply)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.ReplyToID != nil {
+		t.Errorf("ReplyToID = %v, want nil for a nil-valued pointer", m.ReplyToID)
+	}
+}
+
 func TestNewTextInvalid(t *testing.T) {
 	conv, sender := uuid.New(), uuid.New()
 	tests := []struct {
@@ -88,6 +119,7 @@ func TestNewTextInvalid(t *testing.T) {
 		content string
 		wantErr error
 	}{
+		{"nil conversation", uuid.Nil, sender, "hi", message.ErrInvalidConversation},
 		{"nil sender", conv, uuid.Nil, "hi", message.ErrInvalidSender},
 		{"empty content", conv, sender, "", message.ErrEmptyContent},
 		{"whitespace-only content", conv, sender, "   \t\n ", message.ErrEmptyContent},
@@ -143,6 +175,9 @@ func TestNewSystemInvalid(t *testing.T) {
 	if _, err := message.NewSystem(uuid.New(), "  "); !errors.Is(err, message.ErrEmptyContent) {
 		t.Fatalf("err = %v, want %v", err, message.ErrEmptyContent)
 	}
+	if _, err := message.NewSystem(uuid.Nil, "hi"); !errors.Is(err, message.ErrInvalidConversation) {
+		t.Fatalf("err = %v, want %v", err, message.ErrInvalidConversation)
+	}
 }
 
 func TestIsEditedIsDeleted(t *testing.T) {
@@ -193,24 +228,37 @@ func TestEditRejected(t *testing.T) {
 	now := time.Now().UTC()
 
 	t.Run("system message", func(t *testing.T) {
-		m, _ := message.NewSystem(uuid.New(), "alice joined")
-		if err := m.Edit("nope", now); err != message.ErrNotEditable {
+		m := newSystem(t)
+		if err := m.Edit("nope", now); !errors.Is(err, message.ErrNotEditable) {
 			t.Fatalf("err = %v, want %v", err, message.ErrNotEditable)
 		}
 	})
 
 	t.Run("deleted message", func(t *testing.T) {
-		m, _ := message.NewText(uuid.New(), uuid.New(), "hi", nil)
+		m := newText(t)
 		m.MarkDeleted(now)
-		if err := m.Edit("resurrect", now); err != message.ErrNotEditable {
+		if err := m.Edit("resurrect", now); !errors.Is(err, message.ErrNotEditable) {
 			t.Fatalf("err = %v, want %v", err, message.ErrNotEditable)
 		}
 	})
 
 	t.Run("invalid new content", func(t *testing.T) {
-		m, _ := message.NewText(uuid.New(), uuid.New(), "hi", nil)
-		if err := m.Edit("   ", now); err != message.ErrEmptyContent {
+		m := newText(t)
+		if err := m.Edit("   ", now); !errors.Is(err, message.ErrEmptyContent) {
 			t.Fatalf("err = %v, want %v", err, message.ErrEmptyContent)
+		}
+		if m.IsEdited() {
+			t.Error("a rejected Edit must not set EditedAt")
+		}
+		if m.Content != "hi" {
+			t.Errorf("a rejected Edit must not change Content, got %q", m.Content)
+		}
+	})
+
+	t.Run("new content too long", func(t *testing.T) {
+		m := newText(t)
+		if err := m.Edit(strings.Repeat("x", 4097), now); !errors.Is(err, message.ErrContentTooLong) {
+			t.Fatalf("err = %v, want %v", err, message.ErrContentTooLong)
 		}
 		if m.IsEdited() {
 			t.Error("a rejected Edit must not set EditedAt")
@@ -241,7 +289,7 @@ func TestMarkDeleted(t *testing.T) {
 
 	later := now.Add(time.Minute)
 	m.MarkDeleted(later)
-	if !m.DeletedAt.Equal(later) {
-		t.Errorf("second MarkDeleted should refresh the timestamp, got %v", m.DeletedAt)
+	if !m.DeletedAt.Equal(now) {
+		t.Errorf("second MarkDeleted must be a no-op keeping the first deletion time %v, got %v", now, m.DeletedAt)
 	}
 }
