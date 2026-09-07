@@ -39,12 +39,13 @@ func (t Type) Valid() bool {
 // Domain errors.
 var (
 	ErrEmptyContent   = errors.New("message: content must not be empty")
-	ErrContentTooLong = errors.New("message: content must be at most 4096 characters")
+	ErrContentTooLong = errors.New("message: content must be at most 4096 runes")
 	ErrInvalidSender  = errors.New("message: sender must be a valid user id")
 	ErrNotEditable    = errors.New("message: only a non-deleted text message can be edited")
 	ErrNotFound       = errors.New("message: not found")
 )
 
+// maxContentRunes bounds message content length, measured in runes.
 const maxContentRunes = 4096
 
 // Message is a single message in a conversation. SenderID is nil for system and
@@ -112,6 +113,37 @@ func NewSystem(conversationID uuid.UUID, content string) (*Message, error) {
 		Content:        c,
 		CreatedAt:      time.Now().UTC(),
 	}, nil
+}
+
+// IsEdited reports whether the message has been edited.
+func (m *Message) IsEdited() bool { return m.EditedAt != nil }
+
+// IsDeleted reports whether the message has been soft-deleted.
+func (m *Message) IsDeleted() bool { return m.DeletedAt != nil }
+
+// Edit replaces the content of a non-deleted text message and records the edit
+// time. It returns ErrNotEditable for any non-text or deleted message, and the
+// usual content errors if newContent is empty or too long. A rejected edit
+// leaves the message unchanged.
+func (m *Message) Edit(newContent string, now time.Time) error {
+	if m.Type != TypeText || m.IsDeleted() {
+		return ErrNotEditable
+	}
+	c, err := validateContent(newContent)
+	if err != nil {
+		return err
+	}
+	m.Content = c
+	m.EditedAt = &now
+	return nil
+}
+
+// MarkDeleted soft-deletes the message: it records the deletion time and clears
+// the stored content so deleted text is not retained. Calling it on an
+// already-deleted message just refreshes the timestamp.
+func (m *Message) MarkDeleted(now time.Time) {
+	m.DeletedAt = &now
+	m.Content = ""
 }
 
 // Repository is the persistence port for messages. It is implemented in

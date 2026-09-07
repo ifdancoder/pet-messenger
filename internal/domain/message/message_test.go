@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -141,5 +142,106 @@ func TestNewSystem(t *testing.T) {
 func TestNewSystemInvalid(t *testing.T) {
 	if _, err := message.NewSystem(uuid.New(), "  "); !errors.Is(err, message.ErrEmptyContent) {
 		t.Fatalf("err = %v, want %v", err, message.ErrEmptyContent)
+	}
+}
+
+func TestIsEditedIsDeleted(t *testing.T) {
+	m, err := message.NewText(uuid.New(), uuid.New(), "hi", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.IsEdited() {
+		t.Error("new message should not be edited")
+	}
+	if m.IsDeleted() {
+		t.Error("new message should not be deleted")
+	}
+
+	now := time.Now().UTC()
+	m.EditedAt = &now
+	if !m.IsEdited() {
+		t.Error("IsEdited should be true once EditedAt is set")
+	}
+	m.DeletedAt = &now
+	if !m.IsDeleted() {
+		t.Error("IsDeleted should be true once DeletedAt is set")
+	}
+}
+
+func TestEdit(t *testing.T) {
+	m, err := message.NewText(uuid.New(), uuid.New(), "original", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	now := time.Now().UTC()
+
+	if err := m.Edit("  updated text  ", now); err != nil {
+		t.Fatalf("Edit returned error: %v", err)
+	}
+	if m.Content != "updated text" {
+		t.Errorf("Content = %q, want %q", m.Content, "updated text")
+	}
+	if m.EditedAt == nil || !m.EditedAt.Equal(now) {
+		t.Errorf("EditedAt = %v, want %v", m.EditedAt, now)
+	}
+	if !m.IsEdited() {
+		t.Error("IsEdited should be true after Edit")
+	}
+}
+
+func TestEditRejected(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("system message", func(t *testing.T) {
+		m, _ := message.NewSystem(uuid.New(), "alice joined")
+		if err := m.Edit("nope", now); err != message.ErrNotEditable {
+			t.Fatalf("err = %v, want %v", err, message.ErrNotEditable)
+		}
+	})
+
+	t.Run("deleted message", func(t *testing.T) {
+		m, _ := message.NewText(uuid.New(), uuid.New(), "hi", nil)
+		m.MarkDeleted(now)
+		if err := m.Edit("resurrect", now); err != message.ErrNotEditable {
+			t.Fatalf("err = %v, want %v", err, message.ErrNotEditable)
+		}
+	})
+
+	t.Run("invalid new content", func(t *testing.T) {
+		m, _ := message.NewText(uuid.New(), uuid.New(), "hi", nil)
+		if err := m.Edit("   ", now); err != message.ErrEmptyContent {
+			t.Fatalf("err = %v, want %v", err, message.ErrEmptyContent)
+		}
+		if m.IsEdited() {
+			t.Error("a rejected Edit must not set EditedAt")
+		}
+		if m.Content != "hi" {
+			t.Errorf("a rejected Edit must not change Content, got %q", m.Content)
+		}
+	})
+}
+
+func TestMarkDeleted(t *testing.T) {
+	m, err := message.NewText(uuid.New(), uuid.New(), "secret", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	now := time.Now().UTC()
+
+	m.MarkDeleted(now)
+	if m.DeletedAt == nil || !m.DeletedAt.Equal(now) {
+		t.Errorf("DeletedAt = %v, want %v", m.DeletedAt, now)
+	}
+	if m.Content != "" {
+		t.Errorf("Content = %q, want cleared", m.Content)
+	}
+	if !m.IsDeleted() {
+		t.Error("IsDeleted should be true after MarkDeleted")
+	}
+
+	later := now.Add(time.Minute)
+	m.MarkDeleted(later)
+	if !m.DeletedAt.Equal(later) {
+		t.Errorf("second MarkDeleted should refresh the timestamp, got %v", m.DeletedAt)
 	}
 }
