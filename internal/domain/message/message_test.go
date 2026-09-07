@@ -192,6 +192,18 @@ func TestErrInvalidLimitIsDistinct(t *testing.T) {
 	}
 }
 
+func TestErrInvalidCursorIsDistinct(t *testing.T) {
+	if errors.Is(message.ErrInvalidCursor, message.ErrNotFound) {
+		t.Error("ErrInvalidCursor must not alias ErrNotFound")
+	}
+	if errors.Is(message.ErrInvalidCursor, message.ErrInvalidLimit) {
+		t.Error("ErrInvalidCursor must not alias ErrInvalidLimit")
+	}
+	if message.ErrInvalidCursor == nil {
+		t.Error("ErrInvalidCursor must be a non-nil sentinel")
+	}
+}
+
 func TestIsEditedIsDeleted(t *testing.T) {
 	m, err := message.NewText(uuid.New(), uuid.New(), "hi", nil)
 	if err != nil {

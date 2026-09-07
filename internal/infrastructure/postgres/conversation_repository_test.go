@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/domain/conversation"
+	"pet-messenger/internal/domain/message"
 )
 
 func within(t *testing.T, got, want time.Time, tol time.Duration) {
@@ -128,6 +129,77 @@ func TestConversationRepository_CreateDirect_BothMembers(t *testing.T) {
 		if m.Role != conversation.RoleMember {
 			t.Errorf("Role = %q, want %q", m.Role, conversation.RoleMember)
 		}
+	}
+}
+
+func TestConversationRepository_Create_RollsBackOnBadMember(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	creator := createTestUser(t)
+
+	c, members, err := conversation.NewGroupChat(creator.ID, "Rollback")
+	if err != nil {
+		t.Fatalf("NewGroupChat: %v", err)
+	}
+	members = append(members, &conversation.Member{
+		ConversationID: c.ID,
+		UserID:         uuid.Must(uuid.NewV7()), // not a real user -> FK violation
+		Role:           conversation.RoleMember,
+		JoinedAt:       time.Now().UTC(),
+	})
+
+	if err := repo.Create(ctx, c, members); err == nil {
+		t.Fatal("Create with a non-existent member must return an error")
+	}
+
+	if _, err := repo.GetByID(ctx, c.ID); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatalf("expected the tx to roll back leaving no orphan conversation row (ErrNotFound), got %v", err)
+	}
+}
+
+func TestConversationRepository_GetMember_NonNilOptionalFields(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	creator := createTestUser(t)
+
+	c, members, err := conversation.NewGroupChat(creator.ID, "Optional Fields")
+	if err != nil {
+		t.Fatalf("NewGroupChat: %v", err)
+	}
+	if err := repo.Create(ctx, c, members); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// last_read_message_id has an FK to messages(id), so it must point at a real
+	// row; create one to mark as read.
+	marker, _ := message.NewText(c.ID, creator.ID, "read marker", nil)
+	if err := NewMessageRepository(testDB).Create(ctx, marker); err != nil {
+		t.Fatalf("Create marker message: %v", err)
+	}
+
+	mutedUntil := time.Now().UTC().Add(24 * time.Hour)
+	if _, err := testDB.ExecContext(ctx, `
+		UPDATE conversation_members
+		SET muted_until = $1, last_read_message_id = $2
+		WHERE conversation_id = $3 AND user_id = $4`,
+		mutedUntil, marker.ID, c.ID, creator.ID,
+	); err != nil {
+		t.Fatalf("update member optional fields: %v", err)
+	}
+
+	m, err := repo.GetMember(ctx, c.ID, creator.ID)
+	if err != nil {
+		t.Fatalf("GetMember: %v", err)
+	}
+	if m.MutedUntil == nil {
+		t.Fatal("MutedUntil is nil, want non-nil")
+	}
+	within(t, *m.MutedUntil, mutedUntil, time.Second)
+	if m.LastReadMessageID == nil {
+		t.Fatal("LastReadMessageID is nil, want non-nil")
+	}
+	if *m.LastReadMessageID != marker.ID {
+		t.Errorf("LastReadMessageID = %v, want %v", *m.LastReadMessageID, marker.ID)
 	}
 }
 

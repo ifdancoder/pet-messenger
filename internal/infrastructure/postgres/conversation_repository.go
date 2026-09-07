@@ -22,6 +22,10 @@ func NewConversationRepository(db *sql.DB) conversation.Repository {
 
 // Create persists the conversation and its founding members in one transaction.
 func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Conversation, members []*conversation.Member) error {
+	if len(members) == 0 {
+		return fmt.Errorf("create conversation: no members")
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -40,13 +44,16 @@ func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Con
 		VALUES ($1, $2, $3::conversation_role, $4, $5, $6)`
 	for _, m := range members {
 		if _, err := tx.ExecContext(ctx, memberQ,
-			m.ConversationID, m.UserID, string(m.Role), m.JoinedAt, m.MutedUntil, nullableUUID(m.LastReadMessageID),
+			c.ID, m.UserID, string(m.Role), m.JoinedAt, m.MutedUntil, nullableUUID(m.LastReadMessageID),
 		); err != nil {
 			return fmt.Errorf("insert conversation member: %w", err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
 }
 
 func (r *ConversationRepository) GetByID(ctx context.Context, id uuid.UUID) (*conversation.Conversation, error) {

@@ -4,6 +4,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -265,6 +266,114 @@ func TestMessageRepository_ListByConversation_InvalidLimit(t *testing.T) {
 		if _, err := repo.ListByConversation(context.Background(), convID, nil, lim); !errors.Is(err, message.ErrInvalidLimit) {
 			t.Fatalf("limit %d: expected ErrInvalidLimit, got %v", lim, err)
 		}
+	}
+}
+
+func TestMessageRepository_Update_DoesNotResurrectSoftDeleted(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	m, _ := message.NewText(convID, sender, "original", nil)
+	if err := repo.Create(ctx, m); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A concurrent actor soft-deletes the row.
+	deleted := *m
+	deleted.MarkDeleted(time.Now().UTC())
+	if err := repo.Update(ctx, &deleted); err != nil {
+		t.Fatalf("Update delete: %v", err)
+	}
+
+	// A stale edit built from the pre-delete snapshot must not bring it back.
+	if err := m.Edit("edited after delete", time.Now().UTC()); err != nil {
+		t.Fatalf("Edit: %v", err)
+	}
+	if err := repo.Update(ctx, m); !errors.Is(err, message.ErrNotFound) {
+		t.Fatalf("stale edit against a soft-deleted row: expected ErrNotFound, got %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !got.IsDeleted() || got.Content != "" {
+		t.Errorf("row = %+v, want still soft-deleted with empty content", got)
+	}
+}
+
+func TestMessageRepository_ListByConversation_TieBreakOnID(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	var ids []uuid.UUID
+	for i := 0; i < 3; i++ {
+		m, _ := message.NewText(convID, sender, "tie", nil)
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create m%d: %v", i, err)
+		}
+		ids = append(ids, m.ID)
+	}
+
+	// Force an identical created_at on all three so ordering falls entirely to id.
+	sameTS := time.Now().UTC().Add(-time.Hour)
+	if _, err := testDB.ExecContext(ctx,
+		`UPDATE messages SET created_at = $1 WHERE id = ANY($2)`, sameTS, ids,
+	); err != nil {
+		t.Fatalf("force created_at: %v", err)
+	}
+
+	// Postgres orders uuid values byte-wise, which matches lexicographic order
+	// of the canonical string form.
+	byID := append([]uuid.UUID(nil), ids...)
+	sort.Slice(byID, func(i, j int) bool { return byID[i].String() < byID[j].String() })
+
+	page, err := repo.ListByConversation(ctx, convID, nil, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	got := idsOf(page)
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	for i := range byID {
+		if got[i] != byID[i] {
+			t.Fatalf("tie-break order = %v, want by id ascending %v", got, byID)
+		}
+	}
+
+	// Exclusive cursor across the tie: after the middle id only the greatest remains.
+	page, err = repo.ListByConversation(ctx, convID, &byID[1], 10)
+	if err != nil {
+		t.Fatalf("list after middle: %v", err)
+	}
+	got = idsOf(page)
+	if len(got) != 1 || got[0] != byID[2] {
+		t.Fatalf("after middle id = %v, want [%v]", got, byID[2])
+	}
+}
+
+func TestMessageRepository_ListByConversation_UnknownCursor(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, _ := seedConversation(t)
+
+	unknown := uuid.Must(uuid.NewV7())
+	if _, err := repo.ListByConversation(ctx, convID, &unknown, 10); !errors.Is(err, message.ErrInvalidCursor) {
+		t.Fatalf("unknown cursor: expected ErrInvalidCursor, got %v", err)
+	}
+
+	// A cursor that identifies a real message in a different conversation is
+	// still invalid for this one.
+	convB, senderB := seedConversation(t)
+	foreign, _ := message.NewText(convB, senderB, "in B", nil)
+	if err := repo.Create(ctx, foreign); err != nil {
+		t.Fatalf("Create foreign: %v", err)
+	}
+	if _, err := repo.ListByConversation(ctx, convID, &foreign.ID, 10); !errors.Is(err, message.ErrInvalidCursor) {
+		t.Fatalf("foreign-conversation cursor: expected ErrInvalidCursor, got %v", err)
 	}
 }
 

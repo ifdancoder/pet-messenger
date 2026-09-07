@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -86,23 +87,46 @@ func (r *MessageRepository) GetByID(ctx context.Context, id uuid.UUID) (*message
 
 // ListByConversation returns messages ordered by (created_at, id) ascending.
 // after, when non-nil, is a keyset cursor: only rows strictly greater than that
-// message's (created_at, id) pair are returned. Soft-deleted messages are
-// included (with Content cleared). limit <= 0 returns message.ErrInvalidLimit.
+// message's (created_at, id) pair are returned. The cursor is resolved by a
+// dedicated query scoped to conversationID, so an unknown, hard-deleted, or
+// foreign-conversation id surfaces as message.ErrInvalidCursor rather than
+// silently filtering out every row. Soft-deleted messages are included (with
+// Content cleared). limit <= 0 returns message.ErrInvalidLimit.
 func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID uuid.UUID, after *uuid.UUID, limit int) ([]*message.Message, error) {
 	if limit <= 0 {
 		return nil, message.ErrInvalidLimit
 	}
+
+	var (
+		cursorAt time.Time
+		cursorID uuid.UUID
+	)
+	if after != nil {
+		err := r.db.QueryRowContext(ctx,
+			`SELECT created_at, id FROM messages WHERE id = $1 AND conversation_id = $2`,
+			*after, conversationID,
+		).Scan(&cursorAt, &cursorID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, message.ErrInvalidCursor
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve cursor: %w", err)
+		}
+	}
+
+	afterAt := sql.NullTime{}
+	if after != nil {
+		afterAt = sql.NullTime{Time: cursorAt, Valid: true}
+	}
+
 	const q = `
 		SELECT ` + messageColumns + `
 		FROM messages
 		WHERE conversation_id = $1
-		  AND (
-		    $2::uuid IS NULL
-		    OR (created_at, id) > (SELECT created_at, id FROM messages WHERE id = $2::uuid)
-		  )
+		  AND ($2::timestamptz IS NULL OR (created_at, id) > ($2, $3))
 		ORDER BY created_at, id
-		LIMIT $3`
-	rows, err := r.db.QueryContext(ctx, q, conversationID, nullableUUID(after), limit)
+		LIMIT $4`
+	rows, err := r.db.QueryContext(ctx, q, conversationID, afterAt, cursorID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query messages: %w", err)
 	}
@@ -124,7 +148,15 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 
 // Update persists a mutated message (Edit / MarkDeleted).
 func (r *MessageRepository) Update(ctx context.Context, m *message.Message) error {
-	const q = `UPDATE messages SET content = $2, edited_at = $3, deleted_at = $4 WHERE id = $1`
+	// When m.DeletedAt == nil this is an edit, not a delete: the extra
+	// `deleted_at IS NULL` predicate stops a stale edit from resurrecting a row
+	// that was soft-deleted in the meantime. Such an edit then affects 0 rows
+	// and surfaces as message.ErrNotFound below. A delete keeps matching the row
+	// unconditionally so MarkDeleted stays idempotent.
+	q := `UPDATE messages SET content = $2, edited_at = $3, deleted_at = $4 WHERE id = $1`
+	if m.DeletedAt == nil {
+		q += ` AND deleted_at IS NULL`
+	}
 	res, err := r.db.ExecContext(ctx, q, m.ID, m.Content, m.EditedAt, m.DeletedAt)
 	if err != nil {
 		return fmt.Errorf("update message: %w", err)
