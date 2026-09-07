@@ -24,7 +24,7 @@ type Session struct {
 func New(userID uuid.UUID, refreshTokenHash, deviceInfo string) *Session {
 	now := time.Now().UTC()
 	return &Session{
-		ID:               uuid.New(),
+		ID:               uuid.Must(uuid.NewV7()),
 		UserID:           userID,
 		RefreshTokenHash: refreshTokenHash,
 		DeviceInfo:       deviceInfo,

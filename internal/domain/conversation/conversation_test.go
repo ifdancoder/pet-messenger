@@ -69,6 +69,9 @@ func TestNewDirect(t *testing.T) {
 	if c.ID == uuid.Nil {
 		t.Error("expected ID to be set")
 	}
+	if c.ID.Version() != 7 {
+		t.Errorf("ID version = %d, want 7 (UUIDv7)", c.ID.Version())
+	}
 	if c.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
 	}

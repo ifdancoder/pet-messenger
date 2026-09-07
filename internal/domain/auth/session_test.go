@@ -26,6 +26,9 @@ func TestNew(t *testing.T) {
 	if s.ID == uuid.Nil {
 		t.Error("expected ID to be set")
 	}
+	if s.ID.Version() != 7 {
+		t.Errorf("ID version = %d, want 7 (UUIDv7)", s.ID.Version())
+	}
 	if s.CreatedAt.IsZero() || s.LastUsedAt.IsZero() {
 		t.Error("expected timestamps to be set")
 	}

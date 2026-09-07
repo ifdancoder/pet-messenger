@@ -63,6 +63,9 @@ func TestNewText(t *testing.T) {
 	if m.ID == uuid.Nil {
 		t.Error("expected ID to be set")
 	}
+	if m.ID.Version() != 7 {
+		t.Errorf("ID version = %d, want 7 (UUIDv7)", m.ID.Version())
+	}
 	if m.ConversationID != conv {
 		t.Errorf("ConversationID = %v, want %v", m.ConversationID, conv)
 	}

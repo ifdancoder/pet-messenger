@@ -40,7 +40,7 @@ func New(username, displayName string) (*User, error) {
 		return nil, ErrInvalidDisplayName
 	}
 	return &User{
-		ID:          uuid.New(),
+		ID:          uuid.Must(uuid.NewV7()),
 		Username:    username,
 		DisplayName: displayName,
 		CreatedAt:   time.Now().UTC(),

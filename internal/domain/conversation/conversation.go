@@ -96,7 +96,7 @@ func NewDirect(userA, userB uuid.UUID) (*Conversation, []*Member, error) {
 	}
 	now := time.Now().UTC()
 	c := &Conversation{
-		ID:        uuid.New(),
+		ID:        uuid.Must(uuid.NewV7()),
 		Kind:      KindDirect,
 		CreatedAt: now,
 	}
@@ -119,7 +119,7 @@ func NewGroupChat(creator uuid.UUID, title string) (*Conversation, []*Member, er
 	}
 	now := time.Now().UTC()
 	c := &Conversation{
-		ID:        uuid.New(),
+		ID:        uuid.Must(uuid.NewV7()),
 		Kind:      KindGroupChat,
 		Title:     title,
 		CreatedAt: now,

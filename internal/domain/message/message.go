@@ -100,7 +100,7 @@ func NewText(conversationID, senderID uuid.UUID, content string, replyToID *uuid
 	}
 	sid := senderID
 	return &Message{
-		ID:             uuid.New(),
+		ID:             uuid.Must(uuid.NewV7()),
 		ConversationID: conversationID,
 		SenderID:       &sid,
 		Type:           TypeText,
@@ -121,7 +121,7 @@ func NewSystem(conversationID uuid.UUID, content string) (*Message, error) {
 		return nil, err
 	}
 	return &Message{
-		ID:             uuid.New(),
+		ID:             uuid.Must(uuid.NewV7()),
 		ConversationID: conversationID,
 		Type:           TypeSystem,
 		Content:        c,

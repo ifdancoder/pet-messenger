@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"pet-messenger/internal/domain/user"
 )
 
@@ -41,8 +43,11 @@ func TestNew(t *testing.T) {
 			if u.DisplayName != tt.wantDisplay {
 				t.Errorf("DisplayName = %q, want %q", u.DisplayName, tt.wantDisplay)
 			}
-			if u.ID.String() == "" {
+			if u.ID == uuid.Nil {
 				t.Error("expected ID to be set")
+			}
+			if u.ID.Version() != 7 {
+				t.Errorf("ID version = %d, want 7 (UUIDv7)", u.ID.Version())
 			}
 			if u.CreatedAt.IsZero() {
 				t.Error("expected CreatedAt to be set")
