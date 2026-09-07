@@ -45,11 +45,22 @@ const (
 	RoleSubscriber Role = "subscriber"
 )
 
+// Valid reports whether r is one of the four known roles.
+func (r Role) Valid() bool {
+	switch r {
+	case RoleOwner, RoleAdmin, RoleMember, RoleSubscriber:
+		return true
+	default:
+		return false
+	}
+}
+
 // Domain errors.
 var (
 	ErrInvalidKind          = errors.New("conversation: invalid kind")
 	ErrInvalidTitle         = errors.New("conversation: title must be 1-256 characters")
 	ErrInvalidDirectMembers = errors.New("conversation: direct conversation needs two distinct users")
+	ErrInvalidCreator       = errors.New("conversation: creator must be a valid user id")
 	ErrNotFound             = errors.New("conversation: not found")
 	ErrNotMember            = errors.New("conversation: user is not a member")
 )
@@ -99,6 +110,9 @@ func NewDirect(userA, userB uuid.UUID) (*Conversation, []*Member, error) {
 // NewGroupChat builds a group chat owned by creator. The title is trimmed and
 // must be 1-256 characters after trimming.
 func NewGroupChat(creator uuid.UUID, title string) (*Conversation, []*Member, error) {
+	if creator == uuid.Nil {
+		return nil, nil, ErrInvalidCreator
+	}
 	title = strings.TrimSpace(title)
 	if title == "" || len(title) > maxTitleLen {
 		return nil, nil, ErrInvalidTitle
@@ -129,7 +143,10 @@ type Repository interface {
 
 // CanPost reports whether a member with role r may send messages to c. In
 // direct, group_chat, and channel_group anyone but a subscriber may post; in
-// channel_broadcast only owner and admin may.
+// channel_broadcast only owner and admin may. The caller must pass the role of a
+// Member fetched for THIS conversation (e.g. via Repository.GetMember(ctx, c.ID,
+// userID)), never a role taken from a request body or a lookup on a different
+// conversation.
 func (c *Conversation) CanPost(r Role) bool {
 	switch c.Kind {
 	case KindDirect, KindGroupChat, KindChannelGroup:

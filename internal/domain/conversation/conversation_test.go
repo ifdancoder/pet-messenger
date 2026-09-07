@@ -1,6 +1,7 @@
 package conversation_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,27 @@ func TestKindValid(t *testing.T) {
 	}
 }
 
+func TestRoleValid(t *testing.T) {
+	tests := []struct {
+		role conversation.Role
+		want bool
+	}{
+		{conversation.RoleOwner, true},
+		{conversation.RoleAdmin, true},
+		{conversation.RoleMember, true},
+		{conversation.RoleSubscriber, true},
+		{conversation.Role("guest"), false},
+		{conversation.Role(""), false},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.role), func(t *testing.T) {
+			if got := tt.role.Valid(); got != tt.want {
+				t.Errorf("Role(%q).Valid() = %v, want %v", tt.role, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewDirect(t *testing.T) {
 	a, b := uuid.New(), uuid.New()
 
@@ -50,6 +72,9 @@ func TestNewDirect(t *testing.T) {
 	if c.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
 	}
+	if c.CreatedAt.Location() != time.UTC {
+		t.Errorf("CreatedAt.Location() = %v, want %v", c.CreatedAt.Location(), time.UTC)
+	}
 	if len(members) != 2 {
 		t.Fatalf("len(members) = %d, want 2", len(members))
 	}
@@ -64,6 +89,12 @@ func TestNewDirect(t *testing.T) {
 		if m.JoinedAt.IsZero() {
 			t.Error("expected member JoinedAt to be set")
 		}
+		if m.JoinedAt.Location() != time.UTC {
+			t.Errorf("member JoinedAt.Location() = %v, want %v", m.JoinedAt.Location(), time.UTC)
+		}
+		if !m.JoinedAt.Equal(c.CreatedAt) {
+			t.Errorf("member JoinedAt = %v, want == CreatedAt %v", m.JoinedAt, c.CreatedAt)
+		}
 		seen[m.UserID] = true
 	}
 	if !seen[a] || !seen[b] {
@@ -71,10 +102,23 @@ func TestNewDirect(t *testing.T) {
 	}
 }
 
-func TestNewDirectSameUser(t *testing.T) {
-	a := uuid.New()
-	if _, _, err := conversation.NewDirect(a, a); err == nil {
-		t.Fatal("expected error for identical users, got nil")
+func TestNewDirectInvalidMembers(t *testing.T) {
+	a, b := uuid.New(), uuid.New()
+	tests := []struct {
+		name         string
+		userA, userB uuid.UUID
+	}{
+		{"identical users", a, a},
+		{"nil userA", uuid.Nil, b},
+		{"nil userB", a, uuid.Nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := conversation.NewDirect(tt.userA, tt.userB)
+			if !errors.Is(err, conversation.ErrInvalidDirectMembers) {
+				t.Fatalf("err = %v, want ErrInvalidDirectMembers", err)
+			}
+		})
 	}
 }
 
@@ -103,6 +147,15 @@ func TestNewGroupChat(t *testing.T) {
 	if members[0].ConversationID != c.ID {
 		t.Errorf("member ConversationID = %v, want %v", members[0].ConversationID, c.ID)
 	}
+	if c.CreatedAt.Location() != time.UTC {
+		t.Errorf("CreatedAt.Location() = %v, want %v", c.CreatedAt.Location(), time.UTC)
+	}
+	if members[0].JoinedAt.Location() != time.UTC {
+		t.Errorf("member JoinedAt.Location() = %v, want %v", members[0].JoinedAt.Location(), time.UTC)
+	}
+	if !members[0].JoinedAt.Equal(c.CreatedAt) {
+		t.Errorf("member JoinedAt = %v, want == CreatedAt %v", members[0].JoinedAt, c.CreatedAt)
+	}
 }
 
 func TestNewGroupChatInvalidTitle(t *testing.T) {
@@ -117,10 +170,18 @@ func TestNewGroupChatInvalidTitle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, _, err := conversation.NewGroupChat(creator, tt.title); err == nil {
-				t.Fatalf("expected error for %s title, got nil", tt.name)
+			_, _, err := conversation.NewGroupChat(creator, tt.title)
+			if !errors.Is(err, conversation.ErrInvalidTitle) {
+				t.Fatalf("err = %v, want ErrInvalidTitle for %s title", err, tt.name)
 			}
 		})
+	}
+}
+
+func TestNewGroupChatNilCreator(t *testing.T) {
+	_, _, err := conversation.NewGroupChat(uuid.Nil, "Team")
+	if !errors.Is(err, conversation.ErrInvalidCreator) {
+		t.Fatalf("err = %v, want ErrInvalidCreator", err)
 	}
 }
 
