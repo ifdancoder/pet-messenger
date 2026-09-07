@@ -59,13 +59,57 @@ func TestSchema_EnumTypes(t *testing.T) {
 	}
 }
 
-func TestSchema_MessagesHistoryIndex(t *testing.T) {
-	var reg *string
-	if err := testDB.QueryRow(`SELECT to_regclass($1)`, "public.idx_messages_conversation_created_id").Scan(&reg); err != nil {
-		t.Fatalf("to_regclass(index): %v", err)
+func TestSchema_MessageSeqIndex(t *testing.T) {
+	var isUnique bool
+	err := testDB.QueryRow(`
+		SELECT i.indisunique
+		FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+		WHERE c.relname = 'idx_messages_conversation_seq'`).Scan(&isUnique)
+	if err != nil {
+		t.Fatalf("idx_messages_conversation_seq: %v", err)
 	}
-	if reg == nil {
-		t.Error("expected idx_messages_conversation_created_id to exist")
+	if !isUnique {
+		t.Error("idx_messages_conversation_seq must be UNIQUE")
+	}
+
+	var old *string
+	if err := testDB.QueryRow(`SELECT to_regclass('public.idx_messages_conversation_created_id')`).Scan(&old); err != nil {
+		t.Fatalf("to_regclass(old index): %v", err)
+	}
+	if old != nil {
+		t.Error("idx_messages_conversation_created_id should have been dropped by 000007")
+	}
+}
+
+func TestSchema_MessageSequenceColumns(t *testing.T) {
+	ctx := context.Background()
+
+	var dataType, isNullable string
+	err := testDB.QueryRowContext(ctx, `
+		SELECT data_type, is_nullable FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'seq'`).
+		Scan(&dataType, &isNullable)
+	if err != nil {
+		t.Fatalf("messages.seq column: %v", err)
+	}
+	if dataType != "bigint" || isNullable != "NO" {
+		t.Errorf("messages.seq = %s nullable=%s, want bigint / NO", dataType, isNullable)
+	}
+
+	var cType, cNullable string
+	var cDefault *string
+	err = testDB.QueryRowContext(ctx, `
+		SELECT data_type, is_nullable, column_default FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'conversations' AND column_name = 'next_seq'`).
+		Scan(&cType, &cNullable, &cDefault)
+	if err != nil {
+		t.Fatalf("conversations.next_seq column: %v", err)
+	}
+	if cType != "bigint" || cNullable != "NO" {
+		t.Errorf("conversations.next_seq = %s nullable=%s, want bigint / NO", cType, cNullable)
+	}
+	if cDefault == nil || *cDefault != "0" {
+		t.Errorf("conversations.next_seq default = %v, want 0", cDefault)
 	}
 }
 
