@@ -307,8 +307,8 @@ func TestJoinChannel_NotAChannel(t *testing.T) {
 	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat, Public: true}}
 	s := NewService(repo, &fakeUserRepo{})
 	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), chID)
-	if !errors.Is(err, domainconv.ErrNotChannel) {
-		t.Fatalf("err = %v, want ErrNotChannel", err)
+	if !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound (a non-channel's existence is not disclosed)", err)
 	}
 }
 
@@ -367,8 +367,8 @@ func TestLeaveChannel_NotAChannel(t *testing.T) {
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindDirect}}
 	s := NewService(repo, &fakeUserRepo{})
-	if err := s.LeaveChannel(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotChannel) {
-		t.Fatalf("err = %v, want ErrNotChannel", err)
+	if err := s.LeaveChannel(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound (a non-channel's existence is not disclosed)", err)
 	}
 }
 

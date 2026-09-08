@@ -245,7 +245,13 @@ func (h *ConversationHandler) ListPublicChannels(c *gin.Context) {
 		limit = n
 	}
 
-	list, err := h.svc.ListPublicChannels(c.Request.Context(), c.Query("q"), before, beforeID, limit)
+	// Bound a pathological %-heavy ILIKE pattern: truncate rather than 400.
+	q := c.Query("q")
+	if len(q) > 100 {
+		q = q[:100]
+	}
+
+	list, err := h.svc.ListPublicChannels(c.Request.Context(), q, before, beforeID, limit)
 	if err != nil {
 		writeConversationError(c, err)
 		return

@@ -515,6 +515,10 @@ func TestConversationHandler_ChannelRoutesCoexist(t *testing.T) {
 		openDirect: func(_, _ uuid.UUID) (*domainconv.Conversation, error) {
 			return &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindDirect, LastMessageAt: time.Now().UTC()}, nil
 		},
+		listPublicChannels: func(string, time.Time, uuid.UUID, int) ([]*domainconv.Conversation, error) {
+			return nil, nil
+		},
+		leaveChannel: func(uuid.UUID, uuid.UUID) error { return nil },
 	}}
 	msgH := &MessageHandler{svc: &fakeMessageService{
 		send: func(_, cv uuid.UUID, _ string, _ *uuid.UUID, _ string) (*domainmsg.Message, error) {
@@ -534,6 +538,8 @@ func TestConversationHandler_ChannelRoutesCoexist(t *testing.T) {
 		{http.MethodPost, "/conversations/direct", `{"user_id":"` + uuid.Must(uuid.NewV7()).String() + `"}`},
 		{http.MethodPost, "/conversations/" + cid.String() + "/join", ""},
 		{http.MethodPost, "/conversations/" + cid.String() + "/messages", `{"content":"hi"}`},
+		{http.MethodGet, "/conversations/channels", ""},
+		{http.MethodDelete, "/conversations/" + cid.String() + "/members/me", ""},
 	} {
 		w := doConvJSON(t, rt, tc.method, tc.path, tc.body)
 		if w.Code == http.StatusNotFound {

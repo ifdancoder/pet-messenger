@@ -534,19 +534,44 @@ func TestConversationRepository_ListPublicChannels(t *testing.T) {
 
 func TestConversationRepository_ListPublicChannels_EmptyQueryMatchesAll(t *testing.T) {
 	repo := NewConversationRepository(testDB)
-	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+	ctx := context.Background()
+	owner := createTestUser(t)
 
-	got, err := repo.ListPublicChannels(context.Background(), "", time.Time{}, uuid.Nil, 100)
+	// Seed one public channel with a fresh unique title tag so this test does
+	// not depend on how many other public channels the shared table holds.
+	tag := "empty-q " + randomUsername()
+	c, m, err := conversation.NewChannel(owner.ID, conversation.KindChannelGroup, tag, true)
 	if err != nil {
-		t.Fatalf("ListPublicChannels: %v", err)
+		t.Fatalf("NewChannel: %v", err)
 	}
-	var found bool
-	for _, c := range got {
-		if c.ID == chID {
-			found = true
+	if err := repo.Create(ctx, c, m); err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+
+	contains := func(cs []*conversation.Conversation, id uuid.UUID) bool {
+		for _, cv := range cs {
+			if cv.ID == id {
+				return true
+			}
 		}
+		return false
 	}
-	if !found {
-		t.Fatalf("seeded public channel %s not returned by an empty-query list", chID)
+
+	// Empty query: the seeded row (freshest, unique tag) must be present.
+	empty, err := repo.ListPublicChannels(ctx, "", time.Time{}, uuid.Nil, 50)
+	if err != nil {
+		t.Fatalf("ListPublicChannels(empty): %v", err)
+	}
+	if !contains(empty, c.ID) {
+		t.Fatalf("seeded public channel %s not returned by an empty-query list", c.ID)
+	}
+
+	// Same row must also be reachable via its unique tag.
+	byTag, err := repo.ListPublicChannels(ctx, tag, time.Time{}, uuid.Nil, 50)
+	if err != nil {
+		t.Fatalf("ListPublicChannels(tag): %v", err)
+	}
+	if !contains(byTag, c.ID) {
+		t.Fatalf("seeded public channel %s not returned by a tag query %q", c.ID, tag)
 	}
 }

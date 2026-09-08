@@ -67,6 +67,11 @@ func (h *Hub) IsSubscribed(c *Conn, conversationID uuid.UUID) bool {
 
 // Broadcast enqueues payload on every connection subscribed to conversationID.
 // enqueue never blocks: a connection with a full buffer is closed by enqueue.
+//
+// Broadcast does not re-check membership: a Conn that subscribed while a member
+// keeps receiving events after the user leaves the conversation, until it
+// unsubscribes or disconnects. Closing that gap needs a membership-revocation
+// path (deferred).
 func (h *Hub) Broadcast(conversationID uuid.UUID, payload []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

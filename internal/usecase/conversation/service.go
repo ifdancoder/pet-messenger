@@ -142,15 +142,16 @@ func (s *Service) CreateChannel(ctx context.Context, creator uuid.UUID, kind dom
 
 // JoinChannel adds actor to a public channel and returns the channel. It is
 // idempotent: an actor who is already a member gets the channel back unchanged.
-// A non-channel target, or a channel that is not public, is refused (the latter
-// as ErrNotFound, so a private channel's existence is not disclosed).
+// A non-channel target, or a channel that is not public, is refused as
+// ErrNotFound, so neither a private channel's nor a non-channel conversation's
+// existence is disclosed.
 func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (*domainconv.Conversation, error) {
 	conv, err := s.conversations.GetByID(ctx, channelID)
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
 	}
 	if !conv.Kind.IsChannel() {
-		return nil, domainconv.ErrNotChannel
+		return nil, domainconv.ErrNotFound
 	}
 	if !conv.Public {
 		return nil, domainconv.ErrNotFound
@@ -177,15 +178,29 @@ func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (
 	return conv, nil
 }
 
-// LeaveChannel removes actor's membership from a channel. The owner may leave;
-// the channel then has no owner until ownership is transferred (a later slice).
+// LeaveChannel removes actor's membership from a channel. A non-channel target
+// is refused as ErrNotFound, so a non-channel conversation's existence is not
+// disclosed. The owner may leave; the channel then has no owner until ownership
+// is transferred (a later slice).
+//
+// NOTE: this removes the membership row but does not tear down the departed
+// user's live WebSocket subscription — they keep receiving this conversation's
+// real-time events on an already-open socket until they unsubscribe or
+// reconnect. A cross-pod membership-revocation event for the Hub is deferred to
+// the moderation slice.
+//
+// The owner may leave (a deliberate product choice); for a channel_broadcast
+// this leaves the channel with no one who may post (CanPost requires
+// owner/admin) while it stays public and discoverable. Ownership transfer,
+// admin promotion, and channel delete/archive are a prerequisite slice before
+// launch.
 func (s *Service) LeaveChannel(ctx context.Context, actor, channelID uuid.UUID) error {
 	conv, err := s.conversations.GetByID(ctx, channelID)
 	if err != nil {
 		return err // conversation.ErrNotFound
 	}
 	if !conv.Kind.IsChannel() {
-		return domainconv.ErrNotChannel
+		return domainconv.ErrNotFound
 	}
 	return s.conversations.RemoveMember(ctx, channelID, actor) // conversation.ErrNotMember
 }
