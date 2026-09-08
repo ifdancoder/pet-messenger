@@ -14,6 +14,8 @@ func main() {
 		fxapp.AuthModule,
 		fxapp.ConversationModule,
 		fxapp.MessageModule,
+		fxapp.NATSModule,
+		fxapp.WSModule,
 		fxapp.HTTPModule,
 	).Run()
 }

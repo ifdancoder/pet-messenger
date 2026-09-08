@@ -1,0 +1,66 @@
+// internal/fx/nats.go
+package fxapp
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	natsgo "github.com/nats-io/nats.go"
+	"go.uber.org/fx"
+
+	wsadapter "pet-messenger/internal/adapter/ws"
+	"pet-messenger/internal/config"
+	natsinfra "pet-messenger/internal/infrastructure/nats"
+)
+
+func newNATSConn(lc fx.Lifecycle, cfg *config.Config) (*natsgo.Conn, error) {
+	nc, err := natsgo.Connect(cfg.NATS.URL,
+		natsgo.Name("pet-messenger-api"),
+		natsgo.RetryOnFailedConnect(true),
+		natsgo.MaxReconnects(-1),
+		natsgo.ReconnectWait(2*time.Second),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("nats connect %s: %w", cfg.NATS.URL, err)
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(context.Context) error { return nc.Drain() },
+	})
+	return nc, nil
+}
+
+// startMessageSubscription opens the single per-pod msg.> subscription and feeds
+// every event's raw bytes to the Hub, keyed by the conversation id in the
+// subject.
+func startMessageSubscription(lc fx.Lifecycle, nc *natsgo.Conn, hub *wsadapter.Hub) {
+	var sub *natsgo.Subscription
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			s, err := nc.Subscribe(natsinfra.WildcardSubject, func(m *natsgo.Msg) {
+				if cid, ok := natsinfra.ConversationIDFromSubject(m.Subject); ok {
+					hub.Broadcast(cid, m.Data)
+				}
+			})
+			if err != nil {
+				return fmt.Errorf("subscribe %s: %w", natsinfra.WildcardSubject, err)
+			}
+			sub = s
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			if sub != nil {
+				return sub.Unsubscribe()
+			}
+			return nil
+		},
+	})
+}
+
+var NATSModule = fx.Module("nats",
+	fx.Provide(
+		newNATSConn,
+		natsinfra.NewPublisher,
+	),
+	fx.Invoke(startMessageSubscription),
+)

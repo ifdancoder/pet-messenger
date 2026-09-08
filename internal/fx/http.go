@@ -14,6 +14,7 @@ import (
 	"go.uber.org/fx"
 
 	httpadapter "pet-messenger/internal/adapter/http"
+	wsadapter "pet-messenger/internal/adapter/ws"
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/database"
 	infraauth "pet-messenger/internal/infrastructure/auth"
@@ -24,6 +25,7 @@ func newGinEngine(
 	authHandler *httpadapter.AuthHandler,
 	convHandler *httpadapter.ConversationHandler,
 	msgHandler *httpadapter.MessageHandler,
+	wsHandler *wsadapter.WSHandler,
 	verifier *infraauth.JWTVerifier,
 ) *gin.Engine {
 	r := gin.Default()
@@ -45,6 +47,8 @@ func newGinEngine(
 	conversations.Use(httpadapter.AuthMiddleware(verifier))
 	convHandler.RegisterRoutes(conversations)
 	msgHandler.RegisterRoutes(conversations)
+
+	wsHandler.RegisterRoutes(r)
 
 	return r
 }
