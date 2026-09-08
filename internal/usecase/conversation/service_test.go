@@ -22,6 +22,19 @@ type fakeConvRepo struct {
 		limit    int
 	}
 	listResult []*domainconv.Conversation
+
+	conv      *domainconv.Conversation
+	convErr   error
+	member    *domainconv.Member
+	memberErr error
+
+	added      []*domainconv.Member
+	addErr     error
+	removed    [][2]uuid.UUID
+	removeErr  error
+	publicList []*domainconv.Conversation
+	gotQuery   string
+	gotLimit   int
 }
 
 func (f *fakeConvRepo) Create(_ context.Context, c *domainconv.Conversation, _ []*domainconv.Member) error {
@@ -32,9 +45,21 @@ func (f *fakeConvRepo) Create(_ context.Context, c *domainconv.Conversation, _ [
 	return nil
 }
 func (f *fakeConvRepo) GetByID(context.Context, uuid.UUID) (*domainconv.Conversation, error) {
+	if f.convErr != nil {
+		return nil, f.convErr
+	}
+	if f.conv != nil {
+		return f.conv, nil
+	}
 	return nil, domainconv.ErrNotFound
 }
 func (f *fakeConvRepo) GetMember(context.Context, uuid.UUID, uuid.UUID) (*domainconv.Member, error) {
+	if f.memberErr != nil {
+		return nil, f.memberErr
+	}
+	if f.member != nil {
+		return f.member, nil
+	}
 	return nil, domainconv.ErrNotMember
 }
 func (f *fakeConvRepo) GetDirect(_ context.Context, a, b uuid.UUID) (*domainconv.Conversation, error) {
@@ -49,14 +74,23 @@ func (f *fakeConvRepo) ListForUser(_ context.Context, _ uuid.UUID, before time.T
 	f.listCalledWith.limit = limit
 	return f.listResult, nil
 }
-func (f *fakeConvRepo) AddMember(context.Context, *domainconv.Member) error {
+func (f *fakeConvRepo) AddMember(_ context.Context, m *domainconv.Member) error {
+	if f.addErr != nil {
+		return f.addErr
+	}
+	f.added = append(f.added, m)
 	return nil
 }
-func (f *fakeConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error {
+func (f *fakeConvRepo) RemoveMember(_ context.Context, conversationID, userID uuid.UUID) error {
+	if f.removeErr != nil {
+		return f.removeErr
+	}
+	f.removed = append(f.removed, [2]uuid.UUID{conversationID, userID})
 	return nil
 }
-func (f *fakeConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*domainconv.Conversation, error) {
-	return nil, nil
+func (f *fakeConvRepo) ListPublicChannels(_ context.Context, query string, _ time.Time, _ uuid.UUID, limit int) ([]*domainconv.Conversation, error) {
+	f.gotQuery, f.gotLimit = query, limit
+	return f.publicList, nil
 }
 
 type fakeUserRepo struct {
@@ -197,5 +231,169 @@ func TestListMine_ClampsLimit(t *testing.T) {
 		if convs.listCalledWith.limit != tc.want {
 			t.Errorf("limit %d -> repo got %d, want %d", tc.in, convs.listCalledWith.limit, tc.want)
 		}
+	}
+}
+
+func TestCreateChannel(t *testing.T) {
+	creator := uuid.Must(uuid.NewV7())
+	for _, kind := range []domainconv.Kind{domainconv.KindChannelGroup, domainconv.KindChannelBroadcast} {
+		repo := &fakeConvRepo{}
+		s := NewService(repo, &fakeUserRepo{})
+		c, err := s.CreateChannel(context.Background(), creator, kind, "  News  ", true)
+		if err != nil {
+			t.Fatalf("CreateChannel(%s): %v", kind, err)
+		}
+		if c.Kind != kind || c.Title != "News" || !c.Public {
+			t.Errorf("channel = %+v", c)
+		}
+		if len(repo.created) != 1 {
+			t.Fatalf("Create called %d times, want 1", len(repo.created))
+		}
+	}
+}
+
+func TestCreateChannel_InvalidKind(t *testing.T) {
+	repo := &fakeConvRepo{}
+	s := NewService(repo, &fakeUserRepo{})
+	_, err := s.CreateChannel(context.Background(), uuid.Must(uuid.NewV7()), domainconv.KindGroupChat, "x", true)
+	if !errors.Is(err, domainconv.ErrInvalidKind) {
+		t.Fatalf("err = %v, want ErrInvalidKind", err)
+	}
+	if len(repo.created) != 0 {
+		t.Errorf("Create called despite a bad kind")
+	}
+}
+
+func TestJoinChannel_GroupAddsMember(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
+		memberErr: domainconv.ErrNotMember,
+	}
+	s := NewService(repo, &fakeUserRepo{})
+
+	got, err := s.JoinChannel(context.Background(), actor, chID)
+	if err != nil {
+		t.Fatalf("JoinChannel: %v", err)
+	}
+	if got.ID != chID {
+		t.Errorf("returned conversation %v, want %v", got.ID, chID)
+	}
+	if len(repo.added) != 1 || repo.added[0].UserID != actor || repo.added[0].Role != domainconv.RoleMember {
+		t.Fatalf("added = %+v, want one RoleMember for the actor", repo.added)
+	}
+}
+
+func TestJoinChannel_BroadcastAddsSubscriber(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelBroadcast, Public: true},
+		memberErr: domainconv.ErrNotMember,
+	}
+	s := NewService(repo, &fakeUserRepo{})
+
+	if _, err := s.JoinChannel(context.Background(), actor, chID); err != nil {
+		t.Fatalf("JoinChannel: %v", err)
+	}
+	if len(repo.added) != 1 || repo.added[0].Role != domainconv.RoleSubscriber {
+		t.Fatalf("added = %+v, want one RoleSubscriber", repo.added)
+	}
+}
+
+func TestJoinChannel_NotAChannel(t *testing.T) {
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat, Public: true}}
+	s := NewService(repo, &fakeUserRepo{})
+	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), chID)
+	if !errors.Is(err, domainconv.ErrNotChannel) {
+		t.Fatalf("err = %v, want ErrNotChannel", err)
+	}
+}
+
+func TestJoinChannel_NotPublic(t *testing.T) {
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: false}}
+	s := NewService(repo, &fakeUserRepo{})
+	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), chID)
+	if !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound (a private channel is not disclosed)", err)
+	}
+}
+
+func TestJoinChannel_AlreadyMemberIsIdempotent(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
+		member: &domainconv.Member{ConversationID: chID, UserID: actor, Role: domainconv.RoleMember},
+	}
+	s := NewService(repo, &fakeUserRepo{})
+
+	got, err := s.JoinChannel(context.Background(), actor, chID)
+	if err != nil {
+		t.Fatalf("JoinChannel: %v", err)
+	}
+	if got.ID != chID || len(repo.added) != 0 {
+		t.Fatalf("expected the existing conversation and no AddMember, got %v / added=%+v", got.ID, repo.added)
+	}
+}
+
+func TestJoinChannel_NotFound(t *testing.T) {
+	repo := &fakeConvRepo{convErr: domainconv.ErrNotFound}
+	s := NewService(repo, &fakeUserRepo{})
+	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()))
+	if !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestLeaveChannel(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelBroadcast, Public: true}}
+	s := NewService(repo, &fakeUserRepo{})
+
+	if err := s.LeaveChannel(context.Background(), actor, chID); err != nil {
+		t.Fatalf("LeaveChannel: %v", err)
+	}
+	if len(repo.removed) != 1 || repo.removed[0] != [2]uuid.UUID{chID, actor} {
+		t.Fatalf("removed = %+v", repo.removed)
+	}
+}
+
+func TestLeaveChannel_NotAChannel(t *testing.T) {
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindDirect}}
+	s := NewService(repo, &fakeUserRepo{})
+	if err := s.LeaveChannel(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotChannel) {
+		t.Fatalf("err = %v, want ErrNotChannel", err)
+	}
+}
+
+func TestLeaveChannel_NotMember(t *testing.T) {
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
+		removeErr: domainconv.ErrNotMember,
+	}
+	s := NewService(repo, &fakeUserRepo{})
+	if err := s.LeaveChannel(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotMember) {
+		t.Fatalf("err = %v, want ErrNotMember", err)
+	}
+}
+
+func TestListPublicChannels_TrimsAndClamps(t *testing.T) {
+	repo := &fakeConvRepo{}
+	s := NewService(repo, &fakeUserRepo{})
+	if _, err := s.ListPublicChannels(context.Background(), "  news  ", time.Time{}, uuid.Nil, 999); err != nil {
+		t.Fatalf("ListPublicChannels: %v", err)
+	}
+	if repo.gotQuery != "news" {
+		t.Errorf("query passed to repo = %q, want %q", repo.gotQuery, "news")
+	}
+	if repo.gotLimit != MaxListLimit {
+		t.Errorf("limit passed to repo = %d, want %d", repo.gotLimit, MaxListLimit)
 	}
 }

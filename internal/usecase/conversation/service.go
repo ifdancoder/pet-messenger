@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,6 +123,79 @@ func (s *Service) ListMine(ctx context.Context, me uuid.UUID, before time.Time, 
 	list, err := s.conversations.ListForUser(ctx, me, before, beforeID, EffectiveListLimit(limit))
 	if err != nil {
 		return nil, fmt.Errorf("list conversations: %w", err)
+	}
+	return list, nil
+}
+
+// CreateChannel creates a channel_group or channel_broadcast owned by creator.
+// Kind/title validation lives in the domain constructor.
+func (s *Service) CreateChannel(ctx context.Context, creator uuid.UUID, kind domainconv.Kind, title string, public bool) (*domainconv.Conversation, error) {
+	c, members, err := domainconv.NewChannel(creator, kind, title, public)
+	if err != nil {
+		return nil, err // ErrInvalidCreator / ErrInvalidKind / ErrInvalidTitle
+	}
+	if err := s.conversations.Create(ctx, c, members); err != nil {
+		return nil, fmt.Errorf("create channel: %w", err)
+	}
+	return c, nil
+}
+
+// JoinChannel adds actor to a public channel and returns the channel. It is
+// idempotent: an actor who is already a member gets the channel back unchanged.
+// A non-channel target, or a channel that is not public, is refused (the latter
+// as ErrNotFound, so a private channel's existence is not disclosed).
+func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (*domainconv.Conversation, error) {
+	conv, err := s.conversations.GetByID(ctx, channelID)
+	if err != nil {
+		return nil, err // conversation.ErrNotFound
+	}
+	if !conv.Kind.IsChannel() {
+		return nil, domainconv.ErrNotChannel
+	}
+	if !conv.Public {
+		return nil, domainconv.ErrNotFound
+	}
+	if _, err := s.conversations.GetMember(ctx, channelID, actor); err == nil {
+		return conv, nil
+	} else if !errors.Is(err, domainconv.ErrNotMember) {
+		return nil, fmt.Errorf("check membership: %w", err)
+	}
+
+	role := domainconv.RoleMember
+	if conv.Kind == domainconv.KindChannelBroadcast {
+		role = domainconv.RoleSubscriber
+	}
+	m := &domainconv.Member{
+		ConversationID: channelID,
+		UserID:         actor,
+		Role:           role,
+		JoinedAt:       time.Now().UTC(),
+	}
+	if err := s.conversations.AddMember(ctx, m); err != nil {
+		return nil, fmt.Errorf("add channel member: %w", err)
+	}
+	return conv, nil
+}
+
+// LeaveChannel removes actor's membership from a channel. The owner may leave;
+// the channel then has no owner until ownership is transferred (a later slice).
+func (s *Service) LeaveChannel(ctx context.Context, actor, channelID uuid.UUID) error {
+	conv, err := s.conversations.GetByID(ctx, channelID)
+	if err != nil {
+		return err // conversation.ErrNotFound
+	}
+	if !conv.Kind.IsChannel() {
+		return domainconv.ErrNotChannel
+	}
+	return s.conversations.RemoveMember(ctx, channelID, actor) // conversation.ErrNotMember
+}
+
+// ListPublicChannels returns discoverable channels newest-activity-first. query
+// is a case-insensitive title substring; limit is clamped via EffectiveListLimit.
+func (s *Service) ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error) {
+	list, err := s.conversations.ListPublicChannels(ctx, strings.TrimSpace(query), before, beforeID, EffectiveListLimit(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list public channels: %w", err)
 	}
 	return list, nil
 }
