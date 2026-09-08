@@ -32,3 +32,6 @@ main
 # OS X generated file
 .DS_Store
 
+
+# Git worktrees for isolated feature work
+.worktrees/
