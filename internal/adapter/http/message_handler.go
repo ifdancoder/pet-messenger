@@ -45,7 +45,7 @@ func (h *MessageHandler) RegisterRoutes(rg *gin.RouterGroup) {
 type sendMessageRequest struct {
 	Content        string `json:"content" binding:"required"`
 	ReplyToID      string `json:"reply_to_id"`
-	IdempotencyKey string `json:"idempotency_key"`
+	IdempotencyKey string `json:"idempotency_key" binding:"max=255"`
 }
 
 type editMessageRequest struct {
@@ -100,6 +100,7 @@ func writeMessageError(c *gin.Context, err error) {
 		errors.Is(err, usecasemsg.ErrNotAuthor):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, domainmsg.ErrNotFound),
+		errors.Is(err, domainmsg.ErrConversationNotFound),
 		errors.Is(err, domainconv.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, usecasemsg.ErrReplyNotFound),

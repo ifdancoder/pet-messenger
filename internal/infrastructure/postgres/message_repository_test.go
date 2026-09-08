@@ -759,7 +759,7 @@ func TestMessageRepository_Create_IdempotencyKeyDeduplicates(t *testing.T) {
 		t.Fatalf("retry Create err = %v, want ErrDuplicateIdempotencyKey", err)
 	}
 
-	got, err := repo.GetByIdempotencyKey(ctx, convID, key)
+	got, err := repo.GetByIdempotencyKey(ctx, convID, sender, key)
 	if err != nil {
 		t.Fatalf("GetByIdempotencyKey: %v", err)
 	}
@@ -798,9 +798,41 @@ func TestMessageRepository_Create_NilIdempotencyKeyNeverCollides(t *testing.T) {
 
 func TestMessageRepository_GetByIdempotencyKey_NotFound(t *testing.T) {
 	repo := NewMessageRepository(testDB)
-	convID, _ := seedConversation(t)
-	if _, err := repo.GetByIdempotencyKey(context.Background(), convID, "nope"); !errors.Is(err, message.ErrNotFound) {
+	convID, sender := seedConversation(t)
+	if _, err := repo.GetByIdempotencyKey(context.Background(), convID, sender, "nope"); !errors.Is(err, message.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMessageRepository_Create_SameKeyDifferentSenders(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, senderA := seedConversation(t)
+	// a second member who can post
+	userB := createTestUser(t)
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO conversation_members (conversation_id, user_id, role, joined_at) VALUES ($1, $2, 'member', now())`,
+		convID, userB.ID); err != nil {
+		t.Fatalf("add member B: %v", err)
+	}
+	key := "shared-" + randomUsername()
+	a, _ := message.NewText(convID, senderA, "from A", nil)
+	a.IdempotencyKey = &key
+	b, _ := message.NewText(convID, userB.ID, "from B", nil)
+	b.IdempotencyKey = &key
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	if err := repo.Create(ctx, b); err != nil {
+		t.Fatalf("Create B with same key but different sender must succeed: %v", err)
+	}
+	gotA, err := repo.GetByIdempotencyKey(ctx, convID, senderA, key)
+	if err != nil || gotA.ID != a.ID {
+		t.Fatalf("GetByIdempotencyKey(A) = %v, %v; want a.ID=%v", gotA, err, a.ID)
+	}
+	gotB, err := repo.GetByIdempotencyKey(ctx, convID, userB.ID, key)
+	if err != nil || gotB.ID != b.ID {
+		t.Fatalf("GetByIdempotencyKey(B) = %v, %v; want b.ID=%v", gotB, err, b.ID)
 	}
 }
 

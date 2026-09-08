@@ -44,7 +44,7 @@ func (f *fakeMsgRepo) GetByID(_ context.Context, id uuid.UUID) (*domainmsg.Messa
 	}
 	return nil, domainmsg.ErrNotFound
 }
-func (f *fakeMsgRepo) GetByIdempotencyKey(_ context.Context, _ uuid.UUID, key string) (*domainmsg.Message, error) {
+func (f *fakeMsgRepo) GetByIdempotencyKey(_ context.Context, _ uuid.UUID, _ uuid.UUID, key string) (*domainmsg.Message, error) {
 	if m, ok := f.byKey[key]; ok {
 		return m, nil
 	}
@@ -316,6 +316,9 @@ func TestDeleteMessage_NotAuthor(t *testing.T) {
 	_, err := s.DeleteMessage(context.Background(), uuid.Must(uuid.NewV7()), convID, m.ID)
 	if !errors.Is(err, ErrNotAuthor) {
 		t.Fatalf("err = %v, want ErrNotAuthor", err)
+	}
+	if len(msgs.updated) != 0 {
+		t.Errorf("Update called %d times, want 0", len(msgs.updated))
 	}
 }
 

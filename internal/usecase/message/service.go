@@ -100,9 +100,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, convID uuid.UUID, cont
 
 	if err := s.messages.Create(ctx, m); err != nil {
 		if errors.Is(err, domainmsg.ErrDuplicateIdempotencyKey) {
-			existing, err := s.messages.GetByIdempotencyKey(ctx, convID, idempotencyKey)
+			existing, err := s.messages.GetByIdempotencyKey(ctx, convID, actor, idempotencyKey)
 			if err != nil {
-				return nil, fmt.Errorf("reload after idempotency race: %w", err)
+				return nil, fmt.Errorf("reload after idempotency race: %v", err)
 			}
 			return existing, nil
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,6 +140,21 @@ func TestMessageHandler_Send_MissingContent(t *testing.T) {
 	}
 }
 
+func TestMessageHandler_Send_IdempotencyKeyTooLong(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	h := &MessageHandler{svc: &fakeMessageService{send: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, string) (*domainmsg.Message, error) {
+		t.Fatal("service must not be called")
+		return nil, nil
+	}}}
+	r := msgRouter(h, nil, &actor)
+	key := strings.Repeat("a", 256)
+	w := doMsg(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages",
+		`{"content":"hi","idempotency_key":"`+key+`"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a 256-char idempotency_key", w.Code)
+	}
+}
+
 func TestMessageHandler_Send_BadConversationID(t *testing.T) {
 	actor := uuid.Must(uuid.NewV7())
 	h := &MessageHandler{svc: &fakeMessageService{send: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, string) (*domainmsg.Message, error) {
@@ -187,6 +203,7 @@ func TestMessageHandler_Send_ErrorMapping(t *testing.T) {
 		{"cannot post", usecasemsg.ErrCannotPost, http.StatusForbidden},
 		{"reply missing", usecasemsg.ErrReplyNotFound, http.StatusBadRequest},
 		{"conversation missing", domainconv.ErrNotFound, http.StatusNotFound},
+		{"domain conversation not found", domainmsg.ErrConversationNotFound, http.StatusNotFound},
 		{"empty content", domainmsg.ErrEmptyContent, http.StatusBadRequest},
 	}
 	for _, tc := range cases {

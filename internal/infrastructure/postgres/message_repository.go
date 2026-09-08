@@ -109,7 +109,7 @@ func (r *MessageRepository) Create(ctx context.Context, m *message.Message) erro
 		nullableUUID(m.ReplyToID), m.EditedAt, m.DeletedAt, m.CreatedAt, m.IdempotencyKey,
 	); err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_messages_conversation_idempotency_key" {
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_messages_conv_sender_idempotency_key" {
 			return message.ErrDuplicateIdempotencyKey
 		}
 		return fmt.Errorf("insert message: %w", err)
@@ -133,12 +133,13 @@ func (r *MessageRepository) GetByID(ctx context.Context, id uuid.UUID) (*message
 	return m, nil
 }
 
-// GetByIdempotencyKey returns the message in conversationID that carries the
-// given client idempotency key, or message.ErrNotFound. The (conversation_id,
-// idempotency_key) partial unique index guarantees at most one row.
-func (r *MessageRepository) GetByIdempotencyKey(ctx context.Context, conversationID uuid.UUID, key string) (*message.Message, error) {
-	const q = `SELECT ` + messageColumns + ` FROM messages WHERE conversation_id = $1 AND idempotency_key = $2`
-	m, err := scanMessage(r.db.QueryRowContext(ctx, q, conversationID, key))
+// GetByIdempotencyKey returns the message in conversationID sent by senderID that
+// carries the given client idempotency key, or message.ErrNotFound. The
+// (conversation_id, sender_id, idempotency_key) partial unique index guarantees
+// at most one row.
+func (r *MessageRepository) GetByIdempotencyKey(ctx context.Context, conversationID, senderID uuid.UUID, key string) (*message.Message, error) {
+	const q = `SELECT ` + messageColumns + ` FROM messages WHERE conversation_id = $1 AND sender_id = $2 AND idempotency_key = $3`
+	m, err := scanMessage(r.db.QueryRowContext(ctx, q, conversationID, senderID, key))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, message.ErrNotFound
 	}
