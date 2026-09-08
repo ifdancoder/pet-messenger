@@ -12,6 +12,7 @@ func main() {
 		fxapp.ConfigModule,
 		fxapp.DatabaseModule,
 		fxapp.AuthModule,
+		fxapp.ConversationModule,
 		fxapp.HTTPModule,
 	).Run()
 }

@@ -17,6 +17,7 @@ func TestModulesWireTogether(t *testing.T) {
 		fxapp.ConfigModule,
 		fxapp.DatabaseModule,
 		fxapp.AuthModule,
+		fxapp.ConversationModule,
 		fxapp.HTTPModule,
 	); err != nil {
 		t.Fatalf("fx graph does not resolve: %v", err)

@@ -16,9 +16,15 @@ import (
 	httpadapter "pet-messenger/internal/adapter/http"
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/database"
+	infraauth "pet-messenger/internal/infrastructure/auth"
 )
 
-func newGinEngine(db database.Service, authHandler *httpadapter.AuthHandler) *gin.Engine {
+func newGinEngine(
+	db database.Service,
+	authHandler *httpadapter.AuthHandler,
+	convHandler *httpadapter.ConversationHandler,
+	verifier *infraauth.JWTVerifier,
+) *gin.Engine {
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"},
@@ -32,6 +38,10 @@ func newGinEngine(db database.Service, authHandler *httpadapter.AuthHandler) *gi
 	})
 
 	authHandler.RegisterRoutes(r.Group("/auth"))
+
+	conversations := r.Group("/conversations")
+	conversations.Use(httpadapter.AuthMiddleware(verifier))
+	convHandler.RegisterRoutes(conversations)
 
 	return r
 }
