@@ -78,6 +78,9 @@ func TestNewDirect(t *testing.T) {
 	if c.CreatedAt.Location() != time.UTC {
 		t.Errorf("CreatedAt.Location() = %v, want %v", c.CreatedAt.Location(), time.UTC)
 	}
+	if !c.LastMessageAt.Equal(c.CreatedAt) {
+		t.Errorf("LastMessageAt = %v, want == CreatedAt %v", c.LastMessageAt, c.CreatedAt)
+	}
 	if len(members) != 2 {
 		t.Fatalf("len(members) = %d, want 2", len(members))
 	}
@@ -152,6 +155,9 @@ func TestNewGroupChat(t *testing.T) {
 	}
 	if c.CreatedAt.Location() != time.UTC {
 		t.Errorf("CreatedAt.Location() = %v, want %v", c.CreatedAt.Location(), time.UTC)
+	}
+	if !c.LastMessageAt.Equal(c.CreatedAt) {
+		t.Errorf("LastMessageAt = %v, want == CreatedAt %v", c.LastMessageAt, c.CreatedAt)
 	}
 	if members[0].JoinedAt.Location() != time.UTC {
 		t.Errorf("member JoinedAt.Location() = %v, want %v", members[0].JoinedAt.Location(), time.UTC)

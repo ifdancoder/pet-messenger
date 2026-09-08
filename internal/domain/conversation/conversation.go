@@ -63,6 +63,10 @@ var (
 	ErrInvalidCreator       = errors.New("conversation: creator must be a valid user id")
 	ErrNotFound             = errors.New("conversation: not found")
 	ErrNotMember            = errors.New("conversation: user is not a member")
+	// ErrDirectExists is returned by Repository.Create when a direct conversation
+	// between the same two users already exists (unique-violation on direct_key).
+	// The get-or-create direct usecase treats it as "lost a race, re-read".
+	ErrDirectExists = errors.New("conversation: a direct conversation between these users already exists")
 )
 
 const maxTitleLen = 256
@@ -75,6 +79,10 @@ type Conversation struct {
 	Title     string
 	AvatarURL string
 	CreatedAt time.Time
+	// LastMessageAt is the denormalized "last activity" timestamp used to sort
+	// conversation lists. It equals CreatedAt for a conversation with no
+	// messages and is advanced by the message repository as messages are sent.
+	LastMessageAt time.Time
 }
 
 // Member is a user's membership in a conversation. MutedUntil and
@@ -96,9 +104,10 @@ func NewDirect(userA, userB uuid.UUID) (*Conversation, []*Member, error) {
 	}
 	now := time.Now().UTC()
 	c := &Conversation{
-		ID:        uuid.Must(uuid.NewV7()),
-		Kind:      KindDirect,
-		CreatedAt: now,
+		ID:            uuid.Must(uuid.NewV7()),
+		Kind:          KindDirect,
+		CreatedAt:     now,
+		LastMessageAt: now,
 	}
 	members := []*Member{
 		{ConversationID: c.ID, UserID: userA, Role: RoleMember, JoinedAt: now},
@@ -119,10 +128,11 @@ func NewGroupChat(creator uuid.UUID, title string) (*Conversation, []*Member, er
 	}
 	now := time.Now().UTC()
 	c := &Conversation{
-		ID:        uuid.Must(uuid.NewV7()),
-		Kind:      KindGroupChat,
-		Title:     title,
-		CreatedAt: now,
+		ID:            uuid.Must(uuid.NewV7()),
+		Kind:          KindGroupChat,
+		Title:         title,
+		CreatedAt:     now,
+		LastMessageAt: now,
 	}
 	members := []*Member{
 		{ConversationID: c.ID, UserID: creator, Role: RoleOwner, JoinedAt: now},
@@ -134,11 +144,21 @@ func NewGroupChat(creator uuid.UUID, title string) (*Conversation, []*Member, er
 // implemented in internal/infrastructure/postgres in a later stage. The method
 // set grows as usecases that need AddMember / read-cursor updates arrive.
 type Repository interface {
-	// Create persists the conversation and its founding members atomically.
+	// Create persists the conversation and its founding members atomically. For
+	// a KindDirect conversation it also writes the order-independent direct_key;
+	// a unique-violation on that key is returned as ErrDirectExists.
 	Create(ctx context.Context, c *Conversation, members []*Member) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Conversation, error)
 	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*Member, error)
-	ListForUser(ctx context.Context, userID uuid.UUID) ([]*Conversation, error)
+	// GetDirect returns the direct conversation between userA and userB
+	// regardless of argument order, or ErrNotFound if there is none.
+	GetDirect(ctx context.Context, userA, userB uuid.UUID) (*Conversation, error)
+	// ListForUser returns the caller's conversations ordered by
+	// (LastMessageAt, ID) descending — newest activity first. A zero `before`
+	// starts from the newest; otherwise only rows strictly older than the
+	// (before, beforeID) cursor are returned. limit bounds the page size and
+	// callers pass a positive, already-clamped value.
+	ListForUser(ctx context.Context, userID uuid.UUID, before time.Time, beforeID uuid.UUID, limit int) ([]*Conversation, error)
 }
 
 // CanPost reports whether a member with role r may send messages to c. In

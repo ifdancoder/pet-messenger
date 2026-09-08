@@ -223,7 +223,7 @@ func TestConversationRepository_ListForUser(t *testing.T) {
 		t.Fatalf("Create cOther: %v", err)
 	}
 
-	list, err := repo.ListForUser(ctx, me.ID)
+	list, err := repo.ListForUser(ctx, me.ID, time.Time{}, uuid.Nil, 50)
 	if err != nil {
 		t.Fatalf("ListForUser: %v", err)
 	}
@@ -233,4 +233,114 @@ func TestConversationRepository_ListForUser(t *testing.T) {
 	if list[0].ID != c2.ID || list[1].ID != c1.ID {
 		t.Errorf("order = [%v, %v], want newest-first [%v, %v]", list[0].ID, list[1].ID, c2.ID, c1.ID)
 	}
+}
+
+func TestConversationRepository_GetDirect_FoundOrderIndependent(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	a := createTestUser(t)
+	b := createTestUser(t)
+
+	c, members, err := conversation.NewDirect(a.ID, b.ID)
+	if err != nil {
+		t.Fatalf("NewDirect: %v", err)
+	}
+	if err := repo.Create(ctx, c, members); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Look it up with the arguments in the opposite order.
+	got, err := repo.GetDirect(ctx, b.ID, a.ID)
+	if err != nil {
+		t.Fatalf("GetDirect: %v", err)
+	}
+	if got.ID != c.ID {
+		t.Errorf("ID = %v, want %v", got.ID, c.ID)
+	}
+	if got.Kind != conversation.KindDirect {
+		t.Errorf("Kind = %q, want %q", got.Kind, conversation.KindDirect)
+	}
+	within(t, got.LastMessageAt, c.CreatedAt, time.Second)
+}
+
+func TestConversationRepository_GetDirect_NotFound(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	a := createTestUser(t)
+	b := createTestUser(t)
+
+	_, err := repo.GetDirect(ctx, a.ID, b.ID)
+	if !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConversationRepository_Create_DuplicateDirectIsErrDirectExists(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	a := createTestUser(t)
+	b := createTestUser(t)
+
+	c1, m1, err := conversation.NewDirect(a.ID, b.ID)
+	if err != nil {
+		t.Fatalf("NewDirect: %v", err)
+	}
+	if err := repo.Create(ctx, c1, m1); err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+
+	// Same pair, arguments reversed -> same direct_key -> unique violation.
+	c2, m2, err := conversation.NewDirect(b.ID, a.ID)
+	if err != nil {
+		t.Fatalf("NewDirect reversed: %v", err)
+	}
+	err = repo.Create(ctx, c2, m2)
+	if !errors.Is(err, conversation.ErrDirectExists) {
+		t.Fatalf("err = %v, want ErrDirectExists", err)
+	}
+}
+
+func TestConversationRepository_ListForUser_KeysetPaginates(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	me := createTestUser(t)
+
+	var created []*conversation.Conversation
+	for i := 0; i < 3; i++ {
+		c, m, err := conversation.NewGroupChat(me.ID, "chat")
+		if err != nil {
+			t.Fatalf("NewGroupChat: %v", err)
+		}
+		if err := repo.Create(ctx, c, m); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		created = append(created, c)
+		time.Sleep(2 * time.Millisecond)
+	}
+	// created[2] is newest.
+
+	page1, err := repo.ListForUser(ctx, me.ID, time.Time{}, uuid.Nil, 2)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) != 2 || page1[0].ID != created[2].ID || page1[1].ID != created[1].ID {
+		t.Fatalf("page1 ids = %v, want [%v %v]", idsOf(page1), created[2].ID, created[1].ID)
+	}
+
+	last := page1[len(page1)-1]
+	page2, err := repo.ListForUser(ctx, me.ID, last.LastMessageAt, last.ID, 2)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2) != 1 || page2[0].ID != created[0].ID {
+		t.Fatalf("page2 ids = %v, want [%v]", idsOf(page2), created[0].ID)
+	}
+}
+
+func idsOf(cs []*conversation.Conversation) []uuid.UUID {
+	out := make([]uuid.UUID, len(cs))
+	for i, c := range cs {
+		out[i] = c.ID
+	}
+	return out
 }
