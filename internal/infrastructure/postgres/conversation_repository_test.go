@@ -410,3 +410,143 @@ func idsOf(cs []*conversation.Conversation) []uuid.UUID {
 	}
 	return out
 }
+
+// seedChannel creates a public channel of the given kind owned by a fresh user
+// and returns the conversation id and the owner id.
+func seedChannel(t *testing.T, kind conversation.Kind) (channelID, ownerID uuid.UUID) {
+	t.Helper()
+	owner := createTestUser(t)
+	c, members, err := conversation.NewChannel(owner.ID, kind, "chan "+randomUsername(), true)
+	if err != nil {
+		t.Fatalf("NewChannel: %v", err)
+	}
+	if err := NewConversationRepository(testDB).Create(context.Background(), c, members); err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+	return c.ID, owner.ID
+}
+
+func TestConversationRepository_CreateChannel_PublicRoundTrips(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelBroadcast)
+
+	got, err := repo.GetByID(ctx, chID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Kind != conversation.KindChannelBroadcast || !got.Public {
+		t.Fatalf("got %+v, want a public channel_broadcast", got)
+	}
+}
+
+func TestConversationRepository_AddMember_AndIdempotent(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+	joiner := createTestUser(t)
+
+	m := &conversation.Member{ConversationID: chID, UserID: joiner.ID, Role: conversation.RoleMember, JoinedAt: time.Now().UTC()}
+	if err := repo.AddMember(ctx, m); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	got, err := repo.GetMember(ctx, chID, joiner.ID)
+	if err != nil || got.Role != conversation.RoleMember {
+		t.Fatalf("GetMember after AddMember = %v, %v", got, err)
+	}
+	// second AddMember for the same pair must not error
+	if err := repo.AddMember(ctx, m); err != nil {
+		t.Fatalf("idempotent AddMember: %v", err)
+	}
+}
+
+func TestConversationRepository_RemoveMember(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, ownerID := seedChannel(t, conversation.KindChannelGroup)
+
+	if err := repo.RemoveMember(ctx, chID, ownerID); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
+	}
+	if _, err := repo.GetMember(ctx, chID, ownerID); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatalf("GetMember after remove = %v, want ErrNotMember", err)
+	}
+	// removing again → ErrNotMember
+	if err := repo.RemoveMember(ctx, chID, ownerID); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatalf("second RemoveMember = %v, want ErrNotMember", err)
+	}
+}
+
+func TestConversationRepository_ListPublicChannels(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	owner := createTestUser(t)
+
+	// a private channel and a group chat must NOT appear
+	priv, pm, _ := conversation.NewChannel(owner.ID, conversation.KindChannelGroup, "private "+randomUsername(), false)
+	if err := repo.Create(ctx, priv, pm); err != nil {
+		t.Fatalf("create private: %v", err)
+	}
+	gc, gm, _ := conversation.NewGroupChat(owner.ID, "group "+randomUsername())
+	if err := repo.Create(ctx, gc, gm); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+
+	tag := randomUsername()
+	var want []uuid.UUID
+	for i := 0; i < 3; i++ {
+		c, m, _ := conversation.NewChannel(owner.ID, conversation.KindChannelBroadcast, "News "+tag, true)
+		if err := repo.Create(ctx, c, m); err != nil {
+			t.Fatalf("create public #%d: %v", i, err)
+		}
+		want = append(want, c.ID)
+		time.Sleep(2 * time.Millisecond)
+	}
+	// want[2] is newest.
+
+	got, err := repo.ListPublicChannels(ctx, "news "+tag, time.Time{}, uuid.Nil, 10)
+	if err != nil {
+		t.Fatalf("ListPublicChannels: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3 (private + group_chat excluded, ILIKE matched)", len(got))
+	}
+	if got[0].ID != want[2] || got[2].ID != want[0] {
+		t.Fatalf("order = %v, want newest-first %v", idsOf(got), []uuid.UUID{want[2], want[1], want[0]})
+	}
+	for _, c := range got {
+		if !c.Public || c.Kind != conversation.KindChannelBroadcast {
+			t.Fatalf("returned a non-public / non-channel row: %+v", c)
+		}
+	}
+
+	// keyset: page of 2, then the rest
+	page1, err := repo.ListPublicChannels(ctx, "news "+tag, time.Time{}, uuid.Nil, 2)
+	if err != nil || len(page1) != 2 {
+		t.Fatalf("page1 = %v, %v", idsOf(page1), err)
+	}
+	last := page1[len(page1)-1]
+	page2, err := repo.ListPublicChannels(ctx, "news "+tag, last.LastMessageAt, last.ID, 2)
+	if err != nil || len(page2) != 1 || page2[0].ID != want[0] {
+		t.Fatalf("page2 = %v, %v", idsOf(page2), err)
+	}
+}
+
+func TestConversationRepository_ListPublicChannels_EmptyQueryMatchesAll(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+
+	got, err := repo.ListPublicChannels(context.Background(), "", time.Time{}, uuid.Nil, 100)
+	if err != nil {
+		t.Fatalf("ListPublicChannels: %v", err)
+	}
+	var found bool
+	for _, c := range got {
+		if c.ID == chID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("seeded public channel %s not returned by an empty-query list", chID)
+	}
+}

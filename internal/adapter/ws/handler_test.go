@@ -40,6 +40,15 @@ func (s stubConvRepo) GetDirect(context.Context, uuid.UUID, uuid.UUID) (*convers
 func (s stubConvRepo) ListForUser(context.Context, uuid.UUID, time.Time, uuid.UUID, int) ([]*conversation.Conversation, error) {
 	return nil, nil
 }
+func (s stubConvRepo) AddMember(context.Context, *conversation.Member) error {
+	return nil
+}
+func (s stubConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+func (s stubConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*conversation.Conversation, error) {
+	return nil, nil
+}
 
 func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
 	t.Helper()

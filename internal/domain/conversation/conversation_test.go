@@ -266,6 +266,74 @@ func TestCanPost(t *testing.T) {
 	}
 }
 
+func TestNewChannel(t *testing.T) {
+	creator := uuid.Must(uuid.NewV7())
+	for _, kind := range []conversation.Kind{conversation.KindChannelGroup, conversation.KindChannelBroadcast} {
+		c, members, err := conversation.NewChannel(creator, kind, "  Announcements  ", true)
+		if err != nil {
+			t.Fatalf("NewChannel(%s): %v", kind, err)
+		}
+		if c.Kind != kind || c.Title != "Announcements" || !c.Public {
+			t.Errorf("channel = %+v", c)
+		}
+		if c.ID.Version() != 7 || c.CreatedAt.IsZero() || !c.LastMessageAt.Equal(c.CreatedAt) {
+			t.Errorf("channel timestamps/id wrong: %+v", c)
+		}
+		if len(members) != 1 || members[0].UserID != creator || members[0].Role != conversation.RoleOwner {
+			t.Errorf("members = %+v", members)
+		}
+	}
+}
+
+func TestNewChannel_PrivateDefault(t *testing.T) {
+	c, _, err := conversation.NewChannel(uuid.Must(uuid.NewV7()), conversation.KindChannelGroup, "x", false)
+	if err != nil {
+		t.Fatalf("NewChannel: %v", err)
+	}
+	if c.Public {
+		t.Error("Public should be false when public=false")
+	}
+}
+
+func TestNewChannel_Invalid(t *testing.T) {
+	creator := uuid.Must(uuid.NewV7())
+	tests := []struct {
+		name    string
+		creator uuid.UUID
+		kind    conversation.Kind
+		title   string
+		wantErr error
+	}{
+		{"nil creator", uuid.Nil, conversation.KindChannelGroup, "x", conversation.ErrInvalidCreator},
+		{"kind direct", creator, conversation.KindDirect, "x", conversation.ErrInvalidKind},
+		{"kind group_chat", creator, conversation.KindGroupChat, "x", conversation.ErrInvalidKind},
+		{"blank title", creator, conversation.KindChannelBroadcast, "   ", conversation.ErrInvalidTitle},
+		{"title too long", creator, conversation.KindChannelGroup, strings.Repeat("x", 257), conversation.ErrInvalidTitle},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := conversation.NewChannel(tt.creator, tt.kind, tt.title, false)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestKind_IsChannel(t *testing.T) {
+	for k, want := range map[conversation.Kind]bool{
+		conversation.KindDirect:           false,
+		conversation.KindGroupChat:        false,
+		conversation.KindChannelGroup:     true,
+		conversation.KindChannelBroadcast: true,
+		conversation.Kind("bogus"):        false,
+	} {
+		if got := k.IsChannel(); got != want {
+			t.Errorf("Kind(%q).IsChannel() = %v, want %v", k, got, want)
+		}
+	}
+}
+
 func TestIsMuted(t *testing.T) {
 	now := time.Now().UTC()
 	future := now.Add(time.Hour)

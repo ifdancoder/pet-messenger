@@ -49,6 +49,15 @@ func (f *fakeConvRepo) ListForUser(_ context.Context, _ uuid.UUID, before time.T
 	f.listCalledWith.limit = limit
 	return f.listResult, nil
 }
+func (f *fakeConvRepo) AddMember(context.Context, *domainconv.Member) error {
+	return nil
+}
+func (f *fakeConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+func (f *fakeConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*domainconv.Conversation, error) {
+	return nil, nil
+}
 
 type fakeUserRepo struct {
 	exists map[uuid.UUID]bool

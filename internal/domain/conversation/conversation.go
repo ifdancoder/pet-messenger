@@ -34,6 +34,11 @@ func (k Kind) Valid() bool {
 	}
 }
 
+// IsChannel reports whether k is one of the two channel kinds.
+func (k Kind) IsChannel() bool {
+	return k == KindChannelGroup || k == KindChannelBroadcast
+}
+
 // Role is a member's role within a conversation.
 type Role string
 
@@ -67,6 +72,9 @@ var (
 	// between the same two users already exists (unique-violation on direct_key).
 	// The get-or-create direct usecase treats it as "lost a race, re-read".
 	ErrDirectExists = errors.New("conversation: a direct conversation between these users already exists")
+	// ErrNotChannel is returned when a join / leave / discovery operation
+	// targets a conversation that is not a channel_group or channel_broadcast.
+	ErrNotChannel = errors.New("conversation: not a channel")
 )
 
 const maxTitleLen = 256
@@ -78,6 +86,9 @@ type Conversation struct {
 	Kind      Kind
 	Title     string
 	AvatarURL string
+	// Public marks a channel as discoverable via ListPublicChannels and
+	// self-joinable. Always false for direct conversations and group chats.
+	Public    bool
 	CreatedAt time.Time
 	// LastMessageAt is the denormalized "last activity" timestamp used to sort
 	// conversation lists. It equals CreatedAt for a conversation with no
@@ -140,6 +151,36 @@ func NewGroupChat(creator uuid.UUID, title string) (*Conversation, []*Member, er
 	return c, members, nil
 }
 
+// NewChannel builds a channel owned by creator. kind must be KindChannelGroup or
+// KindChannelBroadcast. The title is trimmed and must be 1-256 characters. A
+// public channel is discoverable via Repository.ListPublicChannels and
+// self-joinable; a private one is only reachable by its members.
+func NewChannel(creator uuid.UUID, kind Kind, title string, public bool) (*Conversation, []*Member, error) {
+	if creator == uuid.Nil {
+		return nil, nil, ErrInvalidCreator
+	}
+	if !kind.IsChannel() {
+		return nil, nil, ErrInvalidKind
+	}
+	title = strings.TrimSpace(title)
+	if title == "" || len(title) > maxTitleLen {
+		return nil, nil, ErrInvalidTitle
+	}
+	now := time.Now().UTC()
+	c := &Conversation{
+		ID:            uuid.Must(uuid.NewV7()),
+		Kind:          kind,
+		Title:         title,
+		Public:        public,
+		CreatedAt:     now,
+		LastMessageAt: now,
+	}
+	members := []*Member{
+		{ConversationID: c.ID, UserID: creator, Role: RoleOwner, JoinedAt: now},
+	}
+	return c, members, nil
+}
+
 // Repository is the persistence port for the conversation aggregate. It is
 // implemented in internal/infrastructure/postgres in a later stage. The method
 // set grows as usecases that need AddMember / read-cursor updates arrive.
@@ -159,6 +200,21 @@ type Repository interface {
 	// (before, beforeID) cursor are returned. limit bounds the page size and
 	// callers pass a positive, already-clamped value.
 	ListForUser(ctx context.Context, userID uuid.UUID, before time.Time, beforeID uuid.UUID, limit int) ([]*Conversation, error)
+	// AddMember inserts one membership row. If the user is already a member it
+	// returns nil (idempotent), so a concurrent double-join converges. Callers
+	// that need to know whether the row was newly added must check membership
+	// first.
+	AddMember(ctx context.Context, m *Member) error
+	// RemoveMember deletes the user's membership, or returns ErrNotMember if
+	// there was no such row.
+	RemoveMember(ctx context.Context, conversationID, userID uuid.UUID) error
+	// ListPublicChannels returns public channel_group / channel_broadcast
+	// conversations ordered by (LastMessageAt, ID) descending — newest activity
+	// first. A non-empty query filters by a case-insensitive title substring. A
+	// zero `before` starts from the newest; otherwise only rows strictly older
+	// than the (before, beforeID) cursor are returned. limit is a positive,
+	// already-clamped page size.
+	ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*Conversation, error)
 }
 
 // CanPost reports whether a member with role r may send messages to c. In

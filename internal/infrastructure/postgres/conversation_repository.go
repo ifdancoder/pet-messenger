@@ -59,10 +59,10 @@ func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Con
 	}
 
 	const convQ = `
-		INSERT INTO conversations (id, kind, title, avatar_url, created_at, last_message_at, direct_key)
-		VALUES ($1, $2::conversation_kind, $3, $4, $5, $6, $7)`
+		INSERT INTO conversations (id, kind, title, avatar_url, public, created_at, last_message_at, direct_key)
+		VALUES ($1, $2::conversation_kind, $3, $4, $5, $6, $7, $8)`
 	if _, err := tx.ExecContext(ctx, convQ,
-		c.ID, string(c.Kind), c.Title, c.AvatarURL, c.CreatedAt, lastMessageAt, directKeyParam,
+		c.ID, string(c.Kind), c.Title, c.AvatarURL, c.Public, c.CreatedAt, lastMessageAt, directKeyParam,
 	); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_conversations_direct_key" {
@@ -89,12 +89,12 @@ func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Con
 }
 
 func (r *ConversationRepository) GetByID(ctx context.Context, id uuid.UUID) (*conversation.Conversation, error) {
-	const q = `SELECT id, kind, title, avatar_url, created_at, last_message_at FROM conversations WHERE id = $1`
+	const q = `SELECT id, kind, title, avatar_url, public, created_at, last_message_at FROM conversations WHERE id = $1`
 	var (
 		c    conversation.Conversation
 		kind string
 	)
-	err := r.db.QueryRowContext(ctx, q, id).Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.CreatedAt, &c.LastMessageAt)
+	err := r.db.QueryRowContext(ctx, q, id).Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, conversation.ErrNotFound
 	}
@@ -138,7 +138,7 @@ func (r *ConversationRepository) GetMember(ctx context.Context, conversationID, 
 
 func (r *ConversationRepository) GetDirect(ctx context.Context, userA, userB uuid.UUID) (*conversation.Conversation, error) {
 	const q = `
-		SELECT id, kind, title, avatar_url, created_at, last_message_at
+		SELECT id, kind, title, avatar_url, public, created_at, last_message_at
 		FROM conversations
 		WHERE kind = 'direct' AND direct_key = $1`
 	var (
@@ -146,7 +146,7 @@ func (r *ConversationRepository) GetDirect(ctx context.Context, userA, userB uui
 		kind string
 	)
 	err := r.db.QueryRowContext(ctx, q, directKey(userA, userB)).
-		Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.CreatedAt, &c.LastMessageAt)
+		Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, conversation.ErrNotFound
 	}
@@ -173,7 +173,7 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 	}
 
 	const q = `
-		SELECT c.id, c.kind, c.title, c.avatar_url, c.created_at, c.last_message_at
+		SELECT c.id, c.kind, c.title, c.avatar_url, c.public, c.created_at, c.last_message_at
 		FROM conversations c
 		JOIN conversation_members m ON m.conversation_id = c.id
 		WHERE m.user_id = $1
@@ -192,7 +192,7 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 			c    conversation.Conversation
 			kind string
 		)
-		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.CreatedAt, &c.LastMessageAt); err != nil {
+		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt); err != nil {
 			return nil, fmt.Errorf("scan conversation row: %w", err)
 		}
 		c.Kind = conversation.Kind(kind)
@@ -200,6 +200,90 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate conversation rows: %w", err)
+	}
+	return out, nil
+}
+
+// AddMember inserts one membership row; a duplicate (the user is already a
+// member) is swallowed so a concurrent double-join converges on one row.
+func (r *ConversationRepository) AddMember(ctx context.Context, m *conversation.Member) error {
+	const q = `
+		INSERT INTO conversation_members (conversation_id, user_id, role, joined_at, muted_until, last_read_message_id)
+		VALUES ($1, $2, $3::conversation_role, $4, $5, $6)`
+	_, err := r.db.ExecContext(ctx, q,
+		m.ConversationID, m.UserID, string(m.Role), m.JoinedAt, m.MutedUntil, nullableUUID(m.LastReadMessageID),
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil // the (conversation_id, user_id) PK — already a member
+		}
+		return fmt.Errorf("insert conversation member: %w", err)
+	}
+	return nil
+}
+
+// RemoveMember deletes the user's membership, or returns ErrNotMember.
+func (r *ConversationRepository) RemoveMember(ctx context.Context, conversationID, userID uuid.UUID) error {
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM conversation_members WHERE conversation_id = $1 AND user_id = $2`,
+		conversationID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("delete conversation member: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if n == 0 {
+		return conversation.ErrNotMember
+	}
+	return nil
+}
+
+// ListPublicChannels returns public channels newest-activity-first with a
+// (last_message_at, id) keyset. A non-empty query is a case-insensitive title
+// substring filter. The idx_conversations_public_channels partial index backs
+// the ORDER BY. limit is defensively clamped.
+func (r *ConversationRepository) ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*conversation.Conversation, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var beforePtr *time.Time
+	if !before.IsZero() {
+		b := before.UTC()
+		beforePtr = &b
+	}
+
+	const q = `
+		SELECT id, kind, title, avatar_url, public, created_at, last_message_at
+		FROM conversations
+		WHERE public AND kind IN ('channel_group', 'channel_broadcast')
+		  AND ($1 = '' OR title ILIKE '%' || $1 || '%')
+		  AND ($2::timestamptz IS NULL OR (last_message_at, id) < ($2, $3))
+		ORDER BY last_message_at DESC, id DESC
+		LIMIT $4`
+	rows, err := r.db.QueryContext(ctx, q, query, beforePtr, beforeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query public channels: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*conversation.Conversation
+	for rows.Next() {
+		var (
+			c    conversation.Conversation
+			kind string
+		)
+		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt); err != nil {
+			return nil, fmt.Errorf("scan public channel row: %w", err)
+		}
+		c.Kind = conversation.Kind(kind)
+		out = append(out, &c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate public channel rows: %w", err)
 	}
 	return out, nil
 }
