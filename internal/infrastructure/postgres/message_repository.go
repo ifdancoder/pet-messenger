@@ -69,6 +69,10 @@ func scanMessage(s rowScanner) (*message.Message, error) {
 // explicitly; under a higher isolation level the same interleaving would raise a
 // 40001 serialization error instead.
 //
+// The same UPDATE also advances the conversation's last_message_at to
+// GREATEST(last_message_at, m.CreatedAt) — the conversation-list activity sort
+// key — under the same row lock, so it is monotonic across serialized sends.
+//
 // Create locks the conversations row first, then the FK targets (users,
 // messages); any future usecase sharing this transaction must keep that lock
 // order to avoid deadlock. The spec §4 NATS publish happens after Create returns,
@@ -82,8 +86,12 @@ func (r *MessageRepository) Create(ctx context.Context, m *message.Message) erro
 
 	var seq int64
 	err = tx.QueryRowContext(ctx,
-		`UPDATE conversations SET last_seq = last_seq + 1 WHERE id = $1 RETURNING last_seq`,
-		m.ConversationID,
+		`UPDATE conversations
+		 SET last_seq = last_seq + 1,
+		     last_message_at = GREATEST(last_message_at, $2)
+		 WHERE id = $1
+		 RETURNING last_seq`,
+		m.ConversationID, m.CreatedAt,
 	).Scan(&seq)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("allocate seq: %w", message.ErrConversationNotFound)

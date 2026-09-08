@@ -664,3 +664,69 @@ func TestMessageRepository_ListBeforeSeq_NegativeBeforeSeqSameAsZero(t *testing.
 		t.Fatalf("negative beforeSeq (%v) must match zero (%v)", b, a)
 	}
 }
+
+func TestMessageRepository_Create_AdvancesLastMessageAt(t *testing.T) {
+	ctx := context.Background()
+	msgRepo := NewMessageRepository(testDB)
+	convRepo := NewConversationRepository(testDB)
+	convID, sender := seedConversation(t)
+
+	before, err := convRepo.GetByID(ctx, convID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+
+	m, err := message.NewText(convID, sender, "hello", nil)
+	if err != nil {
+		t.Fatalf("NewText: %v", err)
+	}
+	if err := msgRepo.Create(ctx, m); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	after, err := convRepo.GetByID(ctx, convID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if !after.LastMessageAt.After(before.LastMessageAt) {
+		t.Fatalf("last_message_at not advanced: before=%v after=%v", before.LastMessageAt, after.LastMessageAt)
+	}
+	within(t, after.LastMessageAt, m.CreatedAt, time.Second)
+}
+
+func TestMessageRepository_Create_LastMessageAtIsMonotonic(t *testing.T) {
+	ctx := context.Background()
+	msgRepo := NewMessageRepository(testDB)
+	convRepo := NewConversationRepository(testDB)
+	convID, sender := seedConversation(t)
+
+	recent, err := message.NewText(convID, sender, "recent", nil)
+	if err != nil {
+		t.Fatalf("NewText recent: %v", err)
+	}
+	if err := msgRepo.Create(ctx, recent); err != nil {
+		t.Fatalf("Create recent: %v", err)
+	}
+	afterRecent, err := convRepo.GetByID(ctx, convID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+
+	// A message whose CreatedAt is in the past must not drag last_message_at back.
+	stale, err := message.NewText(convID, sender, "stale", nil)
+	if err != nil {
+		t.Fatalf("NewText stale: %v", err)
+	}
+	stale.CreatedAt = afterRecent.LastMessageAt.Add(-time.Hour)
+	if err := msgRepo.Create(ctx, stale); err != nil {
+		t.Fatalf("Create stale: %v", err)
+	}
+
+	afterStale, err := convRepo.GetByID(ctx, convID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !afterStale.LastMessageAt.Equal(afterRecent.LastMessageAt) {
+		t.Fatalf("last_message_at moved backwards: was %v now %v", afterRecent.LastMessageAt, afterStale.LastMessageAt)
+	}
+}
