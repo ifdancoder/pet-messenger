@@ -32,10 +32,15 @@ type JWTConfig struct {
 	RefreshTTL time.Duration
 }
 
+type NATSConfig struct {
+	URL string
+}
+
 type Config struct {
 	Port int
 	DB   DBConfig
 	JWT  JWTConfig
+	NATS NATSConfig
 }
 
 // Load reads configuration from the environment (and .env, if present).
@@ -59,6 +64,11 @@ func Load() (*Config, error) {
 	}
 	privateKey := ed25519.NewKeyFromSeed(seed)
 
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://127.0.0.1:4222"
+	}
+
 	return &Config{
 		Port: port,
 		DB: DBConfig{
@@ -75,5 +85,6 @@ func Load() (*Config, error) {
 			AccessTTL:  15 * time.Minute,
 			RefreshTTL: 30 * 24 * time.Hour,
 		},
+		NATS: NATSConfig{URL: natsURL},
 	}, nil
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,13 +40,15 @@ var (
 type Service struct {
 	messages      domainmsg.Repository
 	conversations domainconv.Repository
+	publisher     MessagePublisher
 }
 
 // NewService wires the service. messages is implemented by
 // internal/infrastructure/postgres.MessageRepository; conversations by
-// internal/infrastructure/postgres.ConversationRepository.
-func NewService(messages domainmsg.Repository, conversations domainconv.Repository) *Service {
-	return &Service{messages: messages, conversations: conversations}
+// internal/infrastructure/postgres.ConversationRepository; publisher by
+// internal/infrastructure/nats.Publisher.
+func NewService(messages domainmsg.Repository, conversations domainconv.Repository, publisher MessagePublisher) *Service {
+	return &Service{messages: messages, conversations: conversations, publisher: publisher}
 }
 
 // PageLimit clamps a client-requested page size: non-positive means "use the
@@ -108,6 +111,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, convID uuid.UUID, cont
 		}
 		return nil, fmt.Errorf("create message: %w", err)
 	}
+	if err := s.publisher.PublishCreated(ctx, m); err != nil {
+		log.Printf("message: publish created %s: %v", m.ID, err)
+	}
 	return m, nil
 }
 
@@ -134,6 +140,9 @@ func (s *Service) EditMessage(ctx context.Context, actor, convID, messageID uuid
 	if err := s.messages.Update(ctx, m); err != nil {
 		return nil, fmt.Errorf("update message: %w", err)
 	}
+	if err := s.publisher.PublishUpdated(ctx, m); err != nil {
+		log.Printf("message: publish updated %s: %v", m.ID, err)
+	}
 	return m, nil
 }
 
@@ -156,6 +165,9 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, convID, messageID uu
 	m.MarkDeleted(time.Now().UTC())
 	if err := s.messages.Update(ctx, m); err != nil {
 		return nil, fmt.Errorf("update message: %w", err)
+	}
+	if err := s.publisher.PublishDeleted(ctx, m); err != nil {
+		log.Printf("message: publish deleted %s: %v", m.ID, err)
 	}
 	return m, nil
 }

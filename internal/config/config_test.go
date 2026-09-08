@@ -23,6 +23,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("BLUEPRINT_DB_PASSWORD", "pass")
 	t.Setenv("BLUEPRINT_DB_SCHEMA", "public")
 	t.Setenv("JWT_ED25519_SEED_BASE64", base64.StdEncoding.EncodeToString(priv.Seed()))
+	t.Setenv("NATS_URL", "nats://nats.example:4222")
 }
 
 func TestLoad(t *testing.T) {
@@ -46,6 +47,22 @@ func TestLoad(t *testing.T) {
 	}
 	if cfg.JWT.AccessTTL <= 0 || cfg.JWT.RefreshTTL <= 0 {
 		t.Error("expected positive TTLs")
+	}
+	if cfg.NATS.URL != "nats://nats.example:4222" {
+		t.Errorf("NATS.URL = %q, want %q", cfg.NATS.URL, "nats://nats.example:4222")
+	}
+}
+
+func TestLoad_NATSDefault(t *testing.T) {
+	setValidEnv(t)
+	t.Setenv("NATS_URL", "")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.NATS.URL != "nats://127.0.0.1:4222" {
+		t.Errorf("NATS.URL = %q, want the default", cfg.NATS.URL)
 	}
 }
 

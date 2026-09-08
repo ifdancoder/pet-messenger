@@ -89,6 +89,32 @@ func (f *fakeConvRepo) ListForUser(context.Context, uuid.UUID, time.Time, uuid.U
 	return nil, nil
 }
 
+type fakePublisher struct {
+	created []*domainmsg.Message
+	updated []*domainmsg.Message
+	deleted []*domainmsg.Message
+	err     error
+}
+
+func (f *fakePublisher) PublishCreated(_ context.Context, m *domainmsg.Message) error {
+	f.created = append(f.created, m)
+	return f.err
+}
+func (f *fakePublisher) PublishUpdated(_ context.Context, m *domainmsg.Message) error {
+	f.updated = append(f.updated, m)
+	return f.err
+}
+func (f *fakePublisher) PublishDeleted(_ context.Context, m *domainmsg.Message) error {
+	f.deleted = append(f.deleted, m)
+	return f.err
+}
+
+// newSvc builds a Service with a capturing publisher.
+func newSvc(msgs domainmsg.Repository, convs domainconv.Repository) (*Service, *fakePublisher) {
+	pub := &fakePublisher{}
+	return NewService(msgs, convs, pub), pub
+}
+
 // groupChatWithMember returns a fakeConvRepo whose conversation is a group chat
 // the actor is a plain member of (so CanPost is true).
 func groupChatWithMember() *fakeConvRepo {
@@ -105,7 +131,7 @@ func TestSendMessage_HappyPath(t *testing.T) {
 	convs := groupChatWithMember()
 	convID := convs.conv.ID
 	msgs := &fakeMsgRepo{}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	m, err := s.SendMessage(context.Background(), actor, convID, "  hi  ", nil, "")
 	if err != nil {
@@ -122,7 +148,7 @@ func TestSendMessage_HappyPath(t *testing.T) {
 func TestSendMessage_NotMember(t *testing.T) {
 	convs := groupChatWithMember()
 	convs.member, convs.memberErr = nil, domainconv.ErrNotMember
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	_, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, "")
 	if !errors.Is(err, domainconv.ErrNotMember) {
 		t.Fatalf("err = %v, want ErrNotMember", err)
@@ -131,7 +157,7 @@ func TestSendMessage_NotMember(t *testing.T) {
 
 func TestSendMessage_ConversationNotFound(t *testing.T) {
 	convs := &fakeConvRepo{convErr: domainconv.ErrNotFound}
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	_, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), "hi", nil, "")
 	if !errors.Is(err, domainconv.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
@@ -143,7 +169,7 @@ func TestSendMessage_CannotPost(t *testing.T) {
 		conv:   &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindChannelBroadcast},
 		member: &domainconv.Member{Role: domainconv.RoleSubscriber},
 	}
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	_, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, "")
 	if !errors.Is(err, ErrCannotPost) {
 		t.Fatalf("err = %v, want ErrCannotPost", err)
@@ -152,7 +178,7 @@ func TestSendMessage_CannotPost(t *testing.T) {
 
 func TestSendMessage_ReplyTargetMissing(t *testing.T) {
 	convs := groupChatWithMember()
-	s := NewService(&fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{}}, convs)
+	s, _ := newSvc(&fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{}}, convs)
 	missing := uuid.Must(uuid.NewV7())
 	_, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", &missing, "")
 	if !errors.Is(err, ErrReplyNotFound) {
@@ -164,7 +190,7 @@ func TestSendMessage_ReplyTargetOtherConversation(t *testing.T) {
 	convs := groupChatWithMember()
 	other := &domainmsg.Message{ID: uuid.Must(uuid.NewV7()), ConversationID: uuid.Must(uuid.NewV7())}
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{other.ID: other}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 	_, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", &other.ID, "")
 	if !errors.Is(err, ErrReplyNotFound) {
 		t.Fatalf("err = %v, want ErrReplyNotFound", err)
@@ -179,7 +205,7 @@ func TestSendMessage_IdempotentReplay(t *testing.T) {
 		createErr: domainmsg.ErrDuplicateIdempotencyKey,
 		byKey:     map[string]*domainmsg.Message{"k1": existing},
 	}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	m, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convID, "hi", nil, "k1")
 	if err != nil {
@@ -192,7 +218,7 @@ func TestSendMessage_IdempotentReplay(t *testing.T) {
 
 func TestSendMessage_EmptyContent(t *testing.T) {
 	convs := groupChatWithMember()
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	_, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "   ", nil, "")
 	if !errors.Is(err, domainmsg.ErrEmptyContent) {
 		t.Fatalf("err = %v, want ErrEmptyContent", err)
@@ -216,7 +242,7 @@ func TestEditMessage_HappyPath(t *testing.T) {
 	convID := convs.conv.ID
 	m := ownText(t, actor, convID)
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	got, err := s.EditMessage(context.Background(), actor, convID, m.ID, "  edited  ")
 	if err != nil {
@@ -235,7 +261,7 @@ func TestEditMessage_NotAuthor(t *testing.T) {
 	convID := convs.conv.ID
 	m := ownText(t, uuid.Must(uuid.NewV7()), convID) // authored by someone else
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	_, err := s.EditMessage(context.Background(), uuid.Must(uuid.NewV7()), convID, m.ID, "x")
 	if !errors.Is(err, ErrNotAuthor) {
@@ -251,7 +277,7 @@ func TestEditMessage_WrongConversation(t *testing.T) {
 	convs := groupChatWithMember()
 	m := ownText(t, actor, uuid.Must(uuid.NewV7())) // belongs to another conversation
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	_, err := s.EditMessage(context.Background(), actor, convs.conv.ID, m.ID, "x")
 	if !errors.Is(err, domainmsg.ErrNotFound) {
@@ -262,7 +288,7 @@ func TestEditMessage_WrongConversation(t *testing.T) {
 func TestEditMessage_NotMember(t *testing.T) {
 	convs := groupChatWithMember()
 	convs.member, convs.memberErr = nil, domainconv.ErrNotMember
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	_, err := s.EditMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, uuid.Must(uuid.NewV7()), "x")
 	if !errors.Is(err, domainconv.ErrNotMember) {
 		t.Fatalf("err = %v, want ErrNotMember", err)
@@ -276,7 +302,7 @@ func TestEditMessage_DeletedIsNotEditable(t *testing.T) {
 	m := ownText(t, actor, convID)
 	m.MarkDeleted(time.Now().UTC())
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	_, err := s.EditMessage(context.Background(), actor, convID, m.ID, "x")
 	if !errors.Is(err, domainmsg.ErrNotEditable) {
@@ -292,7 +318,7 @@ func TestDeleteMessage_HappyPath(t *testing.T) {
 	convID := convs.conv.ID
 	m := ownText(t, actor, convID)
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	got, err := s.DeleteMessage(context.Background(), actor, convID, m.ID)
 	if err != nil {
@@ -311,7 +337,7 @@ func TestDeleteMessage_NotAuthor(t *testing.T) {
 	convID := convs.conv.ID
 	m := ownText(t, uuid.Must(uuid.NewV7()), convID)
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	_, err := s.DeleteMessage(context.Background(), uuid.Must(uuid.NewV7()), convID, m.ID)
 	if !errors.Is(err, ErrNotAuthor) {
@@ -329,7 +355,7 @@ func TestDeleteMessage_Idempotent(t *testing.T) {
 	m := ownText(t, actor, convID)
 	m.MarkDeleted(time.Now().UTC())
 	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 
 	got, err := s.DeleteMessage(context.Background(), actor, convID, m.ID)
 	if err != nil {
@@ -345,7 +371,7 @@ func TestDeleteMessage_Idempotent(t *testing.T) {
 func TestListMessages_NotMember(t *testing.T) {
 	convs := groupChatWithMember()
 	convs.member, convs.memberErr = nil, domainconv.ErrNotMember
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	_, err := s.ListMessages(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, nil, nil, 0)
 	if !errors.Is(err, domainconv.ErrNotMember) {
 		t.Fatalf("err = %v, want ErrNotMember", err)
@@ -354,7 +380,7 @@ func TestListMessages_NotMember(t *testing.T) {
 
 func TestListMessages_ConflictingCursors(t *testing.T) {
 	convs := groupChatWithMember()
-	s := NewService(&fakeMsgRepo{}, convs)
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
 	a, b := int64(1), int64(2)
 	_, err := s.ListMessages(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, &a, &b, 0)
 	if !errors.Is(err, ErrConflictingCursors) {
@@ -365,7 +391,7 @@ func TestListMessages_ConflictingCursors(t *testing.T) {
 func TestListMessages_ForwardUsesListByConversation(t *testing.T) {
 	convs := groupChatWithMember()
 	msgs := &fakeMsgRepo{}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 	after := int64(5)
 	if _, err := s.ListMessages(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, &after, nil, 10); err != nil {
 		t.Fatalf("ListMessages: %v", err)
@@ -381,7 +407,7 @@ func TestListMessages_ForwardUsesListByConversation(t *testing.T) {
 func TestListMessages_BackwardUsesListBeforeSeq(t *testing.T) {
 	convs := groupChatWithMember()
 	msgs := &fakeMsgRepo{}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 	before := int64(9)
 	if _, err := s.ListMessages(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, nil, &before, 0); err != nil {
 		t.Fatalf("ListMessages: %v", err)
@@ -397,7 +423,7 @@ func TestListMessages_BackwardUsesListBeforeSeq(t *testing.T) {
 func TestListMessages_NoCursorIsNewestPage(t *testing.T) {
 	convs := groupChatWithMember()
 	msgs := &fakeMsgRepo{}
-	s := NewService(msgs, convs)
+	s, _ := newSvc(msgs, convs)
 	if _, err := s.ListMessages(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, nil, nil, 0); err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}
@@ -410,7 +436,7 @@ func TestListMessages_ClampsLimit(t *testing.T) {
 	for _, tc := range []struct{ in, want int }{{0, DefaultPageLimit}, {-3, DefaultPageLimit}, {1000, MaxPageLimit}, {75, 75}} {
 		convs := groupChatWithMember()
 		msgs := &fakeMsgRepo{}
-		s := NewService(msgs, convs)
+		s, _ := newSvc(msgs, convs)
 		if _, err := s.ListMessages(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, nil, nil, tc.in); err != nil {
 			t.Fatalf("ListMessages(%d): %v", tc.in, err)
 		}
@@ -425,5 +451,80 @@ func TestPageLimit(t *testing.T) {
 		if got := PageLimit(tc.in); got != tc.want {
 			t.Errorf("PageLimit(%d) = %d, want %d", tc.in, got, tc.want)
 		}
+	}
+}
+
+// --- publish behaviour -----------------------------------------------------
+
+func TestSendMessage_PublishesCreated(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convs := groupChatWithMember()
+	msgs := &fakeMsgRepo{}
+	s, pub := newSvc(msgs, convs)
+
+	m, err := s.SendMessage(context.Background(), actor, convs.conv.ID, "hi", nil, "")
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if len(pub.created) != 1 || pub.created[0] != m {
+		t.Fatalf("PublishCreated calls = %d, want 1 with the sent message", len(pub.created))
+	}
+}
+
+func TestSendMessage_IdempotentReplayDoesNotPublish(t *testing.T) {
+	convs := groupChatWithMember()
+	existing := &domainmsg.Message{ID: uuid.Must(uuid.NewV7()), ConversationID: convs.conv.ID, Seq: 7}
+	msgs := &fakeMsgRepo{
+		createErr: domainmsg.ErrDuplicateIdempotencyKey,
+		byKey:     map[string]*domainmsg.Message{"k1": existing},
+	}
+	s, pub := newSvc(msgs, convs)
+
+	if _, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, "k1"); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if len(pub.created) != 0 {
+		t.Fatalf("replay published %d created events, want 0", len(pub.created))
+	}
+}
+
+func TestSendMessage_PublishErrorIsSwallowed(t *testing.T) {
+	convs := groupChatWithMember()
+	msgs := &fakeMsgRepo{}
+	pub := &fakePublisher{err: errors.New("nats down")}
+	s := NewService(msgs, convs, pub)
+
+	if _, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, ""); err != nil {
+		t.Fatalf("SendMessage must succeed despite a publish error: %v", err)
+	}
+}
+
+func TestEditMessage_PublishesUpdated(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convs := groupChatWithMember()
+	m := ownText(t, actor, convs.conv.ID)
+	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
+	s, pub := newSvc(msgs, convs)
+
+	if _, err := s.EditMessage(context.Background(), actor, convs.conv.ID, m.ID, "edited"); err != nil {
+		t.Fatalf("EditMessage: %v", err)
+	}
+	if len(pub.updated) != 1 || len(pub.created) != 0 || len(pub.deleted) != 0 {
+		t.Fatalf("publish calls: created=%d updated=%d deleted=%d", len(pub.created), len(pub.updated), len(pub.deleted))
+	}
+}
+
+func TestDeleteMessage_PublishesDeleted(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convs := groupChatWithMember()
+	m := ownText(t, actor, convs.conv.ID)
+	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
+	s, pub := newSvc(msgs, convs)
+
+	if _, err := s.DeleteMessage(context.Background(), actor, convs.conv.ID, m.ID); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+	if len(pub.deleted) != 1 {
+		t.Fatalf("PublishDeleted calls = %d, want 1", len(pub.deleted))
 	}
 }
