@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"pet-messenger/internal/domain/message"
 )
@@ -101,12 +102,16 @@ func (r *MessageRepository) Create(ctx context.Context, m *message.Message) erro
 	}
 
 	const insertQ = `
-		INSERT INTO messages (id, conversation_id, seq, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at)
-		VALUES ($1, $2, $3, $4, $5::message_type, $6, $7, $8, $9, $10)`
+		INSERT INTO messages (id, conversation_id, seq, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5::message_type, $6, $7, $8, $9, $10, $11)`
 	if _, err := tx.ExecContext(ctx, insertQ,
 		m.ID, m.ConversationID, seq, nullableUUID(m.SenderID), string(m.Type), m.Content,
-		nullableUUID(m.ReplyToID), m.EditedAt, m.DeletedAt, m.CreatedAt,
+		nullableUUID(m.ReplyToID), m.EditedAt, m.DeletedAt, m.CreatedAt, m.IdempotencyKey,
 	); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_messages_conversation_idempotency_key" {
+			return message.ErrDuplicateIdempotencyKey
+		}
 		return fmt.Errorf("insert message: %w", err)
 	}
 
@@ -124,6 +129,21 @@ func (r *MessageRepository) GetByID(ctx context.Context, id uuid.UUID) (*message
 	}
 	if err != nil {
 		return nil, fmt.Errorf("scan message: %w", err)
+	}
+	return m, nil
+}
+
+// GetByIdempotencyKey returns the message in conversationID that carries the
+// given client idempotency key, or message.ErrNotFound. The (conversation_id,
+// idempotency_key) partial unique index guarantees at most one row.
+func (r *MessageRepository) GetByIdempotencyKey(ctx context.Context, conversationID uuid.UUID, key string) (*message.Message, error) {
+	const q = `SELECT ` + messageColumns + ` FROM messages WHERE conversation_id = $1 AND idempotency_key = $2`
+	m, err := scanMessage(r.db.QueryRowContext(ctx, q, conversationID, key))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, message.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("scan message by idempotency key: %w", err)
 	}
 	return m, nil
 }

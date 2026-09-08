@@ -730,3 +730,96 @@ func TestMessageRepository_Create_LastMessageAtIsMonotonic(t *testing.T) {
 		t.Fatalf("last_message_at moved backwards: was %v now %v", afterRecent.LastMessageAt, afterStale.LastMessageAt)
 	}
 }
+
+func TestMessageRepository_Create_IdempotencyKeyDeduplicates(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	key := "send-" + randomUsername()
+	first, err := message.NewText(convID, sender, "hello", nil)
+	if err != nil {
+		t.Fatalf("NewText: %v", err)
+	}
+	first.IdempotencyKey = &key
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+	if first.Seq != 1 {
+		t.Fatalf("first Seq = %d, want 1", first.Seq)
+	}
+
+	// A retry with the same key: Create rejects it and consumes no seq.
+	retry, err := message.NewText(convID, sender, "hello", nil)
+	if err != nil {
+		t.Fatalf("NewText retry: %v", err)
+	}
+	retry.IdempotencyKey = &key
+	if err := repo.Create(ctx, retry); !errors.Is(err, message.ErrDuplicateIdempotencyKey) {
+		t.Fatalf("retry Create err = %v, want ErrDuplicateIdempotencyKey", err)
+	}
+
+	got, err := repo.GetByIdempotencyKey(ctx, convID, key)
+	if err != nil {
+		t.Fatalf("GetByIdempotencyKey: %v", err)
+	}
+	if got.ID != first.ID || got.Seq != 1 {
+		t.Fatalf("GetByIdempotencyKey returned id=%v seq=%d, want id=%v seq=1", got.ID, got.Seq, first.ID)
+	}
+
+	// The rejected retry burned no seq: a fresh keyless send gets seq 2.
+	next, err := message.NewText(convID, sender, "again", nil)
+	if err != nil {
+		t.Fatalf("NewText next: %v", err)
+	}
+	if err := repo.Create(ctx, next); err != nil {
+		t.Fatalf("next Create: %v", err)
+	}
+	if next.Seq != 2 {
+		t.Fatalf("next Seq = %d, want 2 (the duplicate consumed no seq)", next.Seq)
+	}
+}
+
+func TestMessageRepository_Create_NilIdempotencyKeyNeverCollides(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, sender := seedConversation(t)
+
+	for i := 0; i < 3; i++ {
+		m, err := message.NewText(convID, sender, "m", nil)
+		if err != nil {
+			t.Fatalf("NewText: %v", err)
+		}
+		if err := repo.Create(ctx, m); err != nil {
+			t.Fatalf("Create #%d (nil key): %v", i, err)
+		}
+	}
+}
+
+func TestMessageRepository_GetByIdempotencyKey_NotFound(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	convID, _ := seedConversation(t)
+	if _, err := repo.GetByIdempotencyKey(context.Background(), convID, "nope"); !errors.Is(err, message.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMessageRepository_Create_SameKeyDifferentConversations(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convA, senderA := seedConversation(t)
+	convB, senderB := seedConversation(t)
+
+	key := "shared-" + randomUsername()
+	a, _ := message.NewText(convA, senderA, "a", nil)
+	a.IdempotencyKey = &key
+	b, _ := message.NewText(convB, senderB, "b", nil)
+	b.IdempotencyKey = &key
+
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("Create in convA: %v", err)
+	}
+	if err := repo.Create(ctx, b); err != nil {
+		t.Fatalf("Create in convB with the same key must succeed (index is per conversation): %v", err)
+	}
+}

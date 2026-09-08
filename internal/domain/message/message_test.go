@@ -84,6 +84,9 @@ func TestNewText(t *testing.T) {
 	if m.EditedAt != nil || m.DeletedAt != nil {
 		t.Errorf("EditedAt/DeletedAt should be nil on a new message, got %v / %v", m.EditedAt, m.DeletedAt)
 	}
+	if m.IdempotencyKey != nil {
+		t.Errorf("IdempotencyKey should be nil on a new message, got %v", *m.IdempotencyKey)
+	}
 	if m.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
 	}

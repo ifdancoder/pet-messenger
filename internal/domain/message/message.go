@@ -52,6 +52,11 @@ var (
 	// ErrConversationNotFound is returned by Repository.Create when the target
 	// conversation does not exist.
 	ErrConversationNotFound = errors.New("message: conversation does not exist")
+	// ErrDuplicateIdempotencyKey is returned by Repository.Create when a message
+	// with the same (ConversationID, IdempotencyKey) already exists. The whole
+	// Create transaction rolls back, so no seq is consumed. SendMessage resolves
+	// it by returning the original message via GetByIdempotencyKey.
+	ErrDuplicateIdempotencyKey = errors.New("message: a message with this idempotency key already exists in the conversation")
 )
 
 // ErrContentTooLong is reported when trimmed content exceeds maxContentRunes. It
@@ -75,6 +80,11 @@ type Message struct {
 	Type           Type
 	Content        string
 	ReplyToID      *uuid.UUID
+	// IdempotencyKey is the optional client-supplied send-dedup token. It is
+	// written by Repository.Create and is NOT repopulated on reads (it is a
+	// write-side hint, never rendered to clients), so it is nil on any Message
+	// returned by a Get/List method.
+	IdempotencyKey *string
 	EditedAt       *time.Time
 	DeletedAt      *time.Time
 	CreatedAt      time.Time
@@ -184,9 +194,18 @@ func (m *Message) MarkDeleted(now time.Time) {
 // usecases arrive.
 type Repository interface {
 	// Create persists the message, allocating and setting m.Seq (the
-	// per-conversation monotonic sequence) as part of the write.
+	// per-conversation monotonic sequence) as part of the write. If
+	// m.IdempotencyKey is set and a message with that (ConversationID, key)
+	// already exists, Create returns ErrDuplicateIdempotencyKey and the whole
+	// transaction — including the seq allocation — is rolled back, so no seq is
+	// consumed.
 	Create(ctx context.Context, m *Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Message, error)
+	// GetByIdempotencyKey returns the message previously sent to conversationID
+	// with the given client idempotency key, or ErrNotFound if there is none.
+	// SendMessage uses it to resolve the ErrDuplicateIdempotencyKey race: a
+	// retried send returns the original row instead of a duplicate.
+	GetByIdempotencyKey(ctx context.Context, conversationID uuid.UUID, key string) (*Message, error)
 	// ListByConversation returns the conversation's messages ordered by Seq
 	// ascending, starting after afterSeq (afterSeq <= 0 means from the first
 	// message). Seq is a per-conversation monotonic sequence the Repository
