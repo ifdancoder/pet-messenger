@@ -11,6 +11,10 @@ import (
 // Delivery is best-effort — the message is already persisted and a reconnecting
 // client recovers via ListMessages — so the Service logs a publish error and
 // still returns success.
+//
+// Consumers must order by the message's Seq; NATS/WS arrival order is not
+// guaranteed (concurrent sends can interleave between the DB write and the
+// publish).
 type MessagePublisher interface {
 	PublishCreated(ctx context.Context, m *domainmsg.Message) error
 	PublishUpdated(ctx context.Context, m *domainmsg.Message) error

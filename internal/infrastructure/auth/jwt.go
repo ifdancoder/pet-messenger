@@ -63,6 +63,14 @@ func NewJWTVerifier(cfg *config.Config) *JWTVerifier {
 }
 
 func (v *JWTVerifier) Verify(tokenStr string) (uuid.UUID, error) {
+	id, _, err := v.VerifyWithExpiry(tokenStr)
+	return id, err
+}
+
+// VerifyWithExpiry validates tokenStr the same way Verify does and additionally
+// returns the token's expiry time, so a caller can bound a long-lived
+// connection to the access token's lifetime.
+func (v *JWTVerifier) VerifyWithExpiry(tokenStr string) (uuid.UUID, time.Time, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodEd25519); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -70,15 +78,18 @@ func (v *JWTVerifier) Verify(tokenStr string) (uuid.UUID, error) {
 		return v.publicKey, nil
 	})
 	if err != nil || !token.Valid {
-		return uuid.Nil, ErrInvalidToken
+		return uuid.Nil, time.Time{}, ErrInvalidToken
 	}
 	c, ok := token.Claims.(*claims)
 	if !ok {
-		return uuid.Nil, ErrInvalidToken
+		return uuid.Nil, time.Time{}, ErrInvalidToken
+	}
+	if c.ExpiresAt == nil {
+		return uuid.Nil, time.Time{}, ErrInvalidToken
 	}
 	userID, err := uuid.Parse(c.Subject)
 	if err != nil {
-		return uuid.Nil, ErrInvalidToken
+		return uuid.Nil, time.Time{}, ErrInvalidToken
 	}
-	return userID, nil
+	return userID, c.ExpiresAt.Time, nil
 }

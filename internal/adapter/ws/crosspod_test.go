@@ -60,7 +60,7 @@ func TestCrossPodDelivery(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewWSHandler(hubB, verifier, stubConvRepo{}).RegisterRoutes(r)
+	NewWSHandler(hubB, verifier, stubConvRepo{}, nil).RegisterRoutes(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 

@@ -21,6 +21,7 @@ import (
 )
 
 func newGinEngine(
+	cfg *config.Config,
 	db database.Service,
 	authHandler *httpadapter.AuthHandler,
 	convHandler *httpadapter.ConversationHandler,
@@ -30,7 +31,7 @@ func newGinEngine(
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowOrigins:     cfg.CORS.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Accept", "Authorization", "Content-Type"},
 		ExposeHeaders:    []string{"Location"},

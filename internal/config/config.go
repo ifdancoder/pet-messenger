@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -36,11 +37,32 @@ type NATSConfig struct {
 	URL string
 }
 
+type CORSConfig struct {
+	AllowedOrigins []string
+}
+
+// OriginHostPatterns returns each allowed origin with any `scheme://` prefix
+// stripped (so `http://localhost:5173` becomes `localhost:5173`) — the form
+// coder/websocket's AcceptOptions.OriginPatterns matches against the request
+// Host.
+func (c CORSConfig) OriginHostPatterns() []string {
+	patterns := make([]string, len(c.AllowedOrigins))
+	for i, origin := range c.AllowedOrigins {
+		if _, host, ok := strings.Cut(origin, "://"); ok {
+			patterns[i] = host
+		} else {
+			patterns[i] = origin
+		}
+	}
+	return patterns
+}
+
 type Config struct {
 	Port int
 	DB   DBConfig
 	JWT  JWTConfig
 	NATS NATSConfig
+	CORS CORSConfig
 }
 
 // Load reads configuration from the environment (and .env, if present).
@@ -69,6 +91,16 @@ func Load() (*Config, error) {
 		natsURL = "nats://127.0.0.1:4222"
 	}
 
+	var origins []string
+	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	if len(origins) == 0 {
+		origins = []string{"http://localhost:5173"}
+	}
+
 	return &Config{
 		Port: port,
 		DB: DBConfig{
@@ -86,5 +118,6 @@ func Load() (*Config, error) {
 			RefreshTTL: 30 * 24 * time.Hour,
 		},
 		NATS: NATSConfig{URL: natsURL},
+		CORS: CORSConfig{AllowedOrigins: origins},
 	}, nil
 }

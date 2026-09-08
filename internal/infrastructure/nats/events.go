@@ -20,6 +20,10 @@ const (
 // message write commits. The publisher marshals it once; the subscriber, Hub,
 // and WS write-pump treat the bytes as opaque — so this struct is also exactly
 // the envelope a WS client receives.
+//
+// Consumers must order by the message's Seq; NATS/WS arrival order is not
+// guaranteed (concurrent sends can interleave between the DB write and the
+// publish).
 type MessageEvent struct {
 	Type           MessageEventType `json:"type"`
 	ConversationID string           `json:"conversation_id"`

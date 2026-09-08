@@ -3,6 +3,8 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +17,8 @@ import (
 	infraauth "pet-messenger/internal/infrastructure/auth"
 )
 
+const defaultConnBuffer = 64 // outbound frames buffered before a slow client is dropped
+
 // memberChecker is the slice of conversation.Repository the subscribe gate uses.
 type memberChecker interface {
 	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error)
@@ -24,14 +28,24 @@ type memberChecker interface {
 // Sec-WebSocket-Protocol subprotocol, and runs the subscribe/unsubscribe
 // control protocol against the Hub.
 type WSHandler struct {
-	hub      *Hub
-	verifier *infraauth.JWTVerifier
-	members  memberChecker
-	bufSize  int
+	hub            *Hub
+	verifier       *infraauth.JWTVerifier
+	members        memberChecker
+	originPatterns []string
+	bufSize        int
 }
 
-func NewWSHandler(hub *Hub, verifier *infraauth.JWTVerifier, members conversation.Repository) *WSHandler {
-	return &WSHandler{hub: hub, verifier: verifier, members: members, bufSize: 64}
+// NewWSHandler builds the handler. originPatterns is passed straight to
+// websocket.AcceptOptions.OriginPatterns; a nil/empty slice keeps
+// coder/websocket's same-origin default.
+func NewWSHandler(hub *Hub, verifier *infraauth.JWTVerifier, members conversation.Repository, originPatterns []string) *WSHandler {
+	return &WSHandler{
+		hub:            hub,
+		verifier:       verifier,
+		members:        members,
+		originPatterns: originPatterns,
+		bufSize:        defaultConnBuffer,
+	}
 }
 
 func (h *WSHandler) RegisterRoutes(r gin.IRouter) {
@@ -44,25 +58,29 @@ func (h *WSHandler) Handle(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-	userID, err := h.verifier.Verify(token)
+	userID, expiresAt, err := h.verifier.VerifyWithExpiry(token)
 	if err != nil {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
 	sock, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
-		Subprotocols: []string{"bearer"},
+		Subprotocols:   []string{"bearer"},
+		OriginPatterns: h.originPatterns,
 	})
 	if err != nil {
 		return // Accept wrote the failure response
 	}
 	defer sock.CloseNow()
 
+	log.Printf("ws: connected user=%s", userID)
+	defer log.Printf("ws: disconnected user=%s", userID)
+
 	conn := newConn(userID, h.bufSize)
 	defer h.hub.Remove(conn)
 
 	ctx := c.Request.Context()
-	go h.writePump(ctx, sock, conn)
+	go h.writePump(ctx, sock, conn, expiresAt)
 
 	for {
 		typ, data, err := sock.Read(ctx)
@@ -77,7 +95,17 @@ func (h *WSHandler) Handle(c *gin.Context) {
 	}
 }
 
-func (h *WSHandler) writePump(ctx context.Context, sock *websocket.Conn, conn *Conn) {
+// writePump is the single writer for the socket: it drains conn.out, keeps the
+// peer alive with a periodic ping (net/http clears the socket deadline on the
+// WS hijack, so a silently-dropped peer would otherwise leak both goroutines,
+// the Conn, and its Hub entries), and closes the socket once the access token's
+// exp passes.
+func (h *WSHandler) writePump(ctx context.Context, sock *websocket.Conn, conn *Conn, expiresAt time.Time) {
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+	expiry := time.NewTimer(time.Until(expiresAt))
+	defer expiry.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -85,6 +113,17 @@ func (h *WSHandler) writePump(ctx context.Context, sock *websocket.Conn, conn *C
 		case <-conn.closed:
 			sock.Close(websocket.StatusPolicyViolation, "client too slow")
 			return
+		case <-expiry.C:
+			sock.Close(websocket.StatusPolicyViolation, "token expired")
+			return
+		case <-pingTicker.C:
+			pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := sock.Ping(pctx)
+			cancel()
+			if err != nil {
+				conn.close()
+				return
+			}
 		case payload := <-conn.out:
 			wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			err := sock.Write(wctx, websocket.MessageText, payload)
@@ -115,21 +154,37 @@ func (h *WSHandler) handleControl(ctx context.Context, conn *Conn, data []byte) 
 	}
 	switch f.Type {
 	case "subscribe":
+		if h.hub.IsSubscribed(conn, cid) {
+			// a re-subscribe skips the membership round trip
+			conn.enqueue(serverAck("subscribed", cid.String()))
+			return
+		}
 		if _, err := h.members.GetMember(ctx, cid, conn.userID); err != nil {
-			conn.enqueue(serverError(f.ConversationID, "not a member"))
+			if errors.Is(err, conversation.ErrNotMember) {
+				conn.enqueue(serverError(cid.String(), "not a member"))
+			} else {
+				log.Printf("ws: GetMember user=%s conv=%s: %v", conn.userID, cid, err)
+				conn.enqueue(serverError(cid.String(), "internal error"))
+			}
 			return
 		}
 		h.hub.Subscribe(conn, cid)
-		conn.enqueue(serverAck("subscribed", f.ConversationID))
+		// ack after Subscribe so a racing broadcast is delivered, not dropped in a gap
+		conn.enqueue(serverAck("subscribed", cid.String()))
+		log.Printf("ws: user=%s %s conversation=%s", conn.userID, f.Type, cid)
 	case "unsubscribe":
 		h.hub.Unsubscribe(conn, cid)
-		conn.enqueue(serverAck("unsubscribed", f.ConversationID))
+		conn.enqueue(serverAck("unsubscribed", cid.String()))
+		log.Printf("ws: user=%s %s conversation=%s", conn.userID, f.Type, cid)
 	default:
-		conn.enqueue(serverError(f.ConversationID, "unknown frame type"))
+		conn.enqueue(serverError(cid.String(), "unknown frame type"))
 	}
 }
 
-// bearerToken parses a `Sec-WebSocket-Protocol: bearer, <jwt>` header value.
+// bearerToken parses a `Sec-WebSocket-Protocol: bearer, <jwt>` header value. It
+// expects exactly two comma-separated tokens — the literal `bearer` and the JWT
+// — and the scheme match is case-sensitive (RFC 6455 subprotocol tokens are
+// case-sensitive).
 func bearerToken(header string) (string, bool) {
 	parts := strings.Split(header, ",")
 	if len(parts) != 2 || strings.TrimSpace(parts[0]) != "bearer" {

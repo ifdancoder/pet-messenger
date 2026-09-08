@@ -57,6 +57,14 @@ func (h *Hub) removeLocked(c *Conn, conversationID uuid.UUID) {
 	}
 }
 
+// IsSubscribed reports whether c is in conversationID's fan-out set.
+func (h *Hub) IsSubscribed(c *Conn, conversationID uuid.UUID) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	_, ok := h.subs[conversationID][c]
+	return ok
+}
+
 // Broadcast enqueues payload on every connection subscribed to conversationID.
 // enqueue never blocks: a connection with a full buffer is closed by enqueue.
 func (h *Hub) Broadcast(conversationID uuid.UUID, payload []byte) {

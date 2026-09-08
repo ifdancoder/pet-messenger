@@ -4,6 +4,7 @@ package fxapp
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -15,11 +16,24 @@ import (
 )
 
 func newNATSConn(lc fx.Lifecycle, cfg *config.Config) (*natsgo.Conn, error) {
+	log.Printf("nats: connecting to %s", cfg.NATS.URL)
 	nc, err := natsgo.Connect(cfg.NATS.URL,
 		natsgo.Name("pet-messenger-api"),
 		natsgo.RetryOnFailedConnect(true),
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(2*time.Second),
+		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, err error) {
+			log.Printf("nats: disconnected: %v", err)
+		}),
+		natsgo.ReconnectHandler(func(nc *natsgo.Conn) {
+			log.Printf("nats: reconnected to %s", nc.ConnectedUrl())
+		}),
+		natsgo.ClosedHandler(func(_ *natsgo.Conn) {
+			log.Printf("nats: connection closed")
+		}),
+		natsgo.ErrorHandler(func(_ *natsgo.Conn, _ *natsgo.Subscription, err error) {
+			log.Printf("nats: async error: %v", err)
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("nats connect %s: %w", cfg.NATS.URL, err)
@@ -46,6 +60,7 @@ func startMessageSubscription(lc fx.Lifecycle, nc *natsgo.Conn, hub *wsadapter.H
 				return fmt.Errorf("subscribe %s: %w", natsinfra.WildcardSubject, err)
 			}
 			sub = s
+			log.Printf("nats: subscribed to %s", natsinfra.WildcardSubject)
 			return nil
 		},
 		OnStop: func(context.Context) error {

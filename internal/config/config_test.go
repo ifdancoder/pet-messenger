@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"reflect"
 	"testing"
 
 	"pet-messenger/internal/config"
@@ -24,6 +25,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("BLUEPRINT_DB_SCHEMA", "public")
 	t.Setenv("JWT_ED25519_SEED_BASE64", base64.StdEncoding.EncodeToString(priv.Seed()))
 	t.Setenv("NATS_URL", "nats://nats.example:4222")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,https://app.example")
 }
 
 func TestLoad(t *testing.T) {
@@ -50,6 +52,28 @@ func TestLoad(t *testing.T) {
 	}
 	if cfg.NATS.URL != "nats://nats.example:4222" {
 		t.Errorf("NATS.URL = %q, want %q", cfg.NATS.URL, "nats://nats.example:4222")
+	}
+	wantOrigins := []string{"http://localhost:5173", "https://app.example"}
+	if !reflect.DeepEqual(cfg.CORS.AllowedOrigins, wantOrigins) {
+		t.Errorf("CORS.AllowedOrigins = %v, want %v", cfg.CORS.AllowedOrigins, wantOrigins)
+	}
+	wantPatterns := []string{"localhost:5173", "app.example"}
+	if !reflect.DeepEqual(cfg.CORS.OriginHostPatterns(), wantPatterns) {
+		t.Errorf("CORS.OriginHostPatterns() = %v, want %v", cfg.CORS.OriginHostPatterns(), wantPatterns)
+	}
+}
+
+func TestLoad_CORSDefault(t *testing.T) {
+	setValidEnv(t)
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []string{"http://localhost:5173"}
+	if !reflect.DeepEqual(cfg.CORS.AllowedOrigins, want) {
+		t.Errorf("CORS.AllowedOrigins = %v, want %v", cfg.CORS.AllowedOrigins, want)
 	}
 }
 

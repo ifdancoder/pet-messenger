@@ -524,7 +524,7 @@ func TestDeleteMessage_PublishesDeleted(t *testing.T) {
 	if _, err := s.DeleteMessage(context.Background(), actor, convs.conv.ID, m.ID); err != nil {
 		t.Fatalf("DeleteMessage: %v", err)
 	}
-	if len(pub.deleted) != 1 {
-		t.Fatalf("PublishDeleted calls = %d, want 1", len(pub.deleted))
+	if len(pub.deleted) != 1 || len(pub.created) != 0 || len(pub.updated) != 0 {
+		t.Fatalf("publish calls: created=%d updated=%d deleted=%d", len(pub.created), len(pub.updated), len(pub.deleted))
 	}
 }

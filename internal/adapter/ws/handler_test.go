@@ -51,12 +51,31 @@ func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Serv
 	issuer := infraauth.NewJWTIssuerWithKey(priv, time.Minute)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 	hub := NewHub()
-	h := NewWSHandler(hub, verifier, members)
+	h := NewWSHandler(hub, verifier, members, nil)
 	r := gin.New()
 	h.RegisterRoutes(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return srv, issuer, hub
+}
+
+// wsTestServerOpts builds a server with explicit origin patterns and access-token
+// TTL, for the origin and token-expiry tests.
+func wsTestServerOpts(t *testing.T, members conversation.Repository, originPatterns []string, ttl time.Duration) (*httptest.Server, *infraauth.JWTIssuer) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	issuer := infraauth.NewJWTIssuerWithKey(priv, ttl)
+	verifier := infraauth.NewJWTVerifierWithKey(pub)
+	h := NewWSHandler(NewHub(), verifier, members, originPatterns)
+	r := gin.New()
+	h.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	return srv, issuer
 }
 
 func dialWS(t *testing.T, srv *httptest.Server, protocols ...string) (*websocket.Conn, *http.Response, error) {
@@ -200,6 +219,123 @@ func TestWSHandler_DisconnectRemovesFromHub(t *testing.T) {
 			t.Fatalf("hub still has %d subscribers for the conversation after disconnect", n)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestWSHandler_RejectsForeignOrigin(t *testing.T) {
+	srv, issuer := wsTestServerOpts(t, stubConvRepo{}, []string{"localhost:5173"}, time.Minute)
+	tok, _, _ := issuer.IssueAccessToken(uuid.Must(uuid.NewV7()))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", &websocket.DialOptions{
+		Subprotocols: []string{"bearer", tok},
+		HTTPHeader:   http.Header{"Origin": {"http://evil.example"}},
+	})
+	if err == nil {
+		t.Fatal("dial from a foreign origin should be rejected at the upgrade")
+	}
+}
+
+func TestWSHandler_AllowsConfiguredOrigin(t *testing.T) {
+	srv, issuer := wsTestServerOpts(t, stubConvRepo{}, []string{"localhost:5173"}, time.Minute)
+	tok, _, _ := issuer.IssueAccessToken(uuid.Must(uuid.NewV7()))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", &websocket.DialOptions{
+		Subprotocols: []string{"bearer", tok},
+		HTTPHeader:   http.Header{"Origin": {"http://localhost:5173"}},
+	})
+	if err != nil {
+		t.Fatalf("dial from the configured origin should succeed: %v", err)
+	}
+	c.CloseNow()
+}
+
+func TestWSHandler_ClosesOnTokenExpiry(t *testing.T) {
+	srv, issuer := wsTestServerOpts(t, stubConvRepo{}, nil, 1500*time.Millisecond)
+	tok, _, _ := issuer.IssueAccessToken(uuid.Must(uuid.NewV7()))
+	c, _, err := dialWS(t, srv, "bearer", tok)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.CloseNow()
+
+	readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if _, _, err := c.Read(readCtx); err == nil {
+		t.Fatal("expected the server to close the socket once the token expired")
+	}
+}
+
+func TestWSHandler_UnsubscribeAck(t *testing.T) {
+	srv, issuer, _ := wsTestServer(t, stubConvRepo{})
+	tok, _, _ := issuer.IssueAccessToken(uuid.Must(uuid.NewV7()))
+	c, _, err := dialWS(t, srv, "bearer", tok)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.CloseNow()
+	cid := uuid.Must(uuid.NewV7())
+	writeJSON(t, c, clientFrame{Type: "subscribe", ConversationID: cid.String()})
+	if ack := readFrame(t, c); ack["type"] != "subscribed" {
+		t.Fatalf("subscribe ack = %v", ack)
+	}
+	writeJSON(t, c, clientFrame{Type: "unsubscribe", ConversationID: cid.String()})
+	ack := readFrame(t, c)
+	if ack["type"] != "unsubscribed" || ack["conversation_id"] != cid.String() {
+		t.Fatalf("unsubscribe ack = %v", ack)
+	}
+}
+
+func TestWSHandler_UnknownFrameType(t *testing.T) {
+	srv, issuer, _ := wsTestServer(t, stubConvRepo{})
+	tok, _, _ := issuer.IssueAccessToken(uuid.Must(uuid.NewV7()))
+	c, _, err := dialWS(t, srv, "bearer", tok)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.CloseNow()
+	cid := uuid.Must(uuid.NewV7())
+	writeJSON(t, c, clientFrame{Type: "bogus", ConversationID: cid.String()})
+	frame := readFrame(t, c)
+	if frame["type"] != "error" || frame["error"] != "unknown frame type" || frame["conversation_id"] != cid.String() {
+		t.Fatalf("frame = %v", frame)
+	}
+}
+
+func TestWSHandler_InvalidConversationID(t *testing.T) {
+	srv, issuer, _ := wsTestServer(t, stubConvRepo{})
+	tok, _, _ := issuer.IssueAccessToken(uuid.Must(uuid.NewV7()))
+	c, _, err := dialWS(t, srv, "bearer", tok)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.CloseNow()
+	writeJSON(t, c, clientFrame{Type: "subscribe", ConversationID: "nope"})
+	frame := readFrame(t, c)
+	if frame["type"] != "error" || frame["error"] != "invalid conversation_id" {
+		t.Fatalf("frame = %v", frame)
+	}
+}
+
+func TestBearerToken(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantTok string
+		wantOK  bool
+	}{
+		{"", "", false},
+		{"bearer", "", false},
+		{"bearer, a, b", "", false},
+		{"basic, x", "", false},
+		{"bearer, ", "", false},
+		{"bearer, tok", "tok", true},
+	}
+	for _, tc := range cases {
+		gotTok, gotOK := bearerToken(tc.in)
+		if gotOK != tc.wantOK || gotTok != tc.wantTok {
+			t.Errorf("bearerToken(%q) = (%q, %v), want (%q, %v)", tc.in, gotTok, gotOK, tc.wantTok, tc.wantOK)
+		}
 	}
 }
 
