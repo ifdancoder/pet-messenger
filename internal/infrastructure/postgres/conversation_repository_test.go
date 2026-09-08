@@ -4,6 +4,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -334,6 +335,71 @@ func TestConversationRepository_ListForUser_KeysetPaginates(t *testing.T) {
 	}
 	if len(page2) != 1 || page2[0].ID != created[0].ID {
 		t.Fatalf("page2 ids = %v, want [%v]", idsOf(page2), created[0].ID)
+	}
+}
+
+func TestConversationRepository_ListForUser_KeysetTiebreaksOnID(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	me := createTestUser(t)
+
+	var created []*conversation.Conversation
+	for i := 0; i < 3; i++ {
+		c, m, err := conversation.NewGroupChat(me.ID, "tie")
+		if err != nil {
+			t.Fatalf("NewGroupChat: %v", err)
+		}
+		if err := repo.Create(ctx, c, m); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		created = append(created, c)
+	}
+
+	// Force all three rows to an identical last_message_at so every keyset
+	// comparison is decided by the (last_message_at, id) id-tiebreak arm.
+	ts := time.Now().UTC().Truncate(time.Microsecond)
+	for _, c := range created {
+		if _, err := testDB.ExecContext(ctx,
+			"UPDATE conversations SET last_message_at = $1 WHERE id = $2", ts, c.ID,
+		); err != nil {
+			t.Fatalf("force last_message_at for %v: %v", c.ID, err)
+		}
+	}
+
+	// Expected order is purely id DESC now.
+	ids := idsOf(created)
+	sort.Slice(ids, func(i, j int) bool { return ids[i].String() > ids[j].String() })
+
+	page1, err := repo.ListForUser(ctx, me.ID, time.Time{}, uuid.Nil, 2)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if got := idsOf(page1); len(got) != 2 || got[0] != ids[0] || got[1] != ids[1] {
+		t.Fatalf("page1 ids = %v, want [%v %v]", got, ids[0], ids[1])
+	}
+	within(t, page1[0].LastMessageAt, ts, time.Millisecond)
+
+	last := page1[len(page1)-1]
+	page2, err := repo.ListForUser(ctx, me.ID, ts, last.ID, 2)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if got := idsOf(page2); len(got) != 1 || got[0] != ids[2] {
+		t.Fatalf("page2 ids = %v, want [%v]", got, ids[2])
+	}
+
+	seen := map[uuid.UUID]int{}
+	for _, c := range page1 {
+		seen[c.ID]++
+	}
+	for _, c := range page2 {
+		seen[c.ID]++
+	}
+	for _, id := range ids {
+		if seen[id] != 1 {
+			t.Fatalf("id %v appeared %d times across both pages, want exactly 1 (pages %v / %v)",
+				id, seen[id], idsOf(page1), idsOf(page2))
+		}
 	}
 }
 

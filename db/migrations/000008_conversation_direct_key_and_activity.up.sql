@@ -38,6 +38,13 @@ CREATE UNIQUE INDEX idx_conversations_direct_key
     ON conversations (direct_key)
     WHERE kind = 'direct';
 
+-- The partial unique index treats NULLs as distinct, so a `direct` row with a
+-- NULL direct_key would slip past the "one DM per pair" invariant. Forbid that
+-- combination outright.
+ALTER TABLE conversations
+    ADD CONSTRAINT conversations_direct_key_present
+    CHECK (kind <> 'direct' OR direct_key IS NOT NULL);
+
 -- Supports the conversation-list keyset scan: ORDER BY last_message_at DESC, id DESC.
 CREATE INDEX idx_conversations_last_message_at
     ON conversations (last_message_at DESC, id DESC);

@@ -111,6 +111,13 @@ func (s *Service) CreateGroupChat(ctx context.Context, creator uuid.UUID, title 
 // `before` starts from the newest; otherwise the (before, beforeID) pair is the
 // keyset cursor of the last row already seen. limit is clamped via
 // EffectiveListLimit.
+//
+// The keyset sorts on last_message_at, a value that changes under the reader.
+// A conversation currently below the client's cursor that receives a new
+// message jumps above the cursor and is then skipped by every later page, so a
+// straight walk to the end can miss it. This is inherent to keyset pagination
+// over an activity timestamp; the client mitigation is to re-fetch from the top
+// whenever new activity arrives rather than only paging downward.
 func (s *Service) ListMine(ctx context.Context, me uuid.UUID, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error) {
 	list, err := s.conversations.ListForUser(ctx, me, before, beforeID, EffectiveListLimit(limit))
 	if err != nil {

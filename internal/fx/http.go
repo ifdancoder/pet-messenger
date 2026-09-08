@@ -30,6 +30,7 @@ func newGinEngine(
 		AllowOrigins:     []string{"http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Accept", "Authorization", "Content-Type"},
+		ExposeHeaders:    []string{"Location"},
 		AllowCredentials: true,
 	}))
 
