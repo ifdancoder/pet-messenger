@@ -23,6 +23,7 @@ func newGinEngine(
 	db database.Service,
 	authHandler *httpadapter.AuthHandler,
 	convHandler *httpadapter.ConversationHandler,
+	msgHandler *httpadapter.MessageHandler,
 	verifier *infraauth.JWTVerifier,
 ) *gin.Engine {
 	r := gin.Default()
@@ -43,6 +44,7 @@ func newGinEngine(
 	conversations := r.Group("/conversations")
 	conversations.Use(httpadapter.AuthMiddleware(verifier))
 	convHandler.RegisterRoutes(conversations)
+	msgHandler.RegisterRoutes(conversations)
 
 	return r
 }
