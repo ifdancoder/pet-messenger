@@ -695,3 +695,243 @@ func TestConversationRepository_CreatorAdminOnlyCheck(t *testing.T) {
 		t.Fatalf("err = %v, want 23514 (check_violation)", err)
 	}
 }
+
+// containsConv reports whether any conversation in list has the given id.
+func containsConv(list []*conversation.Conversation, id uuid.UUID) bool {
+	for _, c := range list {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// seedGroupChat creates a group chat with a fresh creator, returns (convID, creatorID).
+func seedGroupChat(t *testing.T) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	creator := createTestUser(t)
+	c, members, err := conversation.NewGroupChat(creator.ID, "grp "+randomUsername())
+	if err != nil {
+		t.Fatalf("NewGroupChat: %v", err)
+	}
+	if err := NewConversationRepository(testDB).Create(context.Background(), c, members); err != nil {
+		t.Fatalf("seed group chat: %v", err)
+	}
+	return c.ID, creator.ID
+}
+
+// addMember inserts a plain member (helper for the succession/roster tests).
+func addMember(t *testing.T, convID uuid.UUID, tier conversation.AdminTier, joinedAt time.Time) uuid.UUID {
+	t.Helper()
+	u := createTestUser(t)
+	m := &conversation.Member{ConversationID: convID, UserID: u.ID, Role: conversation.RoleMember, AdminTier: conversation.TierNone, JoinedAt: joinedAt}
+	if err := NewConversationRepository(testDB).AddMember(context.Background(), m); err != nil {
+		t.Fatalf("addMember: %v", err)
+	}
+	if tier != conversation.TierNone {
+		if err := NewConversationRepository(testDB).SetMemberTier(context.Background(), convID, u.ID, tier); err != nil {
+			t.Fatalf("addMember SetMemberTier: %v", err)
+		}
+	}
+	return u.ID
+}
+
+func TestConversationRepository_SetArchived(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, _ := seedGroupChat(t)
+
+	if err := repo.SetArchived(ctx, convID, true); err != nil {
+		t.Fatalf("SetArchived(true): %v", err)
+	}
+	got, _ := repo.GetByID(ctx, convID)
+	if got.ArchivedAt == nil {
+		t.Fatal("ArchivedAt should be set after archiving")
+	}
+	if err := repo.SetArchived(ctx, convID, false); err != nil {
+		t.Fatalf("SetArchived(false): %v", err)
+	}
+	got, _ = repo.GetByID(ctx, convID)
+	if got.ArchivedAt != nil {
+		t.Fatal("ArchivedAt should be nil after unarchiving")
+	}
+	if err := repo.SetArchived(ctx, uuid.Must(uuid.NewV7()), true); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatalf("SetArchived on a missing conversation = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConversationRepository_ListForUser_ExcludesArchived(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+
+	list, _ := repo.ListForUser(ctx, creatorID, time.Time{}, uuid.Nil, 50)
+	if !containsConv(list, convID) {
+		t.Fatal("active conversation should be in the list")
+	}
+	if err := repo.SetArchived(ctx, convID, true); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	list, _ = repo.ListForUser(ctx, creatorID, time.Time{}, uuid.Nil, 50)
+	if containsConv(list, convID) {
+		t.Fatal("archived conversation must be excluded from ListForUser")
+	}
+}
+
+func TestConversationRepository_ListPublicChannels_ExcludesArchived(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelGroup) // seedChannel makes a public channel
+	if err := repo.SetArchived(ctx, chID, true); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	list, _ := repo.ListPublicChannels(ctx, "", time.Time{}, uuid.Nil, 100)
+	for _, c := range list {
+		if c.ID == chID {
+			t.Fatal("archived public channel must not be discoverable")
+		}
+	}
+}
+
+func TestConversationRepository_RemoveMemberWithSuccession(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+	base := time.Now().UTC().Add(-time.Hour)
+	oldPlain := addMember(t, convID, conversation.TierNone, base)                // joined first, no tier
+	admin := addMember(t, convID, conversation.TierAdmin, base.Add(time.Minute)) // joined later, higher rank
+
+	// creator leaves -> the admin (higher rank) is promoted, not the older plain member.
+	promoted, err := repo.RemoveMemberWithSuccession(ctx, convID, creatorID)
+	if err != nil {
+		t.Fatalf("RemoveMemberWithSuccession: %v", err)
+	}
+	if promoted == nil || promoted.UserID != admin {
+		t.Fatalf("promoted = %+v, want the admin %s", promoted, admin)
+	}
+	if !promoted.IsCreator || promoted.AdminTier != conversation.TierCreatorAdmin {
+		t.Fatalf("promoted member not upgraded: %+v", promoted)
+	}
+	gotAdmin, _ := repo.GetMember(ctx, convID, admin)
+	if !gotAdmin.IsCreator {
+		t.Fatal("promotion not persisted")
+	}
+	if _, err := repo.GetMember(ctx, convID, creatorID); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatal("creator should be gone")
+	}
+	_ = oldPlain
+
+	// a non-creator leaving promotes nobody.
+	promoted, err = repo.RemoveMemberWithSuccession(ctx, convID, oldPlain)
+	if err != nil {
+		t.Fatalf("RemoveMemberWithSuccession (non-creator): %v", err)
+	}
+	if promoted != nil {
+		t.Fatalf("promoted = %+v, want nil for a non-creator leaver", promoted)
+	}
+
+	// leaving twice -> ErrNotMember.
+	if _, err := repo.RemoveMemberWithSuccession(ctx, convID, oldPlain); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatalf("second remove = %v, want ErrNotMember", err)
+	}
+}
+
+func TestConversationRepository_RemoveMemberWithSuccession_LastMember(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+	promoted, err := repo.RemoveMemberWithSuccession(ctx, convID, creatorID)
+	if err != nil {
+		t.Fatalf("RemoveMemberWithSuccession: %v", err)
+	}
+	if promoted != nil {
+		t.Fatalf("promoted = %+v, want nil when no members remain", promoted)
+	}
+}
+
+func TestConversationRepository_ClaimCreator(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+	base := time.Now().UTC().Add(-time.Hour)
+	heir := addMember(t, convID, conversation.TierAdmin, base)
+	plain := addMember(t, convID, conversation.TierNone, base.Add(time.Minute))
+
+	// vacate the seat.
+	if _, err := repo.RemoveMemberWithSuccession(ctx, convID, creatorID); err != nil {
+		t.Fatalf("vacate: %v", err)
+	}
+	// the auto-promote already filled it — undo for the test: demote + clear is_creator directly.
+	if _, err := testDB.ExecContext(ctx, `UPDATE conversation_members SET is_creator = false, admin_tier = 'admin' WHERE conversation_id = $1 AND is_creator`, convID); err != nil {
+		t.Fatalf("reset seat: %v", err)
+	}
+
+	// plain member cannot claim over the admin heir.
+	if _, err := repo.ClaimCreator(ctx, convID, plain); !errors.Is(err, conversation.ErrNotCreatorHeir) {
+		t.Fatalf("plain claim = %v, want ErrNotCreatorHeir", err)
+	}
+	// the heir claims.
+	got, err := repo.ClaimCreator(ctx, convID, heir)
+	if err != nil {
+		t.Fatalf("ClaimCreator: %v", err)
+	}
+	if !got.IsCreator || got.AdminTier != conversation.TierCreatorAdmin {
+		t.Fatalf("claimed member = %+v", got)
+	}
+	// now the seat is taken.
+	if _, err := repo.ClaimCreator(ctx, convID, plain); !errors.Is(err, conversation.ErrCreatorSeatTaken) {
+		t.Fatalf("claim taken seat = %v, want ErrCreatorSeatTaken", err)
+	}
+	// a non-member cannot claim.
+	if _, err := repo.ClaimCreator(ctx, convID, uuid.Must(uuid.NewV7())); !errors.Is(err, conversation.ErrNotMember) && !errors.Is(err, conversation.ErrCreatorSeatTaken) {
+		t.Fatalf("non-member claim = %v", err)
+	}
+}
+
+func TestConversationRepository_ListMembers(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+	// The creator (seeded just now) must sort first by joined_at ASC, so the
+	// extra members join strictly after it.
+	base := time.Now().UTC()
+	m1 := addMember(t, convID, conversation.TierNone, base.Add(1*time.Minute))
+	m2 := addMember(t, convID, conversation.TierAdmin, base.Add(2*time.Minute))
+
+	all, err := repo.ListMembers(ctx, convID, false, time.Time{}, uuid.Nil, 50)
+	if err != nil {
+		t.Fatalf("ListMembers: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("len = %d, want 3", len(all))
+	}
+	// ordered by joined_at ASC — the creator (seeded first) is index 0.
+	if all[0].UserID != creatorID || all[1].UserID != m1 || all[2].UserID != m2 {
+		t.Fatalf("order = %v", []uuid.UUID{all[0].UserID, all[1].UserID, all[2].UserID})
+	}
+	for _, mp := range all {
+		if mp.Username == "" {
+			t.Fatalf("member %s has no Username joined", mp.UserID)
+		}
+	}
+
+	adminsOnly, err := repo.ListMembers(ctx, convID, true, time.Time{}, uuid.Nil, 50)
+	if err != nil {
+		t.Fatalf("ListMembers(adminsOnly): %v", err)
+	}
+	// creator (is_creator) + m2 (admin_tier) — not m1.
+	if len(adminsOnly) != 2 {
+		t.Fatalf("adminsOnly len = %d, want 2", len(adminsOnly))
+	}
+
+	// keyset: page of 1, then the rest.
+	page1, err := repo.ListMembers(ctx, convID, false, time.Time{}, uuid.Nil, 1)
+	if err != nil || len(page1) != 1 || page1[0].UserID != creatorID {
+		t.Fatalf("page1 = %v, %v", page1, err)
+	}
+	last := page1[0]
+	page2, err := repo.ListMembers(ctx, convID, false, last.JoinedAt, last.UserID, 10)
+	if err != nil || len(page2) != 2 || page2[0].UserID != m1 {
+		t.Fatalf("page2 = %v, %v", page2, err)
+	}
+}

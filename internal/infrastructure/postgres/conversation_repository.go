@@ -99,12 +99,13 @@ func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Con
 }
 
 func (r *ConversationRepository) GetByID(ctx context.Context, id uuid.UUID) (*conversation.Conversation, error) {
-	const q = `SELECT id, kind, title, avatar_url, public, created_at, last_message_at FROM conversations WHERE id = $1`
+	const q = `SELECT id, kind, title, avatar_url, public, archived_at, created_at, last_message_at FROM conversations WHERE id = $1`
 	var (
-		c    conversation.Conversation
-		kind string
+		c          conversation.Conversation
+		kind       string
+		archivedAt sql.NullTime
 	)
-	err := r.db.QueryRowContext(ctx, q, id).Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt)
+	err := r.db.QueryRowContext(ctx, q, id).Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &archivedAt, &c.CreatedAt, &c.LastMessageAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, conversation.ErrNotFound
 	}
@@ -112,6 +113,10 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id uuid.UUID) (*co
 		return nil, fmt.Errorf("scan conversation: %w", err)
 	}
 	c.Kind = conversation.Kind(kind)
+	if archivedAt.Valid {
+		t := archivedAt.Time
+		c.ArchivedAt = &t
+	}
 	return &c, nil
 }
 
@@ -154,15 +159,16 @@ func (r *ConversationRepository) GetMember(ctx context.Context, conversationID, 
 
 func (r *ConversationRepository) GetDirect(ctx context.Context, userA, userB uuid.UUID) (*conversation.Conversation, error) {
 	const q = `
-		SELECT id, kind, title, avatar_url, public, created_at, last_message_at
+		SELECT id, kind, title, avatar_url, public, archived_at, created_at, last_message_at
 		FROM conversations
 		WHERE kind = 'direct' AND direct_key = $1`
 	var (
-		c    conversation.Conversation
-		kind string
+		c          conversation.Conversation
+		kind       string
+		archivedAt sql.NullTime
 	)
 	err := r.db.QueryRowContext(ctx, q, directKey(userA, userB)).
-		Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt)
+		Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &archivedAt, &c.CreatedAt, &c.LastMessageAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, conversation.ErrNotFound
 	}
@@ -170,6 +176,10 @@ func (r *ConversationRepository) GetDirect(ctx context.Context, userA, userB uui
 		return nil, fmt.Errorf("scan direct conversation: %w", err)
 	}
 	c.Kind = conversation.Kind(kind)
+	if archivedAt.Valid {
+		t := archivedAt.Time
+		c.ArchivedAt = &t
+	}
 	return &c, nil
 }
 
@@ -189,10 +199,11 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 	}
 
 	const q = `
-		SELECT c.id, c.kind, c.title, c.avatar_url, c.public, c.created_at, c.last_message_at
+		SELECT c.id, c.kind, c.title, c.avatar_url, c.public, c.archived_at, c.created_at, c.last_message_at
 		FROM conversations c
 		JOIN conversation_members m ON m.conversation_id = c.id
 		WHERE m.user_id = $1
+		  AND c.archived_at IS NULL
 		  AND ($2::timestamptz IS NULL OR (c.last_message_at, c.id) < ($2, $3))
 		ORDER BY c.last_message_at DESC, c.id DESC
 		LIMIT $4`
@@ -205,13 +216,18 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 	var out []*conversation.Conversation
 	for rows.Next() {
 		var (
-			c    conversation.Conversation
-			kind string
+			c          conversation.Conversation
+			kind       string
+			archivedAt sql.NullTime
 		)
-		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt); err != nil {
+		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &archivedAt, &c.CreatedAt, &c.LastMessageAt); err != nil {
 			return nil, fmt.Errorf("scan conversation row: %w", err)
 		}
 		c.Kind = conversation.Kind(kind)
+		if archivedAt.Valid {
+			t := archivedAt.Time
+			c.ArchivedAt = &t
+		}
 		out = append(out, &c)
 	}
 	if err := rows.Err(); err != nil {
@@ -294,9 +310,10 @@ func (r *ConversationRepository) ListPublicChannels(ctx context.Context, query s
 	}
 
 	const q = `
-		SELECT id, kind, title, avatar_url, public, created_at, last_message_at
+		SELECT id, kind, title, avatar_url, public, archived_at, created_at, last_message_at
 		FROM conversations
 		WHERE public AND kind IN ('channel_group', 'channel_broadcast')
+		  AND archived_at IS NULL
 		  AND ($1 = '' OR title ILIKE '%' || $1 || '%')
 		  AND ($2::timestamptz IS NULL OR (last_message_at, id) < ($2, $3))
 		ORDER BY last_message_at DESC, id DESC
@@ -310,35 +327,22 @@ func (r *ConversationRepository) ListPublicChannels(ctx context.Context, query s
 	var out []*conversation.Conversation
 	for rows.Next() {
 		var (
-			c    conversation.Conversation
-			kind string
+			c          conversation.Conversation
+			kind       string
+			archivedAt sql.NullTime
 		)
-		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &c.CreatedAt, &c.LastMessageAt); err != nil {
+		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &archivedAt, &c.CreatedAt, &c.LastMessageAt); err != nil {
 			return nil, fmt.Errorf("scan public channel row: %w", err)
 		}
 		c.Kind = conversation.Kind(kind)
+		if archivedAt.Valid {
+			t := archivedAt.Time
+			c.ArchivedAt = &t
+		}
 		out = append(out, &c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate public channel rows: %w", err)
 	}
 	return out, nil
-}
-
-// --- moderation follow-up: real implementations in conversation_repository_admin.go (Task 2) ---
-
-func (r *ConversationRepository) SetArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
-	return fmt.Errorf("conversation_repository: SetArchived not implemented")
-}
-
-func (r *ConversationRepository) RemoveMemberWithSuccession(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error) {
-	return nil, fmt.Errorf("conversation_repository: RemoveMemberWithSuccession not implemented")
-}
-
-func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error) {
-	return nil, fmt.Errorf("conversation_repository: ClaimCreator not implemented")
-}
-
-func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*conversation.MemberProfile, error) {
-	return nil, fmt.Errorf("conversation_repository: ListMembers not implemented")
 }
