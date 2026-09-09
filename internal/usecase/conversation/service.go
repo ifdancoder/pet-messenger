@@ -361,15 +361,15 @@ func (s *Service) SetArchived(ctx context.Context, actor, conversationID uuid.UU
 	if err != nil {
 		return err // conversation.ErrNotFound
 	}
-	if conv.IsArchived() == archived {
-		return nil // already in the requested state: no repo write, no timeline entry
-	}
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
 	if err != nil {
 		return err // conversation.ErrNotMember
 	}
 	if !domainconv.CanArchive(actorM) {
 		return ErrForbidden
+	}
+	if conv.IsArchived() == archived {
+		return nil // actor validated; already in the requested state: no repo write, no timeline entry
 	}
 	if err := s.conversations.SetArchived(ctx, conversationID, archived); err != nil {
 		return err

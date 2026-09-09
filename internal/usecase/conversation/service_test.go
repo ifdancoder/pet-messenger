@@ -830,6 +830,45 @@ func TestSetArchived_NoOpWhenAlreadyInState(t *testing.T) {
 	}
 }
 
+// The no-op early-return must run only after the actor is fully validated:
+// a non-member still gets ErrNotMember and a non-superadmin member still gets
+// ErrForbidden even when the conversation is already in the requested state.
+func TestSetArchived_NoOpStillEnforcesAuthority(t *testing.T) {
+	convID := uuid.Must(uuid.NewV7())
+	now := time.Now()
+
+	t.Run("non-member", func(t *testing.T) {
+		repo := &fakeConvRepo{
+			conv:      &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat, ArchivedAt: &now},
+			memberErr: domainconv.ErrNotMember,
+		}
+		poster := &fakeSystemEventPoster{}
+		s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
+		if err := s.SetArchived(context.Background(), uuid.Must(uuid.NewV7()), convID, true); !errors.Is(err, domainconv.ErrNotMember) {
+			t.Fatalf("err = %v, want ErrNotMember", err)
+		}
+		if len(repo.archivedSet) != 0 || len(poster.events) != 0 {
+			t.Fatalf("archivedSet=%+v events=%+v, want both untouched", repo.archivedSet, poster.events)
+		}
+	})
+
+	t.Run("non-superadmin member", func(t *testing.T) {
+		actor := uuid.Must(uuid.NewV7())
+		repo := &fakeConvRepo{
+			conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat, ArchivedAt: &now},
+			member: &domainconv.Member{UserID: actor, Role: domainconv.RoleMember, AdminTier: domainconv.TierAdmin},
+		}
+		poster := &fakeSystemEventPoster{}
+		s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
+		if err := s.SetArchived(context.Background(), actor, convID, true); !errors.Is(err, ErrForbidden) {
+			t.Fatalf("err = %v, want ErrForbidden", err)
+		}
+		if len(repo.archivedSet) != 0 || len(poster.events) != 0 {
+			t.Fatalf("archivedSet=%+v events=%+v, want both untouched", repo.archivedSet, poster.events)
+		}
+	})
+}
+
 func TestSetArchived_AdminForbidden(t *testing.T) {
 	actor := uuid.Must(uuid.NewV7())
 	convID := uuid.Must(uuid.NewV7())
