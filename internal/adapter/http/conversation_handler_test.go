@@ -25,6 +25,9 @@ type fakeConversationService struct {
 	joinChannel        func(actor, channelID uuid.UUID) (*domainconv.Conversation, error)
 	leaveConversation  func(actor, channelID uuid.UUID) error
 	listPublicChannels func(query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error)
+	addMember          func(actor, conversationID, invitee uuid.UUID) (*domainconv.Member, error)
+	removeMember       func(actor, conversationID, target uuid.UUID) error
+	setMemberTier      func(actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error)
 }
 
 func (f *fakeConversationService) OpenDirect(_ context.Context, me, other uuid.UUID) (*domainconv.Conversation, error) {
@@ -47,6 +50,15 @@ func (f *fakeConversationService) LeaveConversation(_ context.Context, actor, ch
 }
 func (f *fakeConversationService) ListPublicChannels(_ context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error) {
 	return f.listPublicChannels(query, before, beforeID, limit)
+}
+func (f *fakeConversationService) AddMember(_ context.Context, actor, conversationID, invitee uuid.UUID) (*domainconv.Member, error) {
+	return f.addMember(actor, conversationID, invitee)
+}
+func (f *fakeConversationService) RemoveMember(_ context.Context, actor, conversationID, target uuid.UUID) error {
+	return f.removeMember(actor, conversationID, target)
+}
+func (f *fakeConversationService) SetMemberTier(_ context.Context, actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error) {
+	return f.setMemberTier(actor, conversationID, target, tier)
 }
 
 func convRouter(h *ConversationHandler, actor *uuid.UUID) *gin.Engine {
@@ -422,13 +434,13 @@ func TestConversationHandler_JoinChannel_BadID(t *testing.T) {
 	}
 }
 
-func TestConversationHandler_LeaveChannel(t *testing.T) {
+func TestConversationHandler_LeaveConversation(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	chID := uuid.Must(uuid.NewV7())
 	h := &ConversationHandler{svc: &fakeConversationService{
 		leaveConversation: func(actor, channelID uuid.UUID) error {
 			if actor != me || channelID != chID {
-				t.Errorf("LeaveChannel(%v, %v)", actor, channelID)
+				t.Errorf("LeaveConversation(%v, %v)", actor, channelID)
 			}
 			return nil
 		},
@@ -440,7 +452,7 @@ func TestConversationHandler_LeaveChannel(t *testing.T) {
 	}
 }
 
-func TestConversationHandler_LeaveChannel_NotMember(t *testing.T) {
+func TestConversationHandler_LeaveConversation_NotMember(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	h := &ConversationHandler{svc: &fakeConversationService{
 		leaveConversation: func(uuid.UUID, uuid.UUID) error { return domainconv.ErrNotMember },
@@ -500,6 +512,120 @@ func TestConversationHandler_ListPublicChannels_ShortPageNoCursor(t *testing.T) 
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
 	if body.NextCursor != "" {
 		t.Errorf("next_cursor = %q, want empty on a short page", body.NextCursor)
+	}
+}
+
+func TestConversationHandler_AddMember(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	invitee := uuid.Must(uuid.NewV7())
+	var gotInvitee uuid.UUID
+	svc := &fakeConversationService{addMember: func(_, _, inv uuid.UUID) (*domainconv.Member, error) {
+		gotInvitee = inv
+		return &domainconv.Member{UserID: inv, Role: domainconv.RoleMember, AdminTier: domainconv.TierNone}, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+
+	w := doConvJSON(t, r, http.MethodPost, "/conversations/"+convID.String()+"/members", `{"user_id":"`+invitee.String()+`"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	if gotInvitee != invitee {
+		t.Fatalf("invitee passed = %s", gotInvitee)
+	}
+}
+
+func TestConversationHandler_AddMember_Forbidden(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{addMember: func(_, _, _ uuid.UUID) (*domainconv.Member, error) {
+		return nil, usecaseconv.ErrForbidden
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPost, "/conversations/"+convID.String()+"/members", `{"user_id":"`+uuid.Must(uuid.NewV7()).String()+`"}`)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d", w.Code)
+	}
+}
+
+func TestConversationHandler_RemoveMember(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	target := uuid.Must(uuid.NewV7())
+	called := false
+	svc := &fakeConversationService{removeMember: func(_, _, tg uuid.UUID) error {
+		called = tg == target
+		return nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodDelete, "/conversations/"+convID.String()+"/members/"+target.String(), "")
+	if w.Code != http.StatusNoContent || !called {
+		t.Fatalf("status = %d, called = %v", w.Code, called)
+	}
+}
+
+func TestConversationHandler_RemoveMember_SelfIs400(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{removeMember: func(_, _, _ uuid.UUID) error { return usecaseconv.ErrCannotKickSelf }}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodDelete, "/conversations/"+convID.String()+"/members/"+actor.String(), "")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d", w.Code)
+	}
+}
+
+func TestConversationHandler_SetMemberTier(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	target := uuid.Must(uuid.NewV7())
+	var gotTier domainconv.AdminTier
+	svc := &fakeConversationService{setMemberTier: func(_, _, _ uuid.UUID, tr domainconv.AdminTier) (*domainconv.Member, error) {
+		gotTier = tr
+		return &domainconv.Member{UserID: target, Role: domainconv.RoleMember, AdminTier: tr}, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/members/"+target.String(), `{"admin_tier":"admin"}`)
+	if w.Code != http.StatusOK || gotTier != domainconv.TierAdmin {
+		t.Fatalf("status = %d, tier = %q, body %s", w.Code, gotTier, w.Body)
+	}
+}
+
+func TestConversationHandler_SetMemberTier_ClearWithEmptyString(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	target := uuid.Must(uuid.NewV7())
+	var gotTier domainconv.AdminTier = "sentinel"
+	svc := &fakeConversationService{setMemberTier: func(_, _, _ uuid.UUID, tr domainconv.AdminTier) (*domainconv.Member, error) {
+		gotTier = tr
+		return &domainconv.Member{UserID: target}, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/members/"+target.String(), `{"admin_tier":""}`)
+	if w.Code != http.StatusOK || gotTier != domainconv.TierNone {
+		t.Fatalf("status = %d, tier = %q", w.Code, gotTier)
+	}
+}
+
+func TestConversationHandler_CreatorSelfTier(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	var gotTarget uuid.UUID
+	svc := &fakeConversationService{setMemberTier: func(_, _, tg uuid.UUID, tr domainconv.AdminTier) (*domainconv.Member, error) {
+		gotTarget = tg
+		return &domainconv.Member{UserID: tg, AdminTier: tr, IsCreator: true}, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/members/me", `{"admin_tier":"creator_admin"}`)
+	if w.Code != http.StatusOK || gotTarget != actor {
+		t.Fatalf("status = %d, target = %s", w.Code, gotTarget)
 	}
 }
 

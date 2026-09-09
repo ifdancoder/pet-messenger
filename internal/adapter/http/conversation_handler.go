@@ -24,6 +24,9 @@ type conversationService interface {
 	JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (*domainconv.Conversation, error)
 	LeaveConversation(ctx context.Context, actor, channelID uuid.UUID) error
 	ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error)
+	AddMember(ctx context.Context, actor, conversationID, invitee uuid.UUID) (*domainconv.Member, error)
+	RemoveMember(ctx context.Context, actor, conversationID, target uuid.UUID) error
+	SetMemberTier(ctx context.Context, actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error)
 }
 
 type ConversationHandler struct {
@@ -43,7 +46,11 @@ func (h *ConversationHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/channels", h.ListPublicChannels)
 	rg.GET("", h.ListMine)
 	rg.POST("/:id/join", h.JoinChannel)
-	rg.DELETE("/:id/members/me", h.LeaveChannel)
+	rg.POST("/:id/members", h.AddMember)
+	rg.PATCH("/:id/members/me", h.SetOwnTier)
+	rg.DELETE("/:id/members/me", h.LeaveConversation)
+	rg.PATCH("/:id/members/:user_id", h.SetMemberTier)
+	rg.DELETE("/:id/members/:user_id", h.RemoveMember)
 }
 
 // actorID reads the authenticated user id that AuthMiddleware stored on the
@@ -69,6 +76,34 @@ type createChannelRequest struct {
 	Kind   string `json:"kind" binding:"required"`
 	Title  string `json:"title" binding:"required"`
 	Public bool   `json:"public"`
+}
+
+type addMemberRequest struct {
+	UserID string `json:"user_id" binding:"required"`
+}
+
+// setTierRequest.AdminTier is intentionally not `binding:"required"` — the empty
+// string is a valid value meaning "no tier".
+type setTierRequest struct {
+	AdminTier string `json:"admin_tier"`
+}
+
+type memberResponse struct {
+	UserID    string    `json:"user_id"`
+	Role      string    `json:"role"`
+	AdminTier string    `json:"admin_tier"`
+	IsCreator bool      `json:"is_creator"`
+	JoinedAt  time.Time `json:"joined_at"`
+}
+
+func toMemberResponse(m *domainconv.Member) memberResponse {
+	return memberResponse{
+		UserID:    m.UserID.String(),
+		Role:      string(m.Role),
+		AdminTier: string(m.AdminTier),
+		IsCreator: m.IsCreator,
+		JoinedAt:  m.JoinedAt,
+	}
 }
 
 type conversationResponse struct {
@@ -109,9 +144,14 @@ func writeConversationError(c *gin.Context, err error) {
 		errors.Is(err, domainconv.ErrInvalidDirectMembers),
 		errors.Is(err, domainconv.ErrInvalidTitle),
 		errors.Is(err, domainconv.ErrInvalidCreator),
-		errors.Is(err, domainconv.ErrInvalidKind):
+		errors.Is(err, domainconv.ErrInvalidKind),
+		errors.Is(err, usecaseconv.ErrCannotKickSelf),
+		errors.Is(err, usecaseconv.ErrInvalidTier):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, usecaseconv.ErrForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, usecaseconv.ErrRecipientNotFound),
+		errors.Is(err, usecaseconv.ErrInviteeNotFound),
 		errors.Is(err, domainconv.ErrNotChannel),
 		errors.Is(err, domainconv.ErrNotFound),
 		errors.Is(err, domainconv.ErrNotMember):
@@ -287,7 +327,114 @@ func (h *ConversationHandler) JoinChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, toConversationResponse(conv))
 }
 
-func (h *ConversationHandler) LeaveChannel(c *gin.Context) {
+func (h *ConversationHandler) AddMember(c *gin.Context) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	convID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	var req addMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	invitee, err := uuid.Parse(req.UserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is not a valid uuid"})
+		return
+	}
+	m, err := h.svc.AddMember(c.Request.Context(), me, convID, invitee)
+	if err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, toMemberResponse(m))
+}
+
+func (h *ConversationHandler) RemoveMember(c *gin.Context) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	convID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	target, err := uuid.Parse(c.Param("user_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	if err := h.svc.RemoveMember(c.Request.Context(), me, convID, target); err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *ConversationHandler) SetMemberTier(c *gin.Context) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	convID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	target, err := uuid.Parse(c.Param("user_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	var req setTierRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	m, err := h.svc.SetMemberTier(c.Request.Context(), me, convID, target, domainconv.AdminTier(req.AdminTier))
+	if err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toMemberResponse(m))
+}
+
+// SetOwnTier handles PATCH /:id/members/me — the creator stepping down
+// (admin_tier: "") or restoring themselves (admin_tier: "creator_admin").
+func (h *ConversationHandler) SetOwnTier(c *gin.Context) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	convID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	var req setTierRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	m, err := h.svc.SetMemberTier(c.Request.Context(), me, convID, me, domainconv.AdminTier(req.AdminTier))
+	if err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toMemberResponse(m))
+}
+
+func (h *ConversationHandler) LeaveConversation(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
