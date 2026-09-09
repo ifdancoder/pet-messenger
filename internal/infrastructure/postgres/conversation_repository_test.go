@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
@@ -75,8 +76,11 @@ func TestConversationRepository_GetMember(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMember: %v", err)
 	}
-	if m.Role != conversation.RoleOwner {
-		t.Errorf("Role = %q, want %q", m.Role, conversation.RoleOwner)
+	if m.Role != conversation.RoleMember {
+		t.Errorf("Role = %q, want %q", m.Role, conversation.RoleMember)
+	}
+	if !m.IsCreator || m.AdminTier != conversation.TierCreatorAdmin {
+		t.Errorf("founder flags = (IsCreator %v, AdminTier %q), want (true, %q)", m.IsCreator, m.AdminTier, conversation.TierCreatorAdmin)
 	}
 	if m.ConversationID != c.ID || m.UserID != creator.ID {
 		t.Errorf("member ids = (%v,%v), want (%v,%v)", m.ConversationID, m.UserID, c.ID, creator.ID)
@@ -574,4 +578,123 @@ func TestConversationRepository_ListPublicChannels_EmptyQueryMatchesAll(t *testi
 	if !contains(byTag, c.ID) {
 		t.Fatalf("seeded public channel %s not returned by a tag query %q", c.ID, tag)
 	}
+}
+
+func TestConversationRepository_Create_FounderRow(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	owner := createTestUser(t)
+	c, members, err := conversation.NewGroupChat(owner.ID, "founders "+randomUsername())
+	if err != nil {
+		t.Fatalf("NewGroupChat: %v", err)
+	}
+	if err := repo.Create(ctx, c, members); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := repo.GetMember(ctx, c.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("GetMember: %v", err)
+	}
+	if !got.IsCreator || got.AdminTier != conversation.TierCreatorAdmin {
+		t.Fatalf("founder row = %+v, want IsCreator + TierCreatorAdmin", got)
+	}
+}
+
+func TestConversationRepository_GetMember_TierNoneWhenNull(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+	joiner := createTestUser(t)
+	if err := repo.AddMember(ctx, &conversation.Member{
+		ConversationID: chID, UserID: joiner.ID, Role: conversation.RoleMember, JoinedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	got, err := repo.GetMember(ctx, chID, joiner.ID)
+	if err != nil {
+		t.Fatalf("GetMember: %v", err)
+	}
+	if got.IsCreator || got.AdminTier != conversation.TierNone {
+		t.Fatalf("joined member = %+v, want no creator flag and TierNone", got)
+	}
+}
+
+func TestConversationRepository_SetMemberTier(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+	joiner := createTestUser(t)
+	if err := repo.AddMember(ctx, &conversation.Member{
+		ConversationID: chID, UserID: joiner.ID, Role: conversation.RoleMember, JoinedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	if err := repo.SetMemberTier(ctx, chID, joiner.ID, conversation.TierAdmin); err != nil {
+		t.Fatalf("SetMemberTier admin: %v", err)
+	}
+	got, _ := repo.GetMember(ctx, chID, joiner.ID)
+	if got.AdminTier != conversation.TierAdmin {
+		t.Fatalf("after set = %q, want admin", got.AdminTier)
+	}
+
+	if err := repo.SetMemberTier(ctx, chID, joiner.ID, conversation.TierNone); err != nil {
+		t.Fatalf("SetMemberTier none: %v", err)
+	}
+	got, _ = repo.GetMember(ctx, chID, joiner.ID)
+	if got.AdminTier != conversation.TierNone {
+		t.Fatalf("after clear = %q, want TierNone", got.AdminTier)
+	}
+
+	other := uuid.Must(uuid.NewV7())
+	if err := repo.SetMemberTier(ctx, chID, other, conversation.TierAdmin); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatalf("SetMemberTier for a non-member = %v, want ErrNotMember", err)
+	}
+}
+
+func TestConversationRepository_OneCreatorPerConversation(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+	intruder := createTestUser(t)
+	// A second is_creator row for the same conversation must violate the
+	// partial unique index.
+	_, err := testDB.ExecContext(ctx,
+		`INSERT INTO conversation_members (conversation_id, user_id, role, joined_at, is_creator, admin_tier)
+		 VALUES ($1, $2, 'member', now(), true, 'creator_admin')`,
+		chID, intruder.ID,
+	)
+	if err == nil {
+		t.Fatal("expected a unique-violation on a second is_creator row")
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Fatalf("err = %v, want 23505", err)
+	}
+	_ = repo
+}
+
+func TestConversationRepository_CreatorAdminOnlyCheck(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	chID, _ := seedChannel(t, conversation.KindChannelGroup)
+	joiner := createTestUser(t)
+	if err := repo.AddMember(ctx, &conversation.Member{
+		ConversationID: chID, UserID: joiner.ID, Role: conversation.RoleMember, JoinedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	// A non-creator row cannot hold creator_admin (CHECK constraint 23514).
+	_, err := testDB.ExecContext(ctx,
+		`UPDATE conversation_members SET admin_tier = 'creator_admin' WHERE conversation_id = $1 AND user_id = $2`,
+		chID, joiner.ID,
+	)
+	if err == nil {
+		t.Fatal("expected a CHECK violation setting creator_admin on a non-creator row")
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Fatalf("err = %v, want 23514 (check_violation)", err)
+	}
+	_ = repo
 }

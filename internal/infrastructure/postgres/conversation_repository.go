@@ -33,6 +33,15 @@ func directKey(a, b uuid.UUID) string {
 	return x + ":" + y
 }
 
+// adminTierParam maps a domain tier to an INSERT/UPDATE arg: TierNone becomes
+// SQL NULL.
+func adminTierParam(t conversation.AdminTier) any {
+	if t == conversation.TierNone {
+		return nil
+	}
+	return string(t)
+}
+
 // Create persists the conversation and its founding members in one transaction.
 func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Conversation, members []*conversation.Member) error {
 	if len(members) == 0 {
@@ -72,11 +81,12 @@ func (r *ConversationRepository) Create(ctx context.Context, c *conversation.Con
 	}
 
 	const memberQ = `
-		INSERT INTO conversation_members (conversation_id, user_id, role, joined_at, muted_until, last_read_message_id)
-		VALUES ($1, $2, $3::conversation_role, $4, $5, $6)`
+		INSERT INTO conversation_members (conversation_id, user_id, role, joined_at, muted_until, last_read_message_id, is_creator, admin_tier)
+		VALUES ($1, $2, $3::conversation_role, $4, $5, $6, $7, $8::conversation_admin_tier)`
 	for _, m := range members {
 		if _, err := tx.ExecContext(ctx, memberQ,
 			c.ID, m.UserID, string(m.Role), m.JoinedAt, m.MutedUntil, nullableUUID(m.LastReadMessageID),
+			m.IsCreator, adminTierParam(m.AdminTier),
 		); err != nil {
 			return fmt.Errorf("insert conversation member: %w", err)
 		}
@@ -107,7 +117,7 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id uuid.UUID) (*co
 
 func (r *ConversationRepository) GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error) {
 	const q = `
-		SELECT conversation_id, user_id, role, joined_at, muted_until, last_read_message_id
+		SELECT conversation_id, user_id, role, joined_at, muted_until, last_read_message_id, is_creator, admin_tier
 		FROM conversation_members
 		WHERE conversation_id = $1 AND user_id = $2`
 	var (
@@ -115,9 +125,10 @@ func (r *ConversationRepository) GetMember(ctx context.Context, conversationID, 
 		role       string
 		mutedUntil sql.NullTime
 		lastRead   uuid.NullUUID
+		adminTier  sql.NullString
 	)
 	err := r.db.QueryRowContext(ctx, q, conversationID, userID).
-		Scan(&m.ConversationID, &m.UserID, &role, &m.JoinedAt, &mutedUntil, &lastRead)
+		Scan(&m.ConversationID, &m.UserID, &role, &m.JoinedAt, &mutedUntil, &lastRead, &m.IsCreator, &adminTier)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, conversation.ErrNotMember
 	}
@@ -125,6 +136,11 @@ func (r *ConversationRepository) GetMember(ctx context.Context, conversationID, 
 		return nil, fmt.Errorf("scan conversation member: %w", err)
 	}
 	m.Role = conversation.Role(role)
+	if adminTier.Valid {
+		m.AdminTier = conversation.AdminTier(adminTier.String)
+	} else {
+		m.AdminTier = conversation.TierNone
+	}
 	if mutedUntil.Valid {
 		t := mutedUntil.Time
 		m.MutedUntil = &t
@@ -242,9 +258,25 @@ func (r *ConversationRepository) RemoveMember(ctx context.Context, conversationI
 	return nil
 }
 
-// TODO(moderation Task 2): real implementation
+// SetMemberTier sets (or clears, with TierNone) the target member's admin_tier.
+// Role is untouched. ErrNotMember if there is no such membership row.
 func (r *ConversationRepository) SetMemberTier(ctx context.Context, conversationID, userID uuid.UUID, tier conversation.AdminTier) error {
-	return fmt.Errorf("conversation_repository: SetMemberTier not implemented")
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE conversation_members SET admin_tier = $3::conversation_admin_tier
+		 WHERE conversation_id = $1 AND user_id = $2`,
+		conversationID, userID, adminTierParam(tier),
+	)
+	if err != nil {
+		return fmt.Errorf("update conversation member tier: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if n == 0 {
+		return conversation.ErrNotMember
+	}
+	return nil
 }
 
 // ListPublicChannels returns public channels newest-activity-first with a
