@@ -35,6 +35,15 @@ type fakeConvRepo struct {
 	publicList []*domainconv.Conversation
 	gotQuery   string
 	gotLimit   int
+
+	tierSet []tierSetCall
+	tierErr error
+}
+
+type tierSetCall struct {
+	ConversationID uuid.UUID
+	UserID         uuid.UUID
+	Tier           domainconv.AdminTier
 }
 
 func (f *fakeConvRepo) Create(_ context.Context, c *domainconv.Conversation, _ []*domainconv.Member) error {
@@ -91,6 +100,13 @@ func (f *fakeConvRepo) RemoveMember(_ context.Context, conversationID, userID uu
 func (f *fakeConvRepo) ListPublicChannels(_ context.Context, query string, _ time.Time, _ uuid.UUID, limit int) ([]*domainconv.Conversation, error) {
 	f.gotQuery, f.gotLimit = query, limit
 	return f.publicList, nil
+}
+func (f *fakeConvRepo) SetMemberTier(_ context.Context, conversationID, userID uuid.UUID, tier domainconv.AdminTier) error {
+	if f.tierErr != nil {
+		return f.tierErr
+	}
+	f.tierSet = append(f.tierSet, tierSetCall{conversationID, userID, tier})
+	return nil
 }
 
 type fakeUserRepo struct {

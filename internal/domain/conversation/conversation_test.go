@@ -147,8 +147,8 @@ func TestNewGroupChat(t *testing.T) {
 	if members[0].UserID != creator {
 		t.Errorf("member UserID = %v, want %v", members[0].UserID, creator)
 	}
-	if members[0].Role != conversation.RoleOwner {
-		t.Errorf("member Role = %q, want %q", members[0].Role, conversation.RoleOwner)
+	if members[0].Role != conversation.RoleMember || !members[0].IsCreator || members[0].AdminTier != conversation.TierCreatorAdmin {
+		t.Errorf("founder = %+v, want RoleMember + IsCreator + TierCreatorAdmin", members[0])
 	}
 	if members[0].ConversationID != c.ID {
 		t.Errorf("member ConversationID = %v, want %v", members[0].ConversationID, c.ID)
@@ -226,42 +226,31 @@ func TestConstantValues(t *testing.T) {
 }
 
 func TestCanPost(t *testing.T) {
-	roles := []conversation.Role{
-		conversation.RoleOwner,
-		conversation.RoleAdmin,
-		conversation.RoleMember,
-		conversation.RoleSubscriber,
+	// want[kind] -> for a plain member (Role) and for an admin-tier holder.
+	cases := []struct {
+		kind        conversation.Kind
+		member      *conversation.Member
+		wantCanPost bool
+	}{
+		{conversation.KindDirect, &conversation.Member{Role: conversation.RoleMember}, true},
+		{conversation.KindDirect, &conversation.Member{Role: conversation.RoleSubscriber}, false},
+		{conversation.KindGroupChat, &conversation.Member{Role: conversation.RoleMember}, true},
+		{conversation.KindGroupChat, &conversation.Member{Role: conversation.RoleSubscriber}, false},
+		{conversation.KindChannelGroup, &conversation.Member{Role: conversation.RoleMember}, true},
+		{conversation.KindChannelGroup, &conversation.Member{Role: conversation.RoleSubscriber}, false},
+		{conversation.KindChannelBroadcast, &conversation.Member{Role: conversation.RoleMember}, false},
+		{conversation.KindChannelBroadcast, &conversation.Member{Role: conversation.RoleSubscriber}, false},
+		{conversation.KindChannelBroadcast, &conversation.Member{Role: conversation.RoleMember, IsCreator: true}, true},
+		{conversation.KindChannelBroadcast, &conversation.Member{Role: conversation.RoleMember, AdminTier: conversation.TierContentAdmin}, true},
+		{conversation.KindChannelBroadcast, &conversation.Member{Role: conversation.RoleMember, AdminTier: conversation.TierSuperAdmin}, true},
 	}
-	// want[kind][role] = expected CanPost result
-	want := map[conversation.Kind]map[conversation.Role]bool{
-		conversation.KindDirect: {
-			conversation.RoleOwner: true, conversation.RoleAdmin: true,
-			conversation.RoleMember: true, conversation.RoleSubscriber: false,
-		},
-		conversation.KindGroupChat: {
-			conversation.RoleOwner: true, conversation.RoleAdmin: true,
-			conversation.RoleMember: true, conversation.RoleSubscriber: false,
-		},
-		conversation.KindChannelGroup: {
-			conversation.RoleOwner: true, conversation.RoleAdmin: true,
-			conversation.RoleMember: true, conversation.RoleSubscriber: false,
-		},
-		conversation.KindChannelBroadcast: {
-			conversation.RoleOwner: true, conversation.RoleAdmin: true,
-			conversation.RoleMember: false, conversation.RoleSubscriber: false,
-		},
-	}
-
-	for kind, roleWants := range want {
-		for _, role := range roles {
-			c := &conversation.Conversation{Kind: kind}
-			if got := c.CanPost(role); got != roleWants[role] {
-				t.Errorf("Conversation{Kind:%q}.CanPost(%q) = %v, want %v", kind, role, got, roleWants[role])
-			}
+	for _, tc := range cases {
+		c := &conversation.Conversation{Kind: tc.kind}
+		if got := c.CanPost(tc.member); got != tc.wantCanPost {
+			t.Errorf("Conversation{Kind:%q}.CanPost(%+v) = %v, want %v", tc.kind, tc.member, got, tc.wantCanPost)
 		}
 	}
-
-	if (&conversation.Conversation{Kind: conversation.Kind("bogus")}).CanPost(conversation.RoleOwner) {
+	if (&conversation.Conversation{Kind: conversation.Kind("bogus")}).CanPost(&conversation.Member{}) {
 		t.Error("CanPost on unknown kind should be false")
 	}
 }
@@ -279,7 +268,9 @@ func TestNewChannel(t *testing.T) {
 		if c.ID.Version() != 7 || c.CreatedAt.IsZero() || !c.LastMessageAt.Equal(c.CreatedAt) {
 			t.Errorf("channel timestamps/id wrong: %+v", c)
 		}
-		if len(members) != 1 || members[0].UserID != creator || members[0].Role != conversation.RoleOwner {
+		if len(members) != 1 || members[0].UserID != creator ||
+			members[0].Role != conversation.RoleMember || !members[0].IsCreator ||
+			members[0].AdminTier != conversation.TierCreatorAdmin {
 			t.Errorf("members = %+v", members)
 		}
 	}
@@ -332,6 +323,141 @@ func TestKind_IsChannel(t *testing.T) {
 			t.Errorf("Kind(%q).IsChannel() = %v, want %v", k, got, want)
 		}
 	}
+}
+
+func TestAdminTier_ValidAndRankOrder(t *testing.T) {
+	for _, ok := range []conversation.AdminTier{
+		conversation.TierCreatorAdmin, conversation.TierSuperAdmin,
+		conversation.TierAdmin, conversation.TierContentAdmin, conversation.TierNone,
+	} {
+		if !ok.Valid() {
+			t.Errorf("%q should be Valid", ok)
+		}
+	}
+	if conversation.AdminTier("mod").Valid() {
+		t.Error(`AdminTier("mod") should be invalid`)
+	}
+}
+
+func TestCanModerateMessages(t *testing.T) {
+	for tier, want := range map[conversation.AdminTier]bool{
+		conversation.TierNone:         false,
+		conversation.TierContentAdmin: true,
+		conversation.TierAdmin:        true,
+		conversation.TierSuperAdmin:   true,
+		conversation.TierCreatorAdmin: true,
+	} {
+		m := &conversation.Member{AdminTier: tier}
+		if got := m.CanModerateMessages(); got != want {
+			t.Errorf("tier %q: CanModerateMessages() = %v, want %v", tier, got, want)
+		}
+	}
+}
+
+func TestCanAddMembers(t *testing.T) {
+	admin := &conversation.Member{AdminTier: conversation.TierAdmin}
+	plain := &conversation.Member{AdminTier: conversation.TierNone}
+	content := &conversation.Member{AdminTier: conversation.TierContentAdmin}
+	if (&conversation.Conversation{Kind: conversation.KindDirect}).CanAddMembers(admin) {
+		t.Error("no one may add members to a direct conversation")
+	}
+	gc := &conversation.Conversation{Kind: conversation.KindGroupChat}
+	if !gc.CanAddMembers(admin) {
+		t.Error("an admin may add members to a group chat")
+	}
+	if gc.CanAddMembers(plain) || gc.CanAddMembers(content) {
+		t.Error("a plain member / content-admin may not add members")
+	}
+}
+
+func TestCanManageMember(t *testing.T) {
+	mk := func(tier conversation.AdminTier, creator bool) *conversation.Member {
+		return &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: tier, IsCreator: creator}
+	}
+	creatorAdmin := mk(conversation.TierCreatorAdmin, true)
+	super1 := mk(conversation.TierSuperAdmin, false)
+	super2 := mk(conversation.TierSuperAdmin, false)
+	admin := mk(conversation.TierAdmin, false)
+	content := mk(conversation.TierContentAdmin, false)
+	plain := mk(conversation.TierNone, false)
+
+	// creator_admin manages everyone below.
+	for _, target := range []*conversation.Member{super1, admin, content, plain} {
+		if !conversation.CanManageMember(creatorAdmin, target) {
+			t.Errorf("creator_admin should manage %q", target.AdminTier)
+		}
+	}
+	// superadmin manages strictly lower, not another superadmin.
+	if !conversation.CanManageMember(super1, admin) || !conversation.CanManageMember(super1, content) || !conversation.CanManageMember(super1, plain) {
+		t.Error("superadmin should manage admin/content/plain")
+	}
+	if conversation.CanManageMember(super1, super2) {
+		t.Error("superadmin must not manage another superadmin")
+	}
+	// admin manages only plain members.
+	if !conversation.CanManageMember(admin, plain) {
+		t.Error("admin should manage a plain member")
+	}
+	if conversation.CanManageMember(admin, content) || conversation.CanManageMember(admin, super1) {
+		t.Error("admin must not manage any tier holder")
+	}
+	// content-admin and plain manage nobody.
+	if conversation.CanManageMember(content, plain) || conversation.CanManageMember(plain, plain) {
+		t.Error("content-admin / plain manage nobody")
+	}
+	// the creator is untouchable by anyone else; and nobody manages themselves.
+	if conversation.CanManageMember(super1, creatorAdmin) {
+		t.Error("no one manages the creator")
+	}
+	if conversation.CanManageMember(super1, super1) {
+		t.Error("no self-management")
+	}
+}
+
+func TestCanAssignTier(t *testing.T) {
+	self := &conversation.Member{UserID: uuid.Must(uuid.NewV7())}
+	creatorSelf := &conversation.Member{UserID: self.UserID, IsCreator: true, AdminTier: conversation.TierNone}
+	superA := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierSuperAdmin}
+	superB := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierSuperAdmin}
+	admin := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierAdmin}
+	plain := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierNone}
+
+	// creator self-restore.
+	if !conversation.CanAssignTier(creatorSelf, creatorSelf, conversation.TierCreatorAdmin) {
+		t.Error("creator may restore their own creator_admin")
+	}
+	// non-creator cannot take creator_admin, even for themselves.
+	if conversation.CanAssignTier(superA, superA, conversation.TierCreatorAdmin) {
+		t.Error("a non-creator may not self-assign creator_admin")
+	}
+	// voluntary self step-down.
+	if !conversation.CanAssignTier(superA, superA, conversation.TierAdmin) {
+		t.Error("a superadmin may step themselves down to admin")
+	}
+	// superadmin promotes a plain member to admin, not to superadmin.
+	if !conversation.CanAssignTier(superA, plain, conversation.TierAdmin) {
+		t.Error("superadmin may mint an admin")
+	}
+	if conversation.CanAssignTier(superA, plain, conversation.TierSuperAdmin) {
+		t.Error("superadmin may not mint another superadmin")
+	}
+	// superadmin may not retier another superadmin.
+	if conversation.CanAssignTier(superA, superB, conversation.TierAdmin) {
+		t.Error("superadmin may not retier a peer superadmin")
+	}
+	// admin may not assign any tier.
+	if conversation.CanAssignTier(admin, plain, conversation.TierContentAdmin) {
+		t.Error("admin may not assign tiers")
+	}
+	// nobody assigns creator_admin to someone else.
+	if conversation.CanAssignTier(creatorSelf, plain, conversation.TierCreatorAdmin) {
+		t.Error("creator_admin is never assignable to another member")
+	}
+	// invalid tier value.
+	if conversation.CanAssignTier(superA, plain, conversation.AdminTier("mod")) {
+		t.Error("invalid tier must be rejected")
+	}
+	_ = self
 }
 
 func TestIsMuted(t *testing.T) {

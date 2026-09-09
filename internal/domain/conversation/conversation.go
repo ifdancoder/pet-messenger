@@ -60,6 +60,48 @@ func (r Role) Valid() bool {
 	}
 }
 
+// AdminTier is a member's rung on the moderation ladder, independent of Role.
+// TierNone (the zero value) means the member holds no admin powers. Only the
+// is_creator row may hold TierCreatorAdmin.
+type AdminTier string
+
+// Admin tiers, highest first. Specialized tiers below TierAdmin (content_admin
+// and any added later) all share rank 1.
+const (
+	TierCreatorAdmin AdminTier = "creator_admin"
+	TierSuperAdmin   AdminTier = "superadmin"
+	TierAdmin        AdminTier = "admin"
+	TierContentAdmin AdminTier = "content_admin"
+	TierNone         AdminTier = ""
+)
+
+// Valid reports whether t is one of the known tiers (TierNone included).
+func (t AdminTier) Valid() bool {
+	switch t {
+	case TierCreatorAdmin, TierSuperAdmin, TierAdmin, TierContentAdmin, TierNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// rank orders the ladder for the "who may manage whom" checks. Unknown tiers
+// and TierNone rank 0.
+func (t AdminTier) rank() int {
+	switch t {
+	case TierCreatorAdmin:
+		return 100
+	case TierSuperAdmin:
+		return 3
+	case TierAdmin:
+		return 2
+	case TierContentAdmin:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // Domain errors.
 var (
 	ErrInvalidKind          = errors.New("conversation: invalid kind")
@@ -99,9 +141,15 @@ type Conversation struct {
 // Member is a user's membership in a conversation. MutedUntil and
 // LastReadMessageID are nil until set.
 type Member struct {
-	ConversationID    uuid.UUID
-	UserID            uuid.UUID
-	Role              Role
+	ConversationID uuid.UUID
+	UserID         uuid.UUID
+	Role           Role
+	// IsCreator is set once, at conversation creation, on exactly one member.
+	// It is immutable and confers nothing on its own — see CanAssignTier /
+	// CanManageMember for its only two effects.
+	IsCreator bool
+	// AdminTier is the member's moderation rung; TierNone when not an admin.
+	AdminTier         AdminTier
 	JoinedAt          time.Time
 	MutedUntil        *time.Time
 	LastReadMessageID *uuid.UUID
@@ -146,7 +194,7 @@ func NewGroupChat(creator uuid.UUID, title string) (*Conversation, []*Member, er
 		LastMessageAt: now,
 	}
 	members := []*Member{
-		{ConversationID: c.ID, UserID: creator, Role: RoleOwner, JoinedAt: now},
+		{ConversationID: c.ID, UserID: creator, Role: RoleMember, IsCreator: true, AdminTier: TierCreatorAdmin, JoinedAt: now},
 	}
 	return c, members, nil
 }
@@ -176,7 +224,7 @@ func NewChannel(creator uuid.UUID, kind Kind, title string, public bool) (*Conve
 		LastMessageAt: now,
 	}
 	members := []*Member{
-		{ConversationID: c.ID, UserID: creator, Role: RoleOwner, JoinedAt: now},
+		{ConversationID: c.ID, UserID: creator, Role: RoleMember, IsCreator: true, AdminTier: TierCreatorAdmin, JoinedAt: now},
 	}
 	return c, members, nil
 }
@@ -208,6 +256,9 @@ type Repository interface {
 	// RemoveMember deletes the user's membership, or returns ErrNotMember if
 	// there was no such row.
 	RemoveMember(ctx context.Context, conversationID, userID uuid.UUID) error
+	// SetMemberTier sets (or, with TierNone, clears) the target member's
+	// admin_tier. It does not touch Role. ErrNotMember if there is no such row.
+	SetMemberTier(ctx context.Context, conversationID, userID uuid.UUID, tier AdminTier) error
 	// ListPublicChannels returns public channel_group / channel_broadcast
 	// conversations ordered by (LastMessageAt, ID) descending — newest activity
 	// first. A non-empty query filters by a case-insensitive title substring. A
@@ -217,21 +268,76 @@ type Repository interface {
 	ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*Conversation, error)
 }
 
-// CanPost reports whether a member with role r may send messages to c. In
-// direct, group_chat, and channel_group anyone but a subscriber may post; in
-// channel_broadcast only owner and admin may. The caller must pass the role of a
-// Member fetched for THIS conversation (e.g. via Repository.GetMember(ctx, c.ID,
-// userID)), never a role taken from a request body or a lookup on a different
-// conversation.
-func (c *Conversation) CanPost(r Role) bool {
+// CanPost reports whether m may send messages to c. Pass a Member fetched for
+// THIS conversation (Repository.GetMember(ctx, c.ID, userID)), never a member
+// from a request body or a different conversation. In direct, group_chat and
+// channel_group anyone but a subscriber may post; in channel_broadcast only the
+// creator or an admin (any tier) may.
+func (c *Conversation) CanPost(m *Member) bool {
 	switch c.Kind {
 	case KindDirect, KindGroupChat, KindChannelGroup:
-		return r != RoleSubscriber
+		return m.Role != RoleSubscriber
 	case KindChannelBroadcast:
-		return r == RoleOwner || r == RoleAdmin
+		return m.IsCreator || m.AdminTier != TierNone
 	default:
 		return false
 	}
+}
+
+// CanModerateMessages reports whether m may delete another member's message.
+// Every admin tier (content_admin and up) can; plain members and subscribers
+// cannot.
+func (m *Member) CanModerateMessages() bool {
+	return m.AdminTier.rank() >= 1
+}
+
+// CanAddMembers reports whether actor may add another user to c. Never for a
+// direct conversation; otherwise an admin-tier holder (rank >= 2) may.
+func (c *Conversation) CanAddMembers(actor *Member) bool {
+	return c.Kind != KindDirect && actor.AdminTier.rank() >= 2
+}
+
+// CanManageMember reports whether actor may kick or retier target. No one may
+// manage the creator or themselves. A rank-3+ actor (superadmin / creator_admin)
+// manages anyone strictly lower in rank; a rank-2 actor (admin) manages only
+// members that hold no tier; anyone lower manages no one.
+func CanManageMember(actor, target *Member) bool {
+	if target.IsCreator || actor.UserID == target.UserID {
+		return false
+	}
+	switch {
+	case actor.AdminTier.rank() >= TierSuperAdmin.rank():
+		return actor.AdminTier.rank() > target.AdminTier.rank()
+	case actor.AdminTier.rank() == TierAdmin.rank():
+		return target.AdminTier.rank() == 0
+	default:
+		return false
+	}
+}
+
+// CanAssignTier reports whether actor may set target's tier to newTier.
+//
+// Self: a member may always lower their own tier (or leave it unchanged); only
+// the creator may raise their own, and only to TierCreatorAdmin.
+// Others: rank-3+ only, target must be manageable (CanManageMember), newTier
+// must be a real tier strictly below the actor's rank, and TierCreatorAdmin is
+// never assignable to another member.
+func CanAssignTier(actor, target *Member, newTier AdminTier) bool {
+	if !newTier.Valid() {
+		return false
+	}
+	if actor.UserID == target.UserID {
+		if newTier == TierCreatorAdmin {
+			return actor.IsCreator
+		}
+		return newTier.rank() <= actor.AdminTier.rank()
+	}
+	if newTier == TierCreatorAdmin {
+		return false
+	}
+	return actor.AdminTier.rank() >= TierSuperAdmin.rank() &&
+		CanManageMember(actor, target) &&
+		newTier.rank() < actor.AdminTier.rank()
 }
 
 // IsMuted reports whether the member has muted the conversation at time now.

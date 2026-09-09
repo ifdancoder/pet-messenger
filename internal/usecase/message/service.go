@@ -77,7 +77,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, convID uuid.UUID, cont
 	if err != nil {
 		return nil, err // conversation.ErrNotMember
 	}
-	if !conv.CanPost(member.Role) {
+	if !conv.CanPost(member) {
 		return nil, ErrCannotPost
 	}
 	if replyToID != nil {

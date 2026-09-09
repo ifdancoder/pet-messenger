@@ -242,6 +242,11 @@ func (r *ConversationRepository) RemoveMember(ctx context.Context, conversationI
 	return nil
 }
 
+// TODO(moderation Task 2): real implementation
+func (r *ConversationRepository) SetMemberTier(ctx context.Context, conversationID, userID uuid.UUID, tier conversation.AdminTier) error {
+	return fmt.Errorf("conversation_repository: SetMemberTier not implemented")
+}
+
 // ListPublicChannels returns public channels newest-activity-first with a
 // (last_message_at, id) keyset. A non-empty query is a case-insensitive title
 // substring filter. The idx_conversations_public_channels partial index backs

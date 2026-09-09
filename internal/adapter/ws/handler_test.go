@@ -49,6 +49,9 @@ func (s stubConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error 
 func (s stubConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*conversation.Conversation, error) {
 	return nil, nil
 }
+func (s stubConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, conversation.AdminTier) error {
+	return nil
+}
 
 func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
 	t.Helper()

@@ -97,6 +97,9 @@ func (f *fakeConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error
 func (f *fakeConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*domainconv.Conversation, error) {
 	return nil, nil
 }
+func (f *fakeConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, domainconv.AdminTier) error {
+	return nil
+}
 
 type fakePublisher struct {
 	created []*domainmsg.Message
