@@ -1,6 +1,9 @@
--- Best-effort reconstruction of the legacy role values before the columns go.
-UPDATE conversation_members SET role = 'owner' WHERE is_creator;
-UPDATE conversation_members SET role = 'admin' WHERE admin_tier = 'admin' AND NOT is_creator;
+-- This down migration is lossy by design. The admin_tier ladder and the
+-- is_creator badge are dropped, not reconstructed into the legacy owner/admin
+-- role values: a re-up would otherwise silently demote superadmin/content_admin
+-- to no tier and silently promote a stepped-down creator back to creator_admin.
+-- The database is pre-launch; a rollback that needs the old roles must restore
+-- from a backup.
 
 DROP INDEX IF EXISTS idx_conversation_members_one_creator;
 

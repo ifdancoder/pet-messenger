@@ -653,7 +653,6 @@ func TestConversationRepository_SetMemberTier(t *testing.T) {
 }
 
 func TestConversationRepository_OneCreatorPerConversation(t *testing.T) {
-	repo := NewConversationRepository(testDB)
 	ctx := context.Background()
 	chID, _ := seedChannel(t, conversation.KindChannelGroup)
 	intruder := createTestUser(t)
@@ -671,7 +670,6 @@ func TestConversationRepository_OneCreatorPerConversation(t *testing.T) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
 		t.Fatalf("err = %v, want 23505", err)
 	}
-	_ = repo
 }
 
 func TestConversationRepository_CreatorAdminOnlyCheck(t *testing.T) {
@@ -696,5 +694,4 @@ func TestConversationRepository_CreatorAdminOnlyCheck(t *testing.T) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
 		t.Fatalf("err = %v, want 23514 (check_violation)", err)
 	}
-	_ = repo
 }

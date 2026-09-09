@@ -333,7 +333,7 @@ func (h *ConversationHandler) AddMember(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	convID, err := uuid.Parse(c.Param("id"))
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
 		return
@@ -348,7 +348,7 @@ func (h *ConversationHandler) AddMember(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is not a valid uuid"})
 		return
 	}
-	m, err := h.svc.AddMember(c.Request.Context(), me, convID, invitee)
+	m, err := h.svc.AddMember(c.Request.Context(), me, id, invitee)
 	if err != nil {
 		writeConversationError(c, err)
 		return
@@ -362,7 +362,7 @@ func (h *ConversationHandler) RemoveMember(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	convID, err := uuid.Parse(c.Param("id"))
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
 		return
@@ -372,7 +372,7 @@ func (h *ConversationHandler) RemoveMember(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
-	if err := h.svc.RemoveMember(c.Request.Context(), me, convID, target); err != nil {
+	if err := h.svc.RemoveMember(c.Request.Context(), me, id, target); err != nil {
 		writeConversationError(c, err)
 		return
 	}
@@ -385,7 +385,7 @@ func (h *ConversationHandler) SetMemberTier(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	convID, err := uuid.Parse(c.Param("id"))
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
 		return
@@ -400,7 +400,7 @@ func (h *ConversationHandler) SetMemberTier(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	m, err := h.svc.SetMemberTier(c.Request.Context(), me, convID, target, domainconv.AdminTier(req.AdminTier))
+	m, err := h.svc.SetMemberTier(c.Request.Context(), me, id, target, domainconv.AdminTier(req.AdminTier))
 	if err != nil {
 		writeConversationError(c, err)
 		return
@@ -416,7 +416,7 @@ func (h *ConversationHandler) SetOwnTier(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	convID, err := uuid.Parse(c.Param("id"))
+	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
 		return
@@ -426,7 +426,7 @@ func (h *ConversationHandler) SetOwnTier(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	m, err := h.svc.SetMemberTier(c.Request.Context(), me, convID, me, domainconv.AdminTier(req.AdminTier))
+	m, err := h.svc.SetMemberTier(c.Request.Context(), me, id, me, domainconv.AdminTier(req.AdminTier))
 	if err != nil {
 		writeConversationError(c, err)
 		return

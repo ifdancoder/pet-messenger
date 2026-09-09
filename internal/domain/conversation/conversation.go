@@ -251,7 +251,8 @@ type Repository interface {
 	// AddMember inserts one membership row. If the user is already a member it
 	// returns nil (idempotent), so a concurrent double-join converges. Callers
 	// that need to know whether the row was newly added must check membership
-	// first.
+	// first. Tier and creator status are NOT writable through this path — use
+	// Create (founder) or SetMemberTier.
 	AddMember(ctx context.Context, m *Member) error
 	// RemoveMember deletes the user's membership, or returns ErrNotMember if
 	// there was no such row.

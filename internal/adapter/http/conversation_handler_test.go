@@ -586,13 +586,35 @@ func TestConversationHandler_SetMemberTier(t *testing.T) {
 	var gotTier domainconv.AdminTier
 	svc := &fakeConversationService{setMemberTier: func(_, _, _ uuid.UUID, tr domainconv.AdminTier) (*domainconv.Member, error) {
 		gotTier = tr
-		return &domainconv.Member{UserID: target, Role: domainconv.RoleMember, AdminTier: tr}, nil
+		return &domainconv.Member{UserID: target, Role: domainconv.RoleMember, AdminTier: tr, IsCreator: true}, nil
 	}}
 	h := &ConversationHandler{svc: svc}
 	r := convRouter(h, &actor)
 	w := doConvJSON(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/members/"+target.String(), `{"admin_tier":"admin"}`)
 	if w.Code != http.StatusOK || gotTier != domainconv.TierAdmin {
 		t.Fatalf("status = %d, tier = %q, body %s", w.Code, gotTier, w.Body)
+	}
+	// The response body is the only check that memberResponse's json tags and
+	// toMemberResponse's mapping are correct.
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal body %s: %v", w.Body, err)
+	}
+	for _, key := range []string{"user_id", "admin_tier", "is_creator"} {
+		if _, ok := body[key]; !ok {
+			t.Fatalf("response body missing %q: %s", key, w.Body)
+		}
+	}
+	var resp struct {
+		UserID    string `json:"user_id"`
+		AdminTier string `json:"admin_tier"`
+		IsCreator bool   `json:"is_creator"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal typed body: %v", err)
+	}
+	if resp.UserID != target.String() || resp.AdminTier != string(domainconv.TierAdmin) || !resp.IsCreator {
+		t.Fatalf("response = %+v, want user_id=%s admin_tier=admin is_creator=true", resp, target)
 	}
 }
 

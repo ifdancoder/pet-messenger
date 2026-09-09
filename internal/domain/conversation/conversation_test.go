@@ -417,6 +417,7 @@ func TestCanManageMember(t *testing.T) {
 func TestCanAssignTier(t *testing.T) {
 	self := &conversation.Member{UserID: uuid.Must(uuid.NewV7())}
 	creatorSelf := &conversation.Member{UserID: self.UserID, IsCreator: true, AdminTier: conversation.TierNone}
+	creatorAdmin := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), IsCreator: true, AdminTier: conversation.TierCreatorAdmin}
 	superA := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierSuperAdmin}
 	superB := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierSuperAdmin}
 	admin := &conversation.Member{UserID: uuid.Must(uuid.NewV7()), AdminTier: conversation.TierAdmin}
@@ -425,6 +426,14 @@ func TestCanAssignTier(t *testing.T) {
 	// creator self-restore.
 	if !conversation.CanAssignTier(creatorSelf, creatorSelf, conversation.TierCreatorAdmin) {
 		t.Error("creator may restore their own creator_admin")
+	}
+	// a real creator_admin-tier actor is the only path that mints a superadmin.
+	if !conversation.CanAssignTier(creatorAdmin, plain, conversation.TierSuperAdmin) {
+		t.Error("creator_admin may mint a superadmin")
+	}
+	// creator_admin may retier a superadmin, being strictly higher in rank.
+	if !conversation.CanAssignTier(creatorAdmin, superB, conversation.TierAdmin) {
+		t.Error("creator_admin may retier a superadmin")
 	}
 	// non-creator cannot take creator_admin, even for themselves.
 	if conversation.CanAssignTier(superA, superA, conversation.TierCreatorAdmin) {
@@ -449,15 +458,16 @@ func TestCanAssignTier(t *testing.T) {
 	if conversation.CanAssignTier(admin, plain, conversation.TierContentAdmin) {
 		t.Error("admin may not assign tiers")
 	}
-	// nobody assigns creator_admin to someone else.
-	if conversation.CanAssignTier(creatorSelf, plain, conversation.TierCreatorAdmin) {
+	// nobody assigns creator_admin to someone else — tested against a real
+	// creator_admin-tier actor so this exercises the TierCreatorAdmin guard,
+	// not the rank gate.
+	if conversation.CanAssignTier(creatorAdmin, plain, conversation.TierCreatorAdmin) {
 		t.Error("creator_admin is never assignable to another member")
 	}
 	// invalid tier value.
 	if conversation.CanAssignTier(superA, plain, conversation.AdminTier("mod")) {
 		t.Error("invalid tier must be rejected")
 	}
-	_ = self
 }
 
 func TestIsMuted(t *testing.T) {

@@ -231,7 +231,7 @@ func (r *ConversationRepository) AddMember(ctx context.Context, m *conversation.
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "conversation_members_pkey" {
 			return nil // the (conversation_id, user_id) PK — already a member
 		}
 		return fmt.Errorf("insert conversation member: %w", err)

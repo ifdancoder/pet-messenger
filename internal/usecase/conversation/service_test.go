@@ -436,8 +436,16 @@ func TestAddMember_AdminInvitesToGroupChat(t *testing.T) {
 	actor, invitee := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{
-		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat},
-		member: convMember(actor, domainconv.TierAdmin, false),
+		conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			switch uid {
+			case actor:
+				return convMember(actor, domainconv.TierAdmin, false), nil
+			case invitee:
+				return convMember(invitee, domainconv.TierNone, false), nil
+			}
+			return nil, domainconv.ErrNotMember
+		},
 	}
 	users := &fakeUserRepo{exists: map[uuid.UUID]bool{invitee: true}}
 	s := NewService(repo, users, &fakeRevoker{})
@@ -449,7 +457,9 @@ func TestAddMember_AdminInvitesToGroupChat(t *testing.T) {
 	if len(repo.added) != 1 || repo.added[0].UserID != invitee || repo.added[0].Role != domainconv.RoleMember {
 		t.Fatalf("added = %+v", repo.added)
 	}
-	_ = m
+	if m == nil || m.UserID != invitee {
+		t.Fatalf("returned member = %+v, want the invitee's row", m)
+	}
 }
 
 func TestAddMember_BroadcastInviteIsSubscriber(t *testing.T) {
@@ -583,6 +593,31 @@ func TestSetMemberTier_SuperadminPromotesNoRevoke(t *testing.T) {
 		t.Fatalf("SetMemberTier: %v", err)
 	}
 	if len(repo.tierSet) != 1 || repo.tierSet[0].Tier != domainconv.TierAdmin || repo.tierSet[0].UserID != target {
+		t.Fatalf("tierSet = %+v", repo.tierSet)
+	}
+	if len(rev.revoked) != 0 {
+		t.Fatal("a tier change must not publish a revoke")
+	}
+}
+
+func TestSetMemberTier_CreatorAdminMintsSuperadmin(t *testing.T) {
+	actor, target := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			if uid == actor {
+				return convMember(actor, domainconv.TierCreatorAdmin, true), nil
+			}
+			return convMember(target, domainconv.TierNone, false), nil
+		},
+	}
+	rev := &fakeRevoker{}
+	s := NewService(repo, &fakeUserRepo{}, rev)
+	if _, err := s.SetMemberTier(context.Background(), actor, chID, target, domainconv.TierSuperAdmin); err != nil {
+		t.Fatalf("SetMemberTier: %v", err)
+	}
+	if len(repo.tierSet) != 1 || repo.tierSet[0].Tier != domainconv.TierSuperAdmin || repo.tierSet[0].UserID != target {
 		t.Fatalf("tierSet = %+v", repo.tierSet)
 	}
 	if len(rev.revoked) != 0 {
