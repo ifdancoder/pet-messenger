@@ -470,6 +470,30 @@ func TestCanAssignTier(t *testing.T) {
 	}
 }
 
+func TestIsArchived(t *testing.T) {
+	if (&conversation.Conversation{}).IsArchived() {
+		t.Error("a conversation with nil ArchivedAt is not archived")
+	}
+	now := time.Now()
+	if !(&conversation.Conversation{ArchivedAt: &now}).IsArchived() {
+		t.Error("a conversation with a set ArchivedAt is archived")
+	}
+}
+
+func TestCanArchive(t *testing.T) {
+	for tier, want := range map[conversation.AdminTier]bool{
+		conversation.TierNone:         false,
+		conversation.TierContentAdmin: false,
+		conversation.TierAdmin:        false,
+		conversation.TierSuperAdmin:   true,
+		conversation.TierCreatorAdmin: true,
+	} {
+		if got := conversation.CanArchive(&conversation.Member{AdminTier: tier}); got != want {
+			t.Errorf("CanArchive(tier %q) = %v, want %v", tier, got, want)
+		}
+	}
+}
+
 func TestIsMuted(t *testing.T) {
 	now := time.Now().UTC()
 	future := now.Add(time.Hour)

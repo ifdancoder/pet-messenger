@@ -52,6 +52,16 @@ func (s stubConvRepo) ListPublicChannels(context.Context, string, time.Time, uui
 func (s stubConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, conversation.AdminTier) error {
 	return nil
 }
+func (s stubConvRepo) SetArchived(context.Context, uuid.UUID, bool) error { return nil }
+func (s stubConvRepo) RemoveMemberWithSuccession(context.Context, uuid.UUID, uuid.UUID) (*conversation.Member, error) {
+	return nil, nil
+}
+func (s stubConvRepo) ClaimCreator(context.Context, uuid.UUID, uuid.UUID) (*conversation.Member, error) {
+	return nil, nil
+}
+func (s stubConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, uuid.UUID, int) ([]*conversation.MemberProfile, error) {
+	return nil, nil
+}
 
 func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
 	t.Helper()

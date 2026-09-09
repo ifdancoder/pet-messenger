@@ -37,6 +37,31 @@ func (t Type) Valid() bool {
 	}
 }
 
+// SystemEvent classifies a system message that records a membership or
+// conversation-lifecycle change. It is "" for every non-system message.
+type SystemEvent string
+
+// System events.
+const (
+	SystemMemberJoined           SystemEvent = "member_joined"
+	SystemMemberLeft             SystemEvent = "member_left"
+	SystemMemberRemoved          SystemEvent = "member_removed"
+	SystemMemberTierChanged      SystemEvent = "member_tier_changed"
+	SystemConversationArchived   SystemEvent = "conversation_archived"
+	SystemConversationUnarchived SystemEvent = "conversation_unarchived"
+)
+
+// Valid reports whether e is one of the six known system events.
+func (e SystemEvent) Valid() bool {
+	switch e {
+	case SystemMemberJoined, SystemMemberLeft, SystemMemberRemoved,
+		SystemMemberTierChanged, SystemConversationArchived, SystemConversationUnarchived:
+		return true
+	default:
+		return false
+	}
+}
+
 // maxContentRunes bounds message content length, measured in runes.
 const maxContentRunes = 4096
 
@@ -57,6 +82,8 @@ var (
 	// whole Create transaction rolls back, so no seq is consumed. SendMessage
 	// resolves it by returning the original message via GetByIdempotencyKey.
 	ErrDuplicateIdempotencyKey = errors.New("message: a message with this idempotency key already exists in the conversation")
+	// ErrInvalidSystemEvent is returned by NewSystemEvent for an unknown event.
+	ErrInvalidSystemEvent = errors.New("message: unknown system event")
 )
 
 // ErrContentTooLong is reported when trimmed content exceeds maxContentRunes. It
@@ -79,6 +106,11 @@ type Message struct {
 	SenderID       *uuid.UUID
 	Type           Type
 	Content        string
+	// SystemEvent is set (non-"") only on system messages that record a
+	// membership / lifecycle change; SystemTargetID is the member the event is
+	// about (nil for conversation-level events). Both are nil/"" for text.
+	SystemEvent    SystemEvent
+	SystemTargetID *uuid.UUID
 	ReplyToID      *uuid.UUID
 	// IdempotencyKey is the optional client-supplied send-dedup token. It is
 	// written by Repository.Create and is NOT repopulated on reads (it is a
@@ -148,6 +180,47 @@ func NewSystem(conversationID uuid.UUID, content string) (*Message, error) {
 		ConversationID: conversationID,
 		Type:           TypeSystem,
 		Content:        c,
+		CreatedAt:      time.Now().UTC(),
+	}, nil
+}
+
+const maxSystemDetailBytes = 64
+
+// NewSystemEvent builds a system message recording a membership or
+// conversation-lifecycle change. actorID is the user who caused it (nil for
+// system-initiated events such as auto-succession). targetID is the member the
+// event concerns (uuid.Nil for conversation-level events). detail is an
+// optional short token — for member_tier_changed the resulting tier
+// ("creator_admin", "admin", "" for a demotion to no tier); "" otherwise. It is
+// NOT run through validateContent.
+func NewSystemEvent(conversationID uuid.UUID, actorID *uuid.UUID, event SystemEvent, targetID uuid.UUID, detail string) (*Message, error) {
+	if conversationID == uuid.Nil {
+		return nil, ErrInvalidConversation
+	}
+	if !event.Valid() {
+		return nil, ErrInvalidSystemEvent
+	}
+	if len(detail) > maxSystemDetailBytes {
+		return nil, ErrContentTooLong
+	}
+	var target *uuid.UUID
+	if targetID != uuid.Nil {
+		t := targetID
+		target = &t
+	}
+	var sender *uuid.UUID
+	if actorID != nil && *actorID != uuid.Nil {
+		s := *actorID
+		sender = &s
+	}
+	return &Message{
+		ID:             uuid.Must(uuid.NewV7()),
+		ConversationID: conversationID,
+		SenderID:       sender,
+		Type:           TypeSystem,
+		Content:        detail,
+		SystemEvent:    event,
+		SystemTargetID: target,
 		CreatedAt:      time.Now().UTC(),
 	}, nil
 }

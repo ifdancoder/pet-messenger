@@ -39,12 +39,24 @@ type fakeConvRepo struct {
 
 	tierSet []tierSetCall
 	tierErr error
+
+	archivedSet   []archivedCall
+	archivedErr   error
+	succession    func(cid, uid uuid.UUID) (*domainconv.Member, error) // RemoveMemberWithSuccession
+	claim         func(cid, uid uuid.UUID) (*domainconv.Member, error) // ClaimCreator
+	memberList    []*domainconv.MemberProfile
+	gotAdminsOnly bool
 }
 
 type tierSetCall struct {
 	ConversationID uuid.UUID
 	UserID         uuid.UUID
 	Tier           domainconv.AdminTier
+}
+
+type archivedCall struct {
+	ConversationID uuid.UUID
+	Archived       bool
 }
 
 func (f *fakeConvRepo) Create(_ context.Context, c *domainconv.Conversation, _ []*domainconv.Member) error {
@@ -111,6 +123,33 @@ func (f *fakeConvRepo) SetMemberTier(_ context.Context, conversationID, userID u
 	}
 	f.tierSet = append(f.tierSet, tierSetCall{conversationID, userID, tier})
 	return nil
+}
+func (f *fakeConvRepo) SetArchived(_ context.Context, conversationID uuid.UUID, archived bool) error {
+	if f.archivedErr != nil {
+		return f.archivedErr
+	}
+	f.archivedSet = append(f.archivedSet, archivedCall{conversationID, archived})
+	return nil
+}
+func (f *fakeConvRepo) RemoveMemberWithSuccession(_ context.Context, cid, uid uuid.UUID) (*domainconv.Member, error) {
+	if f.succession != nil {
+		return f.succession(cid, uid)
+	}
+	if f.removeErr != nil {
+		return nil, f.removeErr
+	}
+	f.removed = append(f.removed, [2]uuid.UUID{cid, uid})
+	return nil, nil
+}
+func (f *fakeConvRepo) ClaimCreator(_ context.Context, cid, uid uuid.UUID) (*domainconv.Member, error) {
+	if f.claim != nil {
+		return f.claim(cid, uid)
+	}
+	return nil, nil
+}
+func (f *fakeConvRepo) ListMembers(_ context.Context, _ uuid.UUID, adminsOnly bool, _ time.Time, _ uuid.UUID, _ int) ([]*domainconv.MemberProfile, error) {
+	f.gotAdminsOnly = adminsOnly
+	return f.memberList, nil
 }
 
 type fakeUserRepo struct {

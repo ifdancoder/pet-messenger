@@ -192,6 +192,75 @@ func TestNewSystemInvalid(t *testing.T) {
 	}
 }
 
+func TestSystemEvent_Valid(t *testing.T) {
+	for _, e := range []message.SystemEvent{
+		message.SystemMemberJoined, message.SystemMemberLeft, message.SystemMemberRemoved,
+		message.SystemMemberTierChanged, message.SystemConversationArchived, message.SystemConversationUnarchived,
+	} {
+		if !e.Valid() {
+			t.Errorf("%q should be Valid", e)
+		}
+	}
+	if message.SystemEvent("member_banned").Valid() {
+		t.Error(`SystemEvent("member_banned") should be invalid`)
+	}
+}
+
+func TestNewSystemEvent(t *testing.T) {
+	conv := uuid.Must(uuid.NewV7())
+	actor := uuid.Must(uuid.NewV7())
+	target := uuid.Must(uuid.NewV7())
+
+	m, err := message.NewSystemEvent(conv, &actor, message.SystemMemberRemoved, target, "")
+	if err != nil {
+		t.Fatalf("NewSystemEvent: %v", err)
+	}
+	if m.Type != message.TypeSystem || m.SystemEvent != message.SystemMemberRemoved {
+		t.Fatalf("m = %+v", m)
+	}
+	if m.SenderID == nil || *m.SenderID != actor {
+		t.Fatalf("SenderID = %v, want %v", m.SenderID, actor)
+	}
+	if m.SystemTargetID == nil || *m.SystemTargetID != target {
+		t.Fatalf("SystemTargetID = %v, want %v", m.SystemTargetID, target)
+	}
+	if m.ID.Version() != 7 || m.CreatedAt.IsZero() {
+		t.Fatalf("id/timestamp: %+v", m)
+	}
+
+	// system-initiated: nil actor -> nil SenderID
+	m, err = message.NewSystemEvent(conv, nil, message.SystemMemberTierChanged, target, "creator_admin")
+	if err != nil {
+		t.Fatalf("NewSystemEvent(nil actor): %v", err)
+	}
+	if m.SenderID != nil {
+		t.Fatalf("SenderID = %v, want nil", m.SenderID)
+	}
+	if m.Content != "creator_admin" {
+		t.Fatalf("Content = %q, want the tier token", m.Content)
+	}
+
+	// conversation-level: uuid.Nil target -> nil SystemTargetID
+	m, err = message.NewSystemEvent(conv, &actor, message.SystemConversationArchived, uuid.Nil, "")
+	if err != nil {
+		t.Fatalf("NewSystemEvent(conversation-level): %v", err)
+	}
+	if m.SystemTargetID != nil {
+		t.Fatalf("SystemTargetID = %v, want nil", m.SystemTargetID)
+	}
+
+	// errors
+	if _, err := message.NewSystemEvent(uuid.Nil, &actor, message.SystemMemberJoined, target, ""); !errors.Is(err, message.ErrInvalidConversation) {
+		t.Fatalf("nil conv: err = %v", err)
+	}
+	if _, err := message.NewSystemEvent(conv, &actor, message.SystemEvent("nope"), target, ""); !errors.Is(err, message.ErrInvalidSystemEvent) {
+		t.Fatalf("bad event: err = %v", err)
+	}
+	if _, err := message.NewSystemEvent(conv, &actor, message.SystemMemberJoined, target, strings.Repeat("x", 65)); !errors.Is(err, message.ErrContentTooLong) {
+		t.Fatalf("long detail: err = %v", err)
+	}
+}
+
 func TestErrInvalidLimitIsDistinct(t *testing.T) {
 	if errors.Is(message.ErrInvalidLimit, message.ErrNotFound) {
 		t.Error("ErrInvalidLimit must not alias ErrNotFound")

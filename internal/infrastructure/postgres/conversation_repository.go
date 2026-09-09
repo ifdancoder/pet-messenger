@@ -324,3 +324,21 @@ func (r *ConversationRepository) ListPublicChannels(ctx context.Context, query s
 	}
 	return out, nil
 }
+
+// --- moderation follow-up: real implementations in conversation_repository_admin.go (Task 2) ---
+
+func (r *ConversationRepository) SetArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
+	return fmt.Errorf("conversation_repository: SetArchived not implemented")
+}
+
+func (r *ConversationRepository) RemoveMemberWithSuccession(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error) {
+	return nil, fmt.Errorf("conversation_repository: RemoveMemberWithSuccession not implemented")
+}
+
+func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error) {
+	return nil, fmt.Errorf("conversation_repository: ClaimCreator not implemented")
+}
+
+func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*conversation.MemberProfile, error) {
+	return nil, fmt.Errorf("conversation_repository: ListMembers not implemented")
+}

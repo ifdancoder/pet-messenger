@@ -100,6 +100,16 @@ func (f *fakeConvRepo) ListPublicChannels(context.Context, string, time.Time, uu
 func (f *fakeConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, domainconv.AdminTier) error {
 	return nil
 }
+func (f *fakeConvRepo) SetArchived(context.Context, uuid.UUID, bool) error { return nil }
+func (f *fakeConvRepo) RemoveMemberWithSuccession(context.Context, uuid.UUID, uuid.UUID) (*domainconv.Member, error) {
+	return nil, nil
+}
+func (f *fakeConvRepo) ClaimCreator(context.Context, uuid.UUID, uuid.UUID) (*domainconv.Member, error) {
+	return nil, nil
+}
+func (f *fakeConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, uuid.UUID, int) ([]*domainconv.MemberProfile, error) {
+	return nil, nil
+}
 
 type fakePublisher struct {
 	created []*domainmsg.Message

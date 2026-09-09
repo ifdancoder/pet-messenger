@@ -117,6 +117,15 @@ var (
 	// ErrNotChannel is returned when a join / leave / discovery operation
 	// targets a conversation that is not a channel_group or channel_broadcast.
 	ErrNotChannel = errors.New("conversation: not a channel")
+	// ErrConversationArchived is returned when a write (send / join / invite) is
+	// attempted against an archived conversation.
+	ErrConversationArchived = errors.New("conversation: conversation is archived")
+	// ErrCreatorSeatTaken is returned by ClaimCreator when the conversation
+	// already has a creator.
+	ErrCreatorSeatTaken = errors.New("conversation: this conversation already has a creator")
+	// ErrNotCreatorHeir is returned by ClaimCreator when the caller is not the
+	// highest-ranked current member of a seat-less conversation.
+	ErrNotCreatorHeir = errors.New("conversation: not eligible to claim the creator seat")
 )
 
 const maxTitleLen = 256
@@ -130,8 +139,11 @@ type Conversation struct {
 	AvatarURL string
 	// Public marks a channel as discoverable via ListPublicChannels and
 	// self-joinable. Always false for direct conversations and group chats.
-	Public    bool
-	CreatedAt time.Time
+	Public bool
+	// ArchivedAt is set when the conversation is archived: read-only, hidden
+	// from ListForUser and public discovery, history retained. nil = active.
+	ArchivedAt *time.Time
+	CreatedAt  time.Time
 	// LastMessageAt is the denormalized "last activity" timestamp used to sort
 	// conversation lists. It equals CreatedAt for a conversation with no
 	// messages and is advanced by the message repository as messages are sent.
@@ -153,6 +165,16 @@ type Member struct {
 	JoinedAt          time.Time
 	MutedUntil        *time.Time
 	LastReadMessageID *uuid.UUID
+}
+
+// MemberProfile is a Member row denormalized with the user's display fields,
+// for the roster read (GET /conversations/:id/members). Username / DisplayName
+// / AvatarURL are "" if the user account was since deleted.
+type MemberProfile struct {
+	Member
+	Username    string
+	DisplayName string
+	AvatarURL   string
 }
 
 // NewDirect builds a direct conversation between two distinct users. Both
@@ -267,7 +289,31 @@ type Repository interface {
 	// than the (before, beforeID) cursor are returned. limit is a positive,
 	// already-clamped page size.
 	ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*Conversation, error)
+	// SetArchived sets or clears the conversation's archived_at. ErrNotFound if
+	// there is no such conversation.
+	SetArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error
+	// RemoveMemberWithSuccession deletes userID's membership. If that row held
+	// is_creator, it promotes the highest-ranked remaining member (admin_tier
+	// rank DESC, then joined_at ASC, then user_id ASC) to is_creator = true,
+	// admin_tier = 'creator_admin' in the same transaction and returns that
+	// member. promoted is nil when the leaver was not the creator or no members
+	// remain. ErrNotMember if there was no such membership row.
+	RemoveMemberWithSuccession(ctx context.Context, conversationID, userID uuid.UUID) (promoted *Member, err error)
+	// ClaimCreator makes userID the creator of a conversation that has none.
+	// ErrCreatorSeatTaken if a creator already exists; ErrNotCreatorHeir if
+	// userID is not the highest-ranked current member (same ordering as
+	// succession); ErrNotMember if userID is not a member.
+	ClaimCreator(ctx context.Context, conversationID, userID uuid.UUID) (*Member, error)
+	// ListMembers returns the conversation's members joined with user display
+	// fields, ordered (joined_at ASC, user_id ASC). A zero `before` starts from
+	// the first-joined; otherwise only rows strictly after (before, beforeUserID)
+	// are returned. adminsOnly restricts to admin_tier IS NOT NULL OR is_creator.
+	// limit is a positive, already-clamped page size.
+	ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*MemberProfile, error)
 }
+
+// IsArchived reports whether the conversation has been archived.
+func (c *Conversation) IsArchived() bool { return c.ArchivedAt != nil }
 
 // CanPost reports whether m may send messages to c. Pass a Member fetched for
 // THIS conversation (Repository.GetMember(ctx, c.ID, userID)), never a member
@@ -314,6 +360,13 @@ func CanManageMember(actor, target *Member) bool {
 	default:
 		return false
 	}
+}
+
+// CanArchive reports whether m may archive or unarchive the conversation.
+// superadmin and creator_admin only — the same authority tier that manages
+// admins.
+func CanArchive(m *Member) bool {
+	return m.AdminTier.rank() >= TierSuperAdmin.rank()
 }
 
 // CanAssignTier reports whether actor may set target's tier to newTier.
