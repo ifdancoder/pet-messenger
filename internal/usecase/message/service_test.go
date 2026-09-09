@@ -110,6 +110,9 @@ func (f *fakeConvRepo) ClaimCreator(context.Context, uuid.UUID, uuid.UUID) (*dom
 func (f *fakeConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, uuid.UUID, int) ([]*domainconv.MemberProfile, error) {
 	return nil, nil
 }
+func (f *fakeConvRepo) ListMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) {
+	return nil, nil
+}
 
 type fakePublisher struct {
 	created []*domainmsg.Message

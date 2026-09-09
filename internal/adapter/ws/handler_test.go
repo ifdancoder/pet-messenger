@@ -63,6 +63,8 @@ func (s stubConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, u
 	return nil, nil
 }
 
+func (s stubConvRepo) ListMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) { return nil, nil }
+
 func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

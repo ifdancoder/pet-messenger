@@ -346,3 +346,26 @@ func (r *ConversationRepository) ListPublicChannels(ctx context.Context, query s
 	}
 	return out, nil
 }
+
+// ListMemberIDs returns just the user ids of a conversation's members, in
+// unspecified order. A missing conversation yields an empty slice and no error.
+func (r *ConversationRepository) ListMemberIDs(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT user_id FROM conversation_members WHERE conversation_id = $1`, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("query member ids: %w", err)
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan member id: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate member id rows: %w", err)
+	}
+	return out, nil
+}

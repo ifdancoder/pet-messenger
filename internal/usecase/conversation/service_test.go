@@ -47,6 +47,7 @@ type fakeConvRepo struct {
 	claim         func(cid, uid uuid.UUID) (*domainconv.Member, error) // ClaimCreator
 	memberList    []*domainconv.MemberProfile
 	gotAdminsOnly bool
+	memberIDs     []uuid.UUID
 }
 
 type tierSetCall struct {
@@ -151,6 +152,9 @@ func (f *fakeConvRepo) ClaimCreator(_ context.Context, cid, uid uuid.UUID) (*dom
 func (f *fakeConvRepo) ListMembers(_ context.Context, _ uuid.UUID, adminsOnly bool, _ time.Time, _ uuid.UUID, _ int) ([]*domainconv.MemberProfile, error) {
 	f.gotAdminsOnly = adminsOnly
 	return f.memberList, nil
+}
+func (f *fakeConvRepo) ListMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) {
+	return f.memberIDs, nil
 }
 
 type fakeUserRepo struct {

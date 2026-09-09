@@ -311,6 +311,8 @@ type Repository interface {
 	// are returned. adminsOnly restricts to admin_tier IS NOT NULL OR is_creator.
 	// limit is a positive, already-clamped page size.
 	ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*MemberProfile, error)
+	// ListMemberIDs returns just the user ids of a conversation's members.
+	ListMemberIDs(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // CanPost reports whether m may send messages to c. Pass a Member fetched for

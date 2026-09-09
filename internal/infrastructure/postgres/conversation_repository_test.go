@@ -1011,3 +1011,28 @@ func TestConversationRepository_ListMembers(t *testing.T) {
 		t.Fatalf("page2 = %v, %v", page2, err)
 	}
 }
+
+func TestConversationRepository_ListMemberIDs(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+	m1 := addMember(t, convID, conversation.TierNone, time.Now().UTC())
+	m2 := addMember(t, convID, conversation.TierAdmin, time.Now().UTC())
+
+	ids, err := repo.ListMemberIDs(ctx, convID)
+	if err != nil {
+		t.Fatalf("ListMemberIDs: %v", err)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	if len(ids) != 3 || !got[creatorID] || !got[m1] || !got[m2] {
+		t.Fatalf("ids = %v, want {creator, m1, m2}", ids)
+	}
+
+	empty, err := repo.ListMemberIDs(ctx, uuid.Must(uuid.NewV7()))
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("missing conversation -> %v, %v (want [], nil)", empty, err)
+	}
+}
