@@ -37,6 +37,18 @@ type NATSConfig struct {
 	URL string
 }
 
+type RedisConfig struct {
+	URL string
+}
+
+type PushConfig struct {
+	VAPIDPublicKey     string
+	VAPIDPrivateKey    string
+	VAPIDSubject       string
+	FCMProjectID       string
+	FCMCredentialsJSON string
+}
+
 type CORSConfig struct {
 	AllowedOrigins []string
 }
@@ -58,11 +70,13 @@ func (c CORSConfig) OriginHostPatterns() []string {
 }
 
 type Config struct {
-	Port int
-	DB   DBConfig
-	JWT  JWTConfig
-	NATS NATSConfig
-	CORS CORSConfig
+	Port  int
+	DB    DBConfig
+	JWT   JWTConfig
+	NATS  NATSConfig
+	Redis RedisConfig
+	Push  PushConfig
+	CORS  CORSConfig
 }
 
 // Load reads configuration from the environment (and .env, if present).
@@ -91,6 +105,11 @@ func Load() (*Config, error) {
 		natsURL = "nats://127.0.0.1:4222"
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://127.0.0.1:6379"
+	}
+
 	var origins []string
 	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
 		if o = strings.TrimSpace(o); o != "" {
@@ -117,7 +136,15 @@ func Load() (*Config, error) {
 			AccessTTL:  15 * time.Minute,
 			RefreshTTL: 30 * 24 * time.Hour,
 		},
-		NATS: NATSConfig{URL: natsURL},
+		NATS:  NATSConfig{URL: natsURL},
+		Redis: RedisConfig{URL: redisURL},
+		Push: PushConfig{
+			VAPIDPublicKey:     os.Getenv("PUSH_VAPID_PUBLIC_KEY"),
+			VAPIDPrivateKey:    os.Getenv("PUSH_VAPID_PRIVATE_KEY"),
+			VAPIDSubject:       os.Getenv("PUSH_VAPID_SUBJECT"),
+			FCMProjectID:       os.Getenv("PUSH_FCM_PROJECT_ID"),
+			FCMCredentialsJSON: os.Getenv("PUSH_FCM_CREDENTIALS_JSON"),
+		},
 		CORS: CORSConfig{AllowedOrigins: origins},
 	}, nil
 }
