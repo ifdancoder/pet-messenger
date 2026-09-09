@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
@@ -833,6 +834,48 @@ func TestMessageRepository_Create_SameKeyDifferentSenders(t *testing.T) {
 	gotB, err := repo.GetByIdempotencyKey(ctx, convID, userB.ID, key)
 	if err != nil || gotB.ID != b.ID {
 		t.Fatalf("GetByIdempotencyKey(B) = %v, %v; want b.ID=%v", gotB, err, b.ID)
+	}
+}
+
+func TestMessageRepository_Create_SystemEvent(t *testing.T) {
+	repo := NewMessageRepository(testDB)
+	ctx := context.Background()
+	convID, actorID := seedGroupChat(t) // helper from conversation_repository_test.go (same package)
+	target := createTestUser(t)
+
+	m, err := message.NewSystemEvent(convID, &actorID, message.SystemMemberRemoved, target.ID, "")
+	if err != nil {
+		t.Fatalf("NewSystemEvent: %v", err)
+	}
+	if err := repo.Create(ctx, m); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := repo.GetByID(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.SystemEvent != message.SystemMemberRemoved || got.SystemTargetID == nil || *got.SystemTargetID != target.ID {
+		t.Fatalf("round-trip = %+v", got)
+	}
+	if got.Seq <= 0 {
+		t.Fatalf("system event got no seq: %d", got.Seq)
+	}
+}
+
+func TestMessages_SystemEventCheck(t *testing.T) {
+	convID, _ := seedGroupChat(t)
+	// a non-system row with system_event set must violate messages_system_event_type.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO messages (id, conversation_id, type, content, seq, created_at, system_event)
+		 VALUES ($1, $2, 'text', 'x', 999999, now(), 'member_joined')`,
+		uuid.Must(uuid.NewV7()), convID,
+	)
+	if err == nil {
+		t.Fatal("expected a CHECK violation")
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Fatalf("err = %v, want 23514", err)
 	}
 }
 

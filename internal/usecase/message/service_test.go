@@ -593,6 +593,50 @@ func TestEditMessage_PublishesUpdated(t *testing.T) {
 	}
 }
 
+// --- PostSystemEvent -------------------------------------------------------
+
+func TestPostSystemEvent_KindGuard(t *testing.T) {
+	msgs := &fakeMsgRepo{}
+	s, pub := newSvc(msgs, &fakeConvRepo{})
+	ctx := context.Background()
+	actor := uuid.Must(uuid.NewV7())
+
+	// member_* in a broadcast channel -> no-op
+	bc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindChannelBroadcast}
+	if err := s.PostSystemEvent(ctx, bc, &actor, domainmsg.SystemMemberJoined, actor, ""); err != nil {
+		t.Fatalf("broadcast member_joined: %v", err)
+	}
+	if len(pub.created) != 0 {
+		t.Fatal("member_joined must not post in a broadcast channel")
+	}
+
+	// member_* in a group chat -> posts
+	gc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat}
+	if err := s.PostSystemEvent(ctx, gc, &actor, domainmsg.SystemMemberJoined, actor, ""); err != nil {
+		t.Fatalf("group member_joined: %v", err)
+	}
+	if len(pub.created) != 1 || pub.created[0].SystemEvent != domainmsg.SystemMemberJoined {
+		t.Fatalf("created = %+v", pub.created)
+	}
+
+	// conversation_archived in a broadcast channel -> posts
+	if err := s.PostSystemEvent(ctx, bc, &actor, domainmsg.SystemConversationArchived, uuid.Nil, ""); err != nil {
+		t.Fatalf("broadcast archived: %v", err)
+	}
+	if len(pub.created) != 2 {
+		t.Fatalf("conversation_archived should post in a broadcast channel")
+	}
+
+	// direct -> no-op
+	dc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindDirect}
+	if err := s.PostSystemEvent(ctx, dc, &actor, domainmsg.SystemConversationArchived, uuid.Nil, ""); err != nil {
+		t.Fatalf("direct: %v", err)
+	}
+	if len(pub.created) != 2 {
+		t.Fatal("nothing posts in a direct conversation")
+	}
+}
+
 func TestDeleteMessage_PublishesDeleted(t *testing.T) {
 	actor := uuid.Must(uuid.NewV7())
 	convs := groupChatWithMember()

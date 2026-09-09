@@ -60,6 +60,8 @@ type messageResponse struct {
 	Type           string     `json:"type"`
 	Content        string     `json:"content"`
 	ReplyToID      *string    `json:"reply_to_id"`
+	SystemEvent    *string    `json:"system_event,omitempty"`
+	SystemTargetID *string    `json:"system_target_id,omitempty"`
 	EditedAt       *time.Time `json:"edited_at"`
 	DeletedAt      *time.Time `json:"deleted_at"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -89,6 +91,14 @@ func toMessageResponse(m *domainmsg.Message) messageResponse {
 	if m.ReplyToID != nil {
 		s := m.ReplyToID.String()
 		r.ReplyToID = &s
+	}
+	if m.SystemEvent != "" {
+		s := string(m.SystemEvent)
+		r.SystemEvent = &s
+	}
+	if m.SystemTargetID != nil {
+		s := m.SystemTargetID.String()
+		r.SystemTargetID = &s
 	}
 	return r
 }

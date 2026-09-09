@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	domainconv "pet-messenger/internal/domain/conversation"
+	domainmsg "pet-messenger/internal/domain/message"
 	"pet-messenger/internal/domain/user"
 )
 
@@ -48,14 +49,25 @@ type Service struct {
 	conversations domainconv.Repository
 	users         user.Repository
 	revoker       MemberEventPublisher
+	systemEvents  SystemEventPoster
 }
 
 // NewService wires the service. conversations is implemented by
 // internal/infrastructure/postgres.ConversationRepository; users by
 // internal/infrastructure/postgres.UserRepository; revoker by
-// internal/infrastructure/nats.Publisher.
-func NewService(conversations domainconv.Repository, users user.Repository, revoker MemberEventPublisher) *Service {
-	return &Service{conversations: conversations, users: users, revoker: revoker}
+// internal/infrastructure/nats.Publisher; systemEvents by
+// *internal/usecase/message.Service.
+func NewService(conversations domainconv.Repository, users user.Repository, revoker MemberEventPublisher, systemEvents SystemEventPoster) *Service {
+	return &Service{conversations: conversations, users: users, revoker: revoker, systemEvents: systemEvents}
+}
+
+// postEvent records a membership / lifecycle change on the conversation
+// timeline. It is best-effort: the mutation has already committed, so a failed
+// post is logged and the caller still returns success.
+func (s *Service) postEvent(ctx context.Context, conv *domainconv.Conversation, actor *uuid.UUID, event domainmsg.SystemEvent, target uuid.UUID, detail string) {
+	if err := s.systemEvents.PostSystemEvent(ctx, conv, actor, event, target, detail); err != nil {
+		log.Printf("conversation: post system event %s on %s: %v", event, conv.ID, err)
+	}
 }
 
 // EffectiveListLimit clamps a client-requested page size: non-positive means
@@ -192,6 +204,7 @@ func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (
 	if err := s.conversations.AddMember(ctx, m); err != nil {
 		return nil, fmt.Errorf("add channel member: %w", err)
 	}
+	s.postEvent(ctx, conv, &actor, domainmsg.SystemMemberJoined, actor, "")
 	return conv, nil
 }
 
@@ -210,11 +223,16 @@ func (s *Service) LeaveConversation(ctx context.Context, actor, conversationID u
 	if conv.Kind == domainconv.KindDirect {
 		return domainconv.ErrNotFound
 	}
-	if _, err := s.conversations.RemoveMemberWithSuccession(ctx, conversationID, actor); err != nil {
+	promoted, err := s.conversations.RemoveMemberWithSuccession(ctx, conversationID, actor)
+	if err != nil {
 		return err // conversation.ErrNotMember
 	}
 	if err := s.revoker.PublishMemberRevoked(ctx, conversationID, actor); err != nil {
 		log.Printf("conversation: publish member revoked %s/%s: %v", conversationID, actor, err)
+	}
+	s.postEvent(ctx, conv, &actor, domainmsg.SystemMemberLeft, actor, "")
+	if promoted != nil {
+		s.postEvent(ctx, conv, nil, domainmsg.SystemMemberTierChanged, promoted.UserID, string(domainconv.TierCreatorAdmin))
 	}
 	return nil
 }
@@ -262,6 +280,7 @@ func (s *Service) AddMember(ctx context.Context, actor, conversationID, invitee 
 	if err != nil {
 		return nil, fmt.Errorf("reload added member: %w", err)
 	}
+	s.postEvent(ctx, conv, &actor, domainmsg.SystemMemberJoined, invitee, "")
 	return added, nil
 }
 
@@ -272,7 +291,8 @@ func (s *Service) RemoveMember(ctx context.Context, actor, conversationID, targe
 	if actor == target {
 		return ErrCannotKickSelf
 	}
-	if _, err := s.conversations.GetByID(ctx, conversationID); err != nil {
+	conv, err := s.conversations.GetByID(ctx, conversationID)
+	if err != nil {
 		return err // conversation.ErrNotFound
 	}
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
@@ -292,6 +312,7 @@ func (s *Service) RemoveMember(ctx context.Context, actor, conversationID, targe
 	if err := s.revoker.PublishMemberRevoked(ctx, conversationID, target); err != nil {
 		log.Printf("conversation: publish member revoked %s/%s: %v", conversationID, target, err)
 	}
+	s.postEvent(ctx, conv, &actor, domainmsg.SystemMemberRemoved, target, "")
 	return nil
 }
 
@@ -302,7 +323,8 @@ func (s *Service) SetMemberTier(ctx context.Context, actor, conversationID, targ
 	if !tier.Valid() {
 		return nil, ErrInvalidTier
 	}
-	if _, err := s.conversations.GetByID(ctx, conversationID); err != nil {
+	conv, err := s.conversations.GetByID(ctx, conversationID)
+	if err != nil {
 		return nil, err // conversation.ErrNotFound
 	}
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
@@ -323,6 +345,7 @@ func (s *Service) SetMemberTier(ctx context.Context, actor, conversationID, targ
 	if err != nil {
 		return nil, fmt.Errorf("reload retiered member: %w", err)
 	}
+	s.postEvent(ctx, conv, &actor, domainmsg.SystemMemberTierChanged, target, string(tier))
 	return updated, nil
 }
 
@@ -334,7 +357,6 @@ func (s *Service) SetArchived(ctx context.Context, actor, conversationID uuid.UU
 	if err != nil {
 		return err // conversation.ErrNotFound
 	}
-	_ = conv
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
 	if err != nil {
 		return err // conversation.ErrNotMember
@@ -345,6 +367,11 @@ func (s *Service) SetArchived(ctx context.Context, actor, conversationID uuid.UU
 	if err := s.conversations.SetArchived(ctx, conversationID, archived); err != nil {
 		return err
 	}
+	event := domainmsg.SystemConversationArchived
+	if !archived {
+		event = domainmsg.SystemConversationUnarchived
+	}
+	s.postEvent(ctx, conv, &actor, event, uuid.Nil, "")
 	return nil
 }
 
@@ -356,11 +383,11 @@ func (s *Service) ClaimCreator(ctx context.Context, actor, conversationID uuid.U
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
 	}
-	_ = conv
 	m, err := s.conversations.ClaimCreator(ctx, conversationID, actor)
 	if err != nil {
 		return nil, err // ErrCreatorSeatTaken / ErrNotCreatorHeir / ErrNotMember
 	}
+	s.postEvent(ctx, conv, &actor, domainmsg.SystemMemberTierChanged, actor, string(domainconv.TierCreatorAdmin))
 	return m, nil
 }
 

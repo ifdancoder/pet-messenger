@@ -21,7 +21,16 @@ func NewMessageRepository(db *sql.DB) message.Repository {
 	return &MessageRepository{db: db}
 }
 
-const messageColumns = `id, conversation_id, seq, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at`
+const messageColumns = `id, conversation_id, seq, sender_id, type, content, reply_to_id, system_event, system_target_id, edited_at, deleted_at, created_at`
+
+// systemEventParam binds a message.SystemEvent for the messages.system_event
+// enum column: "" (every non-system message) becomes SQL NULL.
+func systemEventParam(e message.SystemEvent) any {
+	if e == "" {
+		return nil
+	}
+	return string(e)
+}
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -30,14 +39,16 @@ type rowScanner interface {
 
 func scanMessage(s rowScanner) (*message.Message, error) {
 	var (
-		m         message.Message
-		typ       string
-		sender    uuid.NullUUID
-		replyTo   uuid.NullUUID
-		editedAt  sql.NullTime
-		deletedAt sql.NullTime
+		m            message.Message
+		typ          string
+		sender       uuid.NullUUID
+		replyTo      uuid.NullUUID
+		systemEvent  sql.NullString
+		systemTarget uuid.NullUUID
+		editedAt     sql.NullTime
+		deletedAt    sql.NullTime
 	)
-	if err := s.Scan(&m.ID, &m.ConversationID, &m.Seq, &sender, &typ, &m.Content, &replyTo, &editedAt, &deletedAt, &m.CreatedAt); err != nil {
+	if err := s.Scan(&m.ID, &m.ConversationID, &m.Seq, &sender, &typ, &m.Content, &replyTo, &systemEvent, &systemTarget, &editedAt, &deletedAt, &m.CreatedAt); err != nil {
 		return nil, err
 	}
 	m.Type = message.Type(typ)
@@ -48,6 +59,13 @@ func scanMessage(s rowScanner) (*message.Message, error) {
 	if replyTo.Valid {
 		id := replyTo.UUID
 		m.ReplyToID = &id
+	}
+	if systemEvent.Valid {
+		m.SystemEvent = message.SystemEvent(systemEvent.String)
+	}
+	if systemTarget.Valid {
+		id := systemTarget.UUID
+		m.SystemTargetID = &id
 	}
 	if editedAt.Valid {
 		t := editedAt.Time
@@ -102,11 +120,12 @@ func (r *MessageRepository) Create(ctx context.Context, m *message.Message) erro
 	}
 
 	const insertQ = `
-		INSERT INTO messages (id, conversation_id, seq, sender_id, type, content, reply_to_id, edited_at, deleted_at, created_at, idempotency_key)
-		VALUES ($1, $2, $3, $4, $5::message_type, $6, $7, $8, $9, $10, $11)`
+		INSERT INTO messages (id, conversation_id, seq, sender_id, type, content, reply_to_id, system_event, system_target_id, edited_at, deleted_at, created_at, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5::message_type, $6, $7, $8::message_system_event, $9, $10, $11, $12, $13)`
 	if _, err := tx.ExecContext(ctx, insertQ,
 		m.ID, m.ConversationID, seq, nullableUUID(m.SenderID), string(m.Type), m.Content,
-		nullableUUID(m.ReplyToID), m.EditedAt, m.DeletedAt, m.CreatedAt, m.IdempotencyKey,
+		nullableUUID(m.ReplyToID), systemEventParam(m.SystemEvent), nullableUUID(m.SystemTargetID),
+		m.EditedAt, m.DeletedAt, m.CreatedAt, m.IdempotencyKey,
 	); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_messages_conv_sender_idempotency_key" {

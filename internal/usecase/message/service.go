@@ -181,6 +181,34 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, convID, messageID uu
 	return m, nil
 }
 
+// PostSystemEvent records a membership / lifecycle change as a system message
+// in conv's timeline, so it gets a gap-free seq and fans out live as
+// message.created. It is a no-op (returns nil) for direct conversations, and
+// for channel_broadcast when the event is a member_* event (join/leave/kick
+// churn there would flood the timeline). conversation_archived /
+// conversation_unarchived are posted for every non-direct kind. A publish
+// failure is logged; a persist failure is returned.
+func (s *Service) PostSystemEvent(ctx context.Context, conv *domainconv.Conversation, actorID *uuid.UUID, event domainmsg.SystemEvent, targetID uuid.UUID, detail string) error {
+	if conv.Kind == domainconv.KindDirect {
+		return nil
+	}
+	isConversationEvent := event == domainmsg.SystemConversationArchived || event == domainmsg.SystemConversationUnarchived
+	if !isConversationEvent && conv.Kind == domainconv.KindChannelBroadcast {
+		return nil
+	}
+	m, err := domainmsg.NewSystemEvent(conv.ID, actorID, event, targetID, detail)
+	if err != nil {
+		return err
+	}
+	if err := s.messages.Create(ctx, m); err != nil {
+		return fmt.Errorf("create system event: %w", err)
+	}
+	if err := s.publisher.PublishCreated(ctx, m); err != nil {
+		log.Printf("message: publish system event %s: %v", m.ID, err)
+	}
+	return nil
+}
+
 // ListMessages returns a page of convID's history for a member. At most one of
 // afterSeq / beforeSeq may be set: afterSeq walks forward (ascending, the
 // reconnect catch-up read), beforeSeq walks backward (descending, history
