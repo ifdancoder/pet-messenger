@@ -69,13 +69,33 @@ func (h *Hub) IsSubscribed(c *Conn, conversationID uuid.UUID) bool {
 // enqueue never blocks: a connection with a full buffer is closed by enqueue.
 //
 // Broadcast does not re-check membership: a Conn that subscribed while a member
-// keeps receiving events after the user leaves the conversation, until it
-// unsubscribes or disconnects. Closing that gap needs a membership-revocation
-// path (deferred).
+// keeps receiving events after the user leaves the conversation until
+// DropSubscription removes it (fed by the per-pod member.revoked.>
+// subscription), or it unsubscribes or disconnects. A small residual race
+// remains: an event already fanned out before the revoke propagates can still
+// land on the departed member's socket.
 func (h *Hub) Broadcast(conversationID uuid.UUID, payload []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.subs[conversationID] {
 		c.enqueue(payload)
+	}
+}
+
+// DropSubscription removes every Conn owned by userID from conversationID's
+// fan-out set. The connections stay open with their other subscriptions intact;
+// a later `subscribe` frame for this conversation is re-checked against
+// GetMember and refused. Fed by the per-pod member.revoked.> subscription.
+func (h *Hub) DropSubscription(userID, conversationID uuid.UUID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	set := h.subs[conversationID]
+	for c := range set {
+		if c.userID == userID {
+			delete(set, c)
+		}
+	}
+	if len(set) == 0 {
+		delete(h.subs, conversationID)
 	}
 }

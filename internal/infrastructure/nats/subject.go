@@ -27,3 +27,25 @@ func ConversationIDFromSubject(subject string) (uuid.UUID, bool) {
 	}
 	return id, true
 }
+
+// RevokeWildcardSubject is the per-pod subscription for membership revocations.
+const RevokeWildcardSubject = "member.revoked.>"
+
+// RevokeSubjectForConversation is where "userID's membership in this
+// conversation was revoked" events are published.
+func RevokeSubjectForConversation(conversationID string) string {
+	return "member.revoked." + conversationID
+}
+
+// ConversationIDFromRevokeSubject parses "member.revoked.<uuid>" back to the id.
+func ConversationIDFromRevokeSubject(subject string) (uuid.UUID, bool) {
+	const prefix = "member.revoked."
+	if len(subject) <= len(prefix) || subject[:len(prefix)] != prefix {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(subject[len(prefix):])
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}

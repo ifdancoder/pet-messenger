@@ -102,6 +102,36 @@ func TestConn_EnqueueAfterClose(t *testing.T) {
 	c.close() // idempotent
 }
 
+func TestHub_DropSubscription(t *testing.T) {
+	hub := NewHub()
+	convA, convB := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	u1, u2 := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+
+	c1a := newConn(u1, 4)
+	c1b := newConn(u1, 4)
+	c2 := newConn(u2, 4)
+	hub.Subscribe(c1a, convA)
+	hub.Subscribe(c1b, convA)
+	hub.Subscribe(c2, convA)
+	hub.Subscribe(c1a, convB)
+
+	hub.DropSubscription(u1, convA)
+
+	if hub.IsSubscribed(c1a, convA) || hub.IsSubscribed(c1b, convA) {
+		t.Error("u1's conns should be gone from convA")
+	}
+	if !hub.IsSubscribed(c2, convA) {
+		t.Error("u2's conn should remain in convA")
+	}
+	if !hub.IsSubscribed(c1a, convB) {
+		t.Error("u1's convB subscription must be untouched")
+	}
+
+	// dropping the last member prunes the set (no panic, idempotent).
+	hub.DropSubscription(u2, convA)
+	hub.DropSubscription(u2, convA)
+}
+
 func TestHub_ConcurrentAccess(t *testing.T) {
 	h := NewHub()
 	cid := uuid.Must(uuid.NewV7())

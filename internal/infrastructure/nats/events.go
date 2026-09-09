@@ -45,6 +45,14 @@ type MessagePayload struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
+// MemberRevokedEvent is published on RevokeSubjectForConversation when a user is
+// kicked from or leaves a conversation. Every api pod consumes member.revoked.>
+// and drops that user's local WebSocket subscription to the conversation.
+type MemberRevokedEvent struct {
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"`
+}
+
 func toPayload(m *message.Message) MessagePayload {
 	p := MessagePayload{
 		ID:             m.ID.String(),

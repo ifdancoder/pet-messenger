@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
 	"pet-messenger/internal/domain/message"
+	usecaseconv "pet-messenger/internal/usecase/conversation"
 	usecasemsg "pet-messenger/internal/usecase/message"
 )
 
@@ -21,6 +23,25 @@ type Publisher struct {
 // NewPublisher returns a Publisher as the usecase port it satisfies.
 func NewPublisher(nc *natsgo.Conn) usecasemsg.MessagePublisher {
 	return &Publisher{nc: nc}
+}
+
+// NewMemberEventPublisher returns the same core-NATS Publisher as the
+// conversation usecase's MemberEventPublisher port.
+func NewMemberEventPublisher(nc *natsgo.Conn) usecaseconv.MemberEventPublisher {
+	return &Publisher{nc: nc}
+}
+
+// PublishMemberRevoked fans a membership revocation out on member.revoked.<id>.
+// Best-effort: a failed publish is the caller's to log.
+func (p *Publisher) PublishMemberRevoked(_ context.Context, conversationID, userID uuid.UUID) error {
+	data, err := json.Marshal(MemberRevokedEvent{
+		ConversationID: conversationID.String(),
+		UserID:         userID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal member revoked event: %w", err)
+	}
+	return p.nc.Publish(RevokeSubjectForConversation(conversationID.String()), data)
 }
 
 func (p *Publisher) PublishCreated(_ context.Context, m *message.Message) error {

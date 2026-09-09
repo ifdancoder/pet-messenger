@@ -132,3 +132,72 @@ func TestCrossPodDelivery(t *testing.T) {
 		}
 	}
 }
+
+// TestCrossPodMemberRevocation: a member.revoked event published on one NATS
+// connection ("pod A") makes a different pod ("pod B") drop that user's local
+// Hub subscription to the conversation.
+func TestCrossPodMemberRevocation(t *testing.T) {
+	ctx := context.Background()
+
+	container, err := tcnats.Run(ctx, "nats:2.10")
+	if err != nil {
+		t.Fatalf("start nats container: %v", err)
+	}
+	t.Cleanup(func() { _ = container.Terminate(ctx) })
+	url, err := container.ConnectionString(ctx)
+	if err != nil {
+		t.Fatalf("connection string: %v", err)
+	}
+
+	// pod B: Hub + a member.revoked.> subscription that calls hub.DropSubscription
+	hub := NewHub()
+	ncB, err := natsgo.Connect(url)
+	if err != nil {
+		t.Fatalf("pod B connect: %v", err)
+	}
+	t.Cleanup(func() { ncB.Close() })
+	subB, err := ncB.Subscribe(natsinfra.RevokeWildcardSubject, func(m *natsgo.Msg) {
+		var ev natsinfra.MemberRevokedEvent
+		if json.Unmarshal(m.Data, &ev) != nil {
+			return
+		}
+		cid, err1 := uuid.Parse(ev.ConversationID)
+		uid, err2 := uuid.Parse(ev.UserID)
+		if err1 == nil && err2 == nil {
+			hub.DropSubscription(uid, cid)
+		}
+	})
+	if err != nil {
+		t.Fatalf("pod B subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = subB.Unsubscribe() })
+
+	conv := uuid.Must(uuid.NewV7())
+	user := uuid.Must(uuid.NewV7())
+	conn := newConn(user, 4)
+	hub.Subscribe(conn, conv)
+
+	// pod A publishes the revoke
+	ncA, err := natsgo.Connect(url)
+	if err != nil {
+		t.Fatalf("pod A connect: %v", err)
+	}
+	t.Cleanup(func() { ncA.Close() })
+	pub := natsinfra.NewMemberEventPublisher(ncA)
+
+	// retry the publish to absorb subscription-propagation lag
+	deadline := time.After(8 * time.Second)
+	for {
+		if err := pub.PublishMemberRevoked(ctx, conv, user); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+		if !hub.IsSubscribed(conn, conv) {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("pod B did not drop the subscription")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
