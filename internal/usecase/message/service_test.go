@@ -134,10 +134,22 @@ func (f *fakePublisher) PublishDeleted(_ context.Context, m *domainmsg.Message) 
 	return f.err
 }
 
-// newSvc builds a Service with a capturing publisher.
+type fakeNotifProducer struct{ messageSent, membershipEvent int }
+
+func (f *fakeNotifProducer) MessageSent(context.Context, *domainmsg.Message, *domainconv.Conversation) error {
+	f.messageSent++
+	return nil
+}
+func (f *fakeNotifProducer) MembershipEvent(context.Context, domainmsg.SystemEvent, uuid.UUID, uuid.UUID, string) error {
+	f.membershipEvent++
+	return nil
+}
+
+// newSvc builds a Service with a capturing publisher and a no-op notification
+// producer.
 func newSvc(msgs domainmsg.Repository, convs domainconv.Repository) (*Service, *fakePublisher) {
 	pub := &fakePublisher{}
-	return NewService(msgs, convs, pub), pub
+	return NewService(msgs, convs, pub, &fakeNotifProducer{}), pub
 }
 
 // groupChatWithMember returns a fakeConvRepo whose conversation is a group chat
@@ -156,7 +168,8 @@ func TestSendMessage_HappyPath(t *testing.T) {
 	convs := groupChatWithMember()
 	convID := convs.conv.ID
 	msgs := &fakeMsgRepo{}
-	s, _ := newSvc(msgs, convs)
+	notifProd := &fakeNotifProducer{}
+	s := NewService(msgs, convs, &fakePublisher{}, notifProd)
 
 	m, err := s.SendMessage(context.Background(), actor, convID, "  hi  ", nil, "")
 	if err != nil {
@@ -167,6 +180,9 @@ func TestSendMessage_HappyPath(t *testing.T) {
 	}
 	if m.Content != "hi" || m.SenderID == nil || *m.SenderID != actor {
 		t.Errorf("message = %+v", m)
+	}
+	if notifProd.messageSent != 1 {
+		t.Errorf("notifProd.messageSent = %d, want 1", notifProd.messageSent)
 	}
 }
 
@@ -560,7 +576,9 @@ func TestSendMessage_IdempotentReplayDoesNotPublish(t *testing.T) {
 		createErr: domainmsg.ErrDuplicateIdempotencyKey,
 		byKey:     map[string]*domainmsg.Message{"k1": existing},
 	}
-	s, pub := newSvc(msgs, convs)
+	pub := &fakePublisher{}
+	notifProd := &fakeNotifProducer{}
+	s := NewService(msgs, convs, pub, notifProd)
 
 	if _, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, "k1"); err != nil {
 		t.Fatalf("SendMessage: %v", err)
@@ -568,13 +586,16 @@ func TestSendMessage_IdempotentReplayDoesNotPublish(t *testing.T) {
 	if len(pub.created) != 0 {
 		t.Fatalf("replay published %d created events, want 0", len(pub.created))
 	}
+	if notifProd.messageSent != 0 {
+		t.Fatalf("replay emitted %d notif intents, want 0", notifProd.messageSent)
+	}
 }
 
 func TestSendMessage_PublishErrorIsSwallowed(t *testing.T) {
 	convs := groupChatWithMember()
 	msgs := &fakeMsgRepo{}
 	pub := &fakePublisher{err: errors.New("nats down")}
-	s := NewService(msgs, convs, pub)
+	s := NewService(msgs, convs, pub, &fakeNotifProducer{})
 
 	if _, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, ""); err != nil {
 		t.Fatalf("SendMessage must succeed despite a publish error: %v", err)
@@ -649,6 +670,27 @@ func TestPostSystemEvent_KindGuard(t *testing.T) {
 	}
 }
 
+func TestPostSystemEvent_NotifiesMembershipEvent(t *testing.T) {
+	msgs := &fakeMsgRepo{}
+	notifProd := &fakeNotifProducer{}
+	s := NewService(msgs, &fakeConvRepo{}, &fakePublisher{}, notifProd)
+	gc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat}
+	actor := uuid.Must(uuid.NewV7())
+	target := uuid.Must(uuid.NewV7())
+
+	// a kick emits one membership-event intent
+	if err := s.PostSystemEvent(context.Background(), gc, &actor, domainmsg.SystemMemberRemoved, target, ""); err != nil {
+		t.Fatalf("kick: %v", err)
+	}
+	// a plain join does not
+	if err := s.PostSystemEvent(context.Background(), gc, &actor, domainmsg.SystemMemberJoined, target, ""); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if notifProd.membershipEvent != 1 {
+		t.Fatalf("membershipEvent = %d, want 1 (kick only)", notifProd.membershipEvent)
+	}
+}
+
 func TestPostSystemEvent_PersistErrorReturned(t *testing.T) {
 	msgs := &fakeMsgRepo{createErr: errors.New("db down")}
 	s, _ := newSvc(msgs, &fakeConvRepo{})
@@ -662,7 +704,7 @@ func TestPostSystemEvent_PersistErrorReturned(t *testing.T) {
 func TestPostSystemEvent_PublishErrorSwallowed(t *testing.T) {
 	msgs := &fakeMsgRepo{}
 	pub := &fakePublisher{err: errors.New("nats down")}
-	s := NewService(msgs, &fakeConvRepo{}, pub)
+	s := NewService(msgs, &fakeConvRepo{}, pub, &fakeNotifProducer{})
 	gc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat}
 	actor := uuid.Must(uuid.NewV7())
 	if err := s.PostSystemEvent(context.Background(), gc, &actor, domainmsg.SystemMemberJoined, actor, ""); err != nil {

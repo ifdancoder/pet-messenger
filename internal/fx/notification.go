@@ -8,6 +8,7 @@ import (
 
 	httpadapter "pet-messenger/internal/adapter/http"
 	"pet-messenger/internal/config"
+	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/postgres"
 	"pet-messenger/internal/infrastructure/push"
 	usecasenotif "pet-messenger/internal/usecase/notification"
@@ -18,6 +19,7 @@ var NotificationModule = fx.Module("notification",
 		postgres.NewNotificationRepository,
 		usecasenotif.NewService,
 		httpadapter.NewNotificationHandler,
+		notifinfra.NewProducer,
 	),
 )
 

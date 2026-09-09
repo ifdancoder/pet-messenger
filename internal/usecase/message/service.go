@@ -44,14 +44,16 @@ type Service struct {
 	messages      domainmsg.Repository
 	conversations domainconv.Repository
 	publisher     MessagePublisher
+	notif         NotificationProducer
 }
 
 // NewService wires the service. messages is implemented by
 // internal/infrastructure/postgres.MessageRepository; conversations by
 // internal/infrastructure/postgres.ConversationRepository; publisher by
-// internal/infrastructure/nats.Publisher.
-func NewService(messages domainmsg.Repository, conversations domainconv.Repository, publisher MessagePublisher) *Service {
-	return &Service{messages: messages, conversations: conversations, publisher: publisher}
+// internal/infrastructure/nats.Publisher; notif by
+// internal/infrastructure/notification.Producer.
+func NewService(messages domainmsg.Repository, conversations domainconv.Repository, publisher MessagePublisher, notif NotificationProducer) *Service {
+	return &Service{messages: messages, conversations: conversations, publisher: publisher, notif: notif}
 }
 
 // PageLimit clamps a client-requested page size: non-positive means "use the
@@ -119,6 +121,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, convID uuid.UUID, cont
 	}
 	if err := s.publisher.PublishCreated(ctx, m); err != nil {
 		log.Printf("message: publish created %s: %v", m.ID, err)
+	}
+	if err := s.notif.MessageSent(ctx, m, conv); err != nil {
+		log.Printf("message: notify message-sent %s: %v", m.ID, err)
 	}
 	return m, nil
 }
@@ -205,6 +210,16 @@ func (s *Service) PostSystemEvent(ctx context.Context, conv *domainconv.Conversa
 	}
 	if err := s.publisher.PublishCreated(ctx, m); err != nil {
 		log.Printf("message: publish system event %s: %v", m.ID, err)
+	}
+	switch event {
+	case domainmsg.SystemMemberRemoved:
+		if err := s.notif.MembershipEvent(ctx, event, conv.ID, targetID, ""); err != nil {
+			log.Printf("message: notify membership-event %s: %v", conv.ID, err)
+		}
+	case domainmsg.SystemMemberTierChanged:
+		if err := s.notif.MembershipEvent(ctx, event, conv.ID, targetID, detail); err != nil {
+			log.Printf("message: notify membership-event %s: %v", conv.ID, err)
+		}
 	}
 	return nil
 }

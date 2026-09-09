@@ -46,6 +46,42 @@ func newNATSConn(lc fx.Lifecycle, cfg *config.Config) (*natsgo.Conn, error) {
 	return nc, nil
 }
 
+func newJetStream(nc *natsgo.Conn) (natsgo.JetStreamContext, error) {
+	js, err := nc.JetStream()
+	if err != nil {
+		return nil, fmt.Errorf("nats jetstream context: %w", err)
+	}
+	return js, nil
+}
+
+const notifStreamName = "NOTIF"
+
+// ensureNotifStream creates (or updates, idempotently) the NOTIF work-queue
+// stream on boot. Work-queue retention deletes a message as soon as a consumer
+// acks it, so a delivered notification intent leaves no residue; a 24h MaxAge
+// with DiscardOld bounds the backlog if the worker is down.
+func ensureNotifStream(lc fx.Lifecycle, js natsgo.JetStreamContext) {
+	lc.Append(fx.Hook{OnStart: func(context.Context) error {
+		cfg := &natsgo.StreamConfig{
+			Name:      notifStreamName,
+			Subjects:  []string{"notif.msg.*", "notif.member.*"},
+			Retention: natsgo.WorkQueuePolicy,
+			Storage:   natsgo.FileStorage,
+			MaxAge:    24 * time.Hour,
+			Discard:   natsgo.DiscardOld,
+		}
+		if _, err := js.AddStream(cfg); err != nil {
+			if _, uerr := js.UpdateStream(cfg); uerr != nil {
+				return fmt.Errorf("ensure NOTIF stream: add=%v update=%v", err, uerr)
+			}
+			log.Printf("nats: NOTIF stream updated")
+			return nil
+		}
+		log.Printf("nats: NOTIF stream ready")
+		return nil
+	}})
+}
+
 // startMessageSubscription opens the single per-pod msg.> subscription and feeds
 // every event's raw bytes to the Hub, keyed by the conversation id in the
 // subject.
@@ -118,9 +154,11 @@ func startMemberRevocationSubscription(lc fx.Lifecycle, nc *natsgo.Conn, hub *ws
 var NATSModule = fx.Module("nats",
 	fx.Provide(
 		newNATSConn,
+		newJetStream,
 		natsinfra.NewPublisher,
 		natsinfra.NewMemberEventPublisher,
 	),
+	fx.Invoke(ensureNotifStream),
 	fx.Invoke(startMessageSubscription),
 	fx.Invoke(startMemberRevocationSubscription),
 )
