@@ -732,12 +732,48 @@ func TestConversationHandler_ListMembers(t *testing.T) {
 			Username  string `json:"username"`
 			AdminTier string `json:"admin_tier"`
 		} `json:"members"`
+		NextCursor string `json:"next_cursor"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(body.Members) != 1 || body.Members[0].Username != "alice" || body.Members[0].AdminTier != "admin" {
 		t.Fatalf("members = %+v", body.Members)
+	}
+	if body.NextCursor != "" {
+		t.Errorf("next_cursor = %q, want empty on a short (single-row) page", body.NextCursor)
+	}
+}
+
+func TestConversationHandler_ListMembers_FullPageEmitsCursor(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	full := make([]*domainconv.MemberProfile, usecaseconv.DefaultListLimit)
+	base := time.Now().UTC()
+	for i := range full {
+		full[i] = &domainconv.MemberProfile{
+			Member:   domainconv.Member{UserID: uuid.Must(uuid.NewV7()), Role: domainconv.RoleMember, JoinedAt: base.Add(time.Duration(i) * time.Minute)},
+			Username: "u",
+		}
+	}
+	svc := &fakeConversationService{listMembers: func(_, _ uuid.UUID, _ bool, _ time.Time, _ uuid.UUID, _ int) ([]*domainconv.MemberProfile, error) {
+		return full, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+convID.String()+"/members", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	var body struct {
+		Members    []map[string]any `json:"members"`
+		NextCursor string           `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Members) != usecaseconv.DefaultListLimit || body.NextCursor == "" {
+		t.Fatalf("len=%d next_cursor=%q, want a full page + a cursor", len(body.Members), body.NextCursor)
 	}
 }
 

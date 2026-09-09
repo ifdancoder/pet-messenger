@@ -168,8 +168,9 @@ type Member struct {
 }
 
 // MemberProfile is a Member row denormalized with the user's display fields,
-// for the roster read (GET /conversations/:id/members). Username / DisplayName
-// / AvatarURL are "" if the user account was since deleted.
+// for the roster read (GET /conversations/:id/members). The roster read inner-
+// joins users, and conversation_members.user_id is ON DELETE CASCADE, so a
+// profile always carries the live account's Username / DisplayName / AvatarURL.
 type MemberProfile struct {
 	Member
 	Username    string
@@ -312,9 +313,6 @@ type Repository interface {
 	ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*MemberProfile, error)
 }
 
-// IsArchived reports whether the conversation has been archived.
-func (c *Conversation) IsArchived() bool { return c.ArchivedAt != nil }
-
 // CanPost reports whether m may send messages to c. Pass a Member fetched for
 // THIS conversation (Repository.GetMember(ctx, c.ID, userID)), never a member
 // from a request body or a different conversation. In direct, group_chat and
@@ -343,6 +341,9 @@ func (m *Member) CanModerateMessages() bool {
 func (c *Conversation) CanAddMembers(actor *Member) bool {
 	return c.Kind != KindDirect && actor.AdminTier.rank() >= 2
 }
+
+// IsArchived reports whether the conversation has been archived.
+func (c *Conversation) IsArchived() bool { return c.ArchivedAt != nil }
 
 // CanManageMember reports whether actor may kick or retier target. No one may
 // manage the creator or themselves. A rank-3+ actor (superadmin / creator_admin)

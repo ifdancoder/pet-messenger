@@ -159,10 +159,12 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 	subB, err := ncB.Subscribe(natsinfra.RevokeWildcardSubject, func(m *natsgo.Msg) {
 		cid, ok := natsinfra.ConversationIDFromRevokeSubject(m.Subject)
 		if !ok {
+			t.Logf("pod B: revoke subject %q not parseable, dropping", m.Subject)
 			return
 		}
 		var ev natsinfra.MemberRevokedEvent
-		if json.Unmarshal(m.Data, &ev) != nil {
+		if err := json.Unmarshal(m.Data, &ev); err != nil {
+			t.Logf("pod B: unmarshal revoke frame %q: %v", m.Data, err)
 			return
 		}
 		if uid, err := uuid.Parse(ev.UserID); err == nil {

@@ -240,6 +240,16 @@ func TestNewSystemEvent(t *testing.T) {
 		t.Fatalf("Content = %q, want the tier token", m.Content)
 	}
 
+	// a non-nil pointer to uuid.Nil is also treated as system-initiated
+	nilActor := uuid.Nil
+	m, err = message.NewSystemEvent(conv, &nilActor, message.SystemMemberTierChanged, target, "creator_admin")
+	if err != nil {
+		t.Fatalf("NewSystemEvent(&uuid.Nil actor): %v", err)
+	}
+	if m.SenderID != nil {
+		t.Fatalf("SenderID = %v, want nil for a &uuid.Nil actor", m.SenderID)
+	}
+
 	// conversation-level: uuid.Nil target -> nil SystemTargetID
 	m, err = message.NewSystemEvent(conv, &actor, message.SystemConversationArchived, uuid.Nil, "")
 	if err != nil {

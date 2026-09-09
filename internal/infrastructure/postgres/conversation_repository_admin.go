@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"pet-messenger/internal/domain/conversation"
 )
@@ -49,6 +50,15 @@ func (r *ConversationRepository) RemoveMemberWithSuccession(ctx context.Context,
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Serialize all succession / claim activity for this conversation: take the
+	// parent row lock first (conversations-then-members, matching
+	// MessageRepository.Create) so a concurrent leaver cannot delete the heir
+	// row out from under the LIMIT 1 ... FOR UPDATE below. A missing id simply
+	// locks nothing — the usecase's GetByID has already 404'd.
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM conversations WHERE id = $1 FOR UPDATE`, conversationID); err != nil {
+		return nil, fmt.Errorf("lock conversation: %w", err)
+	}
 
 	var wasCreator bool
 	err = tx.QueryRowContext(ctx,
@@ -112,6 +122,13 @@ func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationI
 	}
 	defer tx.Rollback()
 
+	// Lock the parent conversation row first so concurrent claims serialize:
+	// under READ COMMITTED the seat-check SELECT below takes no gap lock when no
+	// creator row exists, so without this two claimants could both pass it.
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM conversations WHERE id = $1 FOR UPDATE`, conversationID); err != nil {
+		return nil, fmt.Errorf("lock conversation: %w", err)
+	}
+
 	var one int
 	err = tx.QueryRowContext(ctx,
 		`SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND is_creator FOR UPDATE`,
@@ -147,6 +164,12 @@ func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationI
 		 WHERE conversation_id = $1 AND user_id = $2`,
 		conversationID, userID,
 	); err != nil {
+		// Backstop for a concurrent claim that slipped past the seat check: the
+		// partial unique index rejects the second is_creator row.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_conversation_members_one_creator" {
+			return nil, conversation.ErrCreatorSeatTaken
+		}
 		return nil, fmt.Errorf("claim creator: %w", err)
 	}
 
@@ -240,7 +263,7 @@ func scanMemberTx(ctx context.Context, tx *sql.Tx, conversationID, userID uuid.U
 		conversationID, userID,
 	).Scan(&m.ConversationID, &m.UserID, &role, &m.JoinedAt, &mutedUntil, &lastRead, &m.IsCreator, &adminTier)
 	if err != nil {
-		return nil, fmt.Errorf("scan promoted member: %w", err)
+		return nil, fmt.Errorf("scan member: %w", err)
 	}
 	m.Role = conversation.Role(role)
 	if mutedUntil.Valid {

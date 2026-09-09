@@ -360,7 +360,8 @@ func TestJoinChannel_GroupAddsMember(t *testing.T) {
 		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
 		memberErr: domainconv.ErrNotMember,
 	}
-	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, &fakeSystemEventPoster{})
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
 
 	got, err := s.JoinChannel(context.Background(), actor, chID)
 	if err != nil {
@@ -371,6 +372,10 @@ func TestJoinChannel_GroupAddsMember(t *testing.T) {
 	}
 	if len(repo.added) != 1 || repo.added[0].UserID != actor || repo.added[0].Role != domainconv.RoleMember {
 		t.Fatalf("added = %+v, want one RoleMember for the actor", repo.added)
+	}
+	if len(poster.events) != 1 || poster.events[0].Event != domainmsg.SystemMemberJoined ||
+		poster.events[0].Actor == nil || *poster.events[0].Actor != actor || poster.events[0].Target != actor {
+		t.Fatalf("events = %+v, want one member_joined with actor==target==joiner", poster.events)
 	}
 }
 
@@ -503,7 +508,8 @@ func TestAddMember_AdminInvitesToGroupChat(t *testing.T) {
 		},
 	}
 	users := &fakeUserRepo{exists: map[uuid.UUID]bool{invitee: true}}
-	s := NewService(repo, users, &fakeRevoker{}, &fakeSystemEventPoster{})
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, users, &fakeRevoker{}, poster)
 
 	m, err := s.AddMember(context.Background(), actor, chID, invitee)
 	if err != nil {
@@ -514,6 +520,10 @@ func TestAddMember_AdminInvitesToGroupChat(t *testing.T) {
 	}
 	if m == nil || m.UserID != invitee {
 		t.Fatalf("returned member = %+v, want the invitee's row", m)
+	}
+	if len(poster.events) != 1 || poster.events[0].Event != domainmsg.SystemMemberJoined ||
+		poster.events[0].Actor == nil || *poster.events[0].Actor != actor || poster.events[0].Target != invitee {
+		t.Fatalf("events = %+v, want one member_joined with actor==inviter, target==invitee", poster.events)
 	}
 }
 
@@ -582,7 +592,8 @@ func TestRemoveMember_SuperadminKicksAdminAndRevokes(t *testing.T) {
 		},
 	}
 	rev := &fakeRevoker{}
-	s := NewService(repo, &fakeUserRepo{}, rev, &fakeSystemEventPoster{})
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, &fakeUserRepo{}, rev, poster)
 
 	if err := s.RemoveMember(context.Background(), actor, chID, target); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
@@ -592,6 +603,10 @@ func TestRemoveMember_SuperadminKicksAdminAndRevokes(t *testing.T) {
 	}
 	if len(rev.revoked) != 1 || rev.revoked[0] != [2]uuid.UUID{chID, target} {
 		t.Fatalf("revoked = %+v, want one (chID, target)", rev.revoked)
+	}
+	if len(poster.events) != 1 || poster.events[0].Event != domainmsg.SystemMemberRemoved ||
+		poster.events[0].Actor == nil || *poster.events[0].Actor != actor || poster.events[0].Target != target {
+		t.Fatalf("events = %+v, want one member_removed with actor==kicker, target==target", poster.events)
 	}
 }
 
@@ -759,12 +774,59 @@ func TestSetArchived_SuperadminArchives(t *testing.T) {
 		conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat},
 		member: &domainconv.Member{UserID: actor, Role: domainconv.RoleMember, AdminTier: domainconv.TierSuperAdmin},
 	}
-	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, &fakeSystemEventPoster{})
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
 	if err := s.SetArchived(context.Background(), actor, convID, true); err != nil {
 		t.Fatalf("SetArchived: %v", err)
 	}
 	if len(repo.archivedSet) != 1 || repo.archivedSet[0] != (archivedCall{convID, true}) {
 		t.Fatalf("archivedSet = %+v", repo.archivedSet)
+	}
+	if len(poster.events) != 1 || poster.events[0].Event != domainmsg.SystemConversationArchived ||
+		poster.events[0].Actor == nil || *poster.events[0].Actor != actor ||
+		poster.events[0].Target != uuid.Nil || poster.events[0].Detail != "" {
+		t.Fatalf("events = %+v, want one conversation_archived (target uuid.Nil, detail \"\")", poster.events)
+	}
+}
+
+func TestSetArchived_UnarchiveEmitsEvent(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	now := time.Now()
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat, ArchivedAt: &now},
+		member: &domainconv.Member{UserID: actor, Role: domainconv.RoleMember, AdminTier: domainconv.TierSuperAdmin},
+	}
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
+	if err := s.SetArchived(context.Background(), actor, convID, false); err != nil {
+		t.Fatalf("SetArchived(false): %v", err)
+	}
+	if len(repo.archivedSet) != 1 || repo.archivedSet[0] != (archivedCall{convID, false}) {
+		t.Fatalf("archivedSet = %+v", repo.archivedSet)
+	}
+	if len(poster.events) != 1 || poster.events[0].Event != domainmsg.SystemConversationUnarchived ||
+		poster.events[0].Actor == nil || *poster.events[0].Actor != actor ||
+		poster.events[0].Target != uuid.Nil || poster.events[0].Detail != "" {
+		t.Fatalf("events = %+v, want one conversation_unarchived", poster.events)
+	}
+}
+
+func TestSetArchived_NoOpWhenAlreadyInState(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	now := time.Now()
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat, ArchivedAt: &now},
+		member: &domainconv.Member{UserID: actor, Role: domainconv.RoleMember, AdminTier: domainconv.TierSuperAdmin},
+	}
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
+	if err := s.SetArchived(context.Background(), actor, convID, true); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	if len(repo.archivedSet) != 0 || len(poster.events) != 0 {
+		t.Fatalf("archiving an already-archived conversation must be a no-op: archivedSet=%+v events=%+v", repo.archivedSet, poster.events)
 	}
 }
 
@@ -841,7 +903,9 @@ func TestClaimCreator(t *testing.T) {
 			return &domainconv.Member{UserID: uid, IsCreator: true, AdminTier: domainconv.TierCreatorAdmin}, nil
 		},
 	}
-	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, &fakeSystemEventPoster{})
+	repo.member = convMember(actor, domainconv.TierAdmin, false) // membership gate must pass
+	poster := &fakeSystemEventPoster{}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, poster)
 	m, err := s.ClaimCreator(context.Background(), actor, convID)
 	if err != nil {
 		t.Fatalf("ClaimCreator: %v", err)
@@ -849,17 +913,76 @@ func TestClaimCreator(t *testing.T) {
 	if m.UserID != actor || !m.IsCreator {
 		t.Fatalf("m = %+v", m)
 	}
+	if len(poster.events) != 1 || poster.events[0].Event != domainmsg.SystemMemberTierChanged ||
+		poster.events[0].Actor == nil || *poster.events[0].Actor != actor || poster.events[0].Target != actor ||
+		poster.events[0].Detail != string(domainconv.TierCreatorAdmin) {
+		t.Fatalf("events = %+v, want one member_tier_changed with actor==target==claimer, detail creator_admin", poster.events)
+	}
 }
 
 func TestClaimCreator_SeatTaken(t *testing.T) {
 	convID := uuid.Must(uuid.NewV7())
+	actor := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{
-		conv:  &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat},
-		claim: func(_, _ uuid.UUID) (*domainconv.Member, error) { return nil, domainconv.ErrCreatorSeatTaken },
+		conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat},
+		member: convMember(actor, domainconv.TierAdmin, false),
+		claim:  func(_, _ uuid.UUID) (*domainconv.Member, error) { return nil, domainconv.ErrCreatorSeatTaken },
 	}
 	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, &fakeSystemEventPoster{})
-	if _, err := s.ClaimCreator(context.Background(), uuid.Must(uuid.NewV7()), convID); !errors.Is(err, domainconv.ErrCreatorSeatTaken) {
+	if _, err := s.ClaimCreator(context.Background(), actor, convID); !errors.Is(err, domainconv.ErrCreatorSeatTaken) {
 		t.Fatalf("err = %v, want ErrCreatorSeatTaken", err)
+	}
+}
+
+func TestClaimCreator_DirectRejected(t *testing.T) {
+	convID := uuid.Must(uuid.NewV7())
+	claimCalled := false
+	repo := &fakeConvRepo{
+		conv:  &domainconv.Conversation{ID: convID, Kind: domainconv.KindDirect},
+		claim: func(_, _ uuid.UUID) (*domainconv.Member, error) { claimCalled = true; return nil, nil },
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, &fakeSystemEventPoster{})
+	if _, err := s.ClaimCreator(context.Background(), uuid.Must(uuid.NewV7()), convID); !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound (a DM is never claimable)", err)
+	}
+	if claimCalled {
+		t.Fatal("repo.ClaimCreator must not be reached for a direct conversation")
+	}
+}
+
+func TestClaimCreator_NonMember(t *testing.T) {
+	convID := uuid.Must(uuid.NewV7())
+	claimCalled := false
+	repo := &fakeConvRepo{
+		conv:      &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat},
+		memberErr: domainconv.ErrNotMember,
+		claim:     func(_, _ uuid.UUID) (*domainconv.Member, error) { claimCalled = true; return nil, nil },
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{}, &fakeSystemEventPoster{})
+	if _, err := s.ClaimCreator(context.Background(), uuid.Must(uuid.NewV7()), convID); !errors.Is(err, domainconv.ErrNotMember) {
+		t.Fatalf("err = %v, want ErrNotMember", err)
+	}
+	if claimCalled {
+		t.Fatal("repo.ClaimCreator must not be reached for a non-member")
+	}
+}
+
+func TestRemoveMember_DirectRejected(t *testing.T) {
+	actor, target := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv: &domainconv.Conversation{ID: convID, Kind: domainconv.KindDirect},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			return convMember(uid, domainconv.TierCreatorAdmin, uid == actor), nil
+		},
+	}
+	rev := &fakeRevoker{}
+	s := NewService(repo, &fakeUserRepo{}, rev, &fakeSystemEventPoster{})
+	if err := s.RemoveMember(context.Background(), actor, convID, target); !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound (a DM participant is never kickable)", err)
+	}
+	if len(repo.removed) != 0 || len(rev.revoked) != 0 {
+		t.Fatalf("nothing should have been removed or revoked: removed=%+v revoked=%+v", repo.removed, rev.revoked)
 	}
 }
 

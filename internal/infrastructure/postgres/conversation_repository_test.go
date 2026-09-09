@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -878,13 +879,88 @@ func TestConversationRepository_ClaimCreator(t *testing.T) {
 	if !got.IsCreator || got.AdminTier != conversation.TierCreatorAdmin {
 		t.Fatalf("claimed member = %+v", got)
 	}
-	// now the seat is taken.
+	// now the seat is taken — even a random non-member sees the taken seat first.
 	if _, err := repo.ClaimCreator(ctx, convID, plain); !errors.Is(err, conversation.ErrCreatorSeatTaken) {
 		t.Fatalf("claim taken seat = %v, want ErrCreatorSeatTaken", err)
 	}
-	// a non-member cannot claim.
-	if _, err := repo.ClaimCreator(ctx, convID, uuid.Must(uuid.NewV7())); !errors.Is(err, conversation.ErrNotMember) && !errors.Is(err, conversation.ErrCreatorSeatTaken) {
-		t.Fatalf("non-member claim = %v", err)
+	if _, err := repo.ClaimCreator(ctx, convID, uuid.Must(uuid.NewV7())); !errors.Is(err, conversation.ErrCreatorSeatTaken) {
+		t.Fatalf("non-member claim on a taken seat = %v, want ErrCreatorSeatTaken", err)
+	}
+
+	// ErrNotMember is the answer only for a seat-less conversation with no
+	// members left at all (the heir SELECT returns no rows).
+	emptyConv, emptyCreator := seedGroupChat(t)
+	if _, err := repo.RemoveMemberWithSuccession(ctx, emptyConv, emptyCreator); err != nil {
+		t.Fatalf("vacate empty: %v", err)
+	}
+	if _, err := repo.ClaimCreator(ctx, emptyConv, uuid.Must(uuid.NewV7())); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatalf("claim on a member-less seat-less conversation = %v, want ErrNotMember", err)
+	}
+}
+
+// TestConversationRepository_ClaimCreator_ConcurrentConverges fires two claims at
+// the same seat-less conversation and asserts they converge: exactly one wins,
+// the other gets a domain error, and the DB ends with exactly one is_creator row.
+func TestConversationRepository_ClaimCreator_ConcurrentConverges(t *testing.T) {
+	repo := NewConversationRepository(testDB)
+	ctx := context.Background()
+	convID, creatorID := seedGroupChat(t)
+	base := time.Now().UTC().Add(-time.Hour)
+	a := addMember(t, convID, conversation.TierAdmin, base)
+	b := addMember(t, convID, conversation.TierAdmin, base.Add(time.Minute))
+
+	// vacate + clear the auto-promoted seat so the conversation is seat-less
+	// with two equally-tiered members.
+	if _, err := repo.RemoveMemberWithSuccession(ctx, convID, creatorID); err != nil {
+		t.Fatalf("vacate: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`UPDATE conversation_members SET is_creator = false, admin_tier = 'admin' WHERE conversation_id = $1 AND is_creator`,
+		convID,
+	); err != nil {
+		t.Fatalf("reset seat: %v", err)
+	}
+
+	type res struct {
+		m   *conversation.Member
+		err error
+	}
+	ch := make(chan res, 2)
+	var wg sync.WaitGroup
+	for _, uid := range []uuid.UUID{a, b} {
+		wg.Add(1)
+		go func(uid uuid.UUID) {
+			defer wg.Done()
+			m, err := repo.ClaimCreator(ctx, convID, uid)
+			ch <- res{m, err}
+		}(uid)
+	}
+	wg.Wait()
+	close(ch)
+
+	var winners, domainErrs int
+	for r := range ch {
+		switch {
+		case r.err == nil && r.m != nil && r.m.IsCreator:
+			winners++
+		case errors.Is(r.err, conversation.ErrCreatorSeatTaken) || errors.Is(r.err, conversation.ErrNotCreatorHeir):
+			domainErrs++
+		default:
+			t.Fatalf("unexpected ClaimCreator result: m=%+v err=%v", r.m, r.err)
+		}
+	}
+	if winners != 1 || domainErrs != 1 {
+		t.Fatalf("convergence: %d winners, %d domain errors, want 1 / 1", winners, domainErrs)
+	}
+
+	var count int
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT count(*) FROM conversation_members WHERE conversation_id = $1 AND is_creator`, convID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count is_creator rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("is_creator rows = %d, want exactly 1", count)
 	}
 }
 

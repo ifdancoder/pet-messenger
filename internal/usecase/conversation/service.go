@@ -170,20 +170,21 @@ func (s *Service) CreateChannel(ctx context.Context, creator uuid.UUID, kind dom
 // idempotent: an actor who is already a member gets the channel back unchanged.
 // A non-channel target, or a channel that is not public, is refused as
 // ErrNotFound, so neither a private channel's nor a non-channel conversation's
-// existence is disclosed.
+// existence is disclosed; only once the target is known to be a public channel
+// is an archived one reported as ErrConversationArchived.
 func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (*domainconv.Conversation, error) {
 	conv, err := s.conversations.GetByID(ctx, channelID)
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
-	}
-	if conv.IsArchived() {
-		return nil, domainconv.ErrConversationArchived
 	}
 	if !conv.Kind.IsChannel() {
 		return nil, domainconv.ErrNotFound
 	}
 	if !conv.Public {
 		return nil, domainconv.ErrNotFound
+	}
+	if conv.IsArchived() {
+		return nil, domainconv.ErrConversationArchived
 	}
 	if _, err := s.conversations.GetMember(ctx, channelID, actor); err == nil {
 		return conv, nil
@@ -295,6 +296,9 @@ func (s *Service) RemoveMember(ctx context.Context, actor, conversationID, targe
 	if err != nil {
 		return err // conversation.ErrNotFound
 	}
+	if conv.Kind == domainconv.KindDirect {
+		return domainconv.ErrNotFound // a DM participant is never kickable, regardless of tier
+	}
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
 	if err != nil {
 		return err // conversation.ErrNotMember
@@ -357,6 +361,9 @@ func (s *Service) SetArchived(ctx context.Context, actor, conversationID uuid.UU
 	if err != nil {
 		return err // conversation.ErrNotFound
 	}
+	if conv.IsArchived() == archived {
+		return nil // already in the requested state: no repo write, no timeline entry
+	}
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
 	if err != nil {
 		return err // conversation.ErrNotMember
@@ -376,12 +383,20 @@ func (s *Service) SetArchived(ctx context.Context, actor, conversationID uuid.UU
 }
 
 // ClaimCreator makes actor the creator of a conversation whose seat is vacant.
-// Only the highest-ranked current member may claim (ErrNotCreatorHeir);
-// ErrCreatorSeatTaken if a creator already exists.
+// A direct conversation is refused as ErrNotFound (it is seat-less by
+// construction). A non-member is refused as ErrNotMember before any creator
+// state is inspected. Only the highest-ranked current member may claim
+// (ErrNotCreatorHeir); ErrCreatorSeatTaken if a creator already exists.
 func (s *Service) ClaimCreator(ctx context.Context, actor, conversationID uuid.UUID) (*domainconv.Member, error) {
 	conv, err := s.conversations.GetByID(ctx, conversationID)
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
+	}
+	if conv.Kind == domainconv.KindDirect {
+		return nil, domainconv.ErrNotFound // DMs are seat-less by construction and never claimable
+	}
+	if _, err := s.conversations.GetMember(ctx, conversationID, actor); err != nil {
+		return nil, err // conversation.ErrNotMember — a non-member gets 404, not a creator-state oracle
 	}
 	m, err := s.conversations.ClaimCreator(ctx, conversationID, actor)
 	if err != nil {

@@ -635,6 +635,39 @@ func TestPostSystemEvent_KindGuard(t *testing.T) {
 	if len(pub.created) != 2 {
 		t.Fatal("nothing posts in a direct conversation")
 	}
+
+	// member_* in a channel_group -> posts (only channel_broadcast suppresses it)
+	cg := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindChannelGroup}
+	if err := s.PostSystemEvent(ctx, cg, &actor, domainmsg.SystemMemberJoined, actor, ""); err != nil {
+		t.Fatalf("channel_group member_joined: %v", err)
+	}
+	if len(pub.created) != 3 || pub.created[2].SystemEvent != domainmsg.SystemMemberJoined {
+		t.Fatalf("channel_group member_joined must post; created = %+v", pub.created)
+	}
+}
+
+func TestPostSystemEvent_PersistErrorReturned(t *testing.T) {
+	msgs := &fakeMsgRepo{createErr: errors.New("db down")}
+	s, _ := newSvc(msgs, &fakeConvRepo{})
+	gc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat}
+	actor := uuid.Must(uuid.NewV7())
+	if err := s.PostSystemEvent(context.Background(), gc, &actor, domainmsg.SystemMemberJoined, actor, ""); err == nil {
+		t.Fatal("want a non-nil error when messages.Create fails")
+	}
+}
+
+func TestPostSystemEvent_PublishErrorSwallowed(t *testing.T) {
+	msgs := &fakeMsgRepo{}
+	pub := &fakePublisher{err: errors.New("nats down")}
+	s := NewService(msgs, &fakeConvRepo{}, pub)
+	gc := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat}
+	actor := uuid.Must(uuid.NewV7())
+	if err := s.PostSystemEvent(context.Background(), gc, &actor, domainmsg.SystemMemberJoined, actor, ""); err != nil {
+		t.Fatalf("a publish error must be swallowed, got %v", err)
+	}
+	if len(pub.created) != 1 {
+		t.Fatalf("the event should still have been persisted + publish attempted: %+v", pub.created)
+	}
 }
 
 func TestDeleteMessage_PublishesDeleted(t *testing.T) {
