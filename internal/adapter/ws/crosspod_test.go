@@ -157,13 +157,15 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 	}
 	t.Cleanup(func() { ncB.Close() })
 	subB, err := ncB.Subscribe(natsinfra.RevokeWildcardSubject, func(m *natsgo.Msg) {
+		cid, ok := natsinfra.ConversationIDFromRevokeSubject(m.Subject)
+		if !ok {
+			return
+		}
 		var ev natsinfra.MemberRevokedEvent
 		if json.Unmarshal(m.Data, &ev) != nil {
 			return
 		}
-		cid, err1 := uuid.Parse(ev.ConversationID)
-		uid, err2 := uuid.Parse(ev.UserID)
-		if err1 == nil && err2 == nil {
+		if uid, err := uuid.Parse(ev.UserID); err == nil {
 			hub.DropSubscription(uid, cid)
 		}
 	})

@@ -34,10 +34,7 @@ func NewMemberEventPublisher(nc *natsgo.Conn) usecaseconv.MemberEventPublisher {
 // PublishMemberRevoked fans a membership revocation out on member.revoked.<id>.
 // Best-effort: a failed publish is the caller's to log.
 func (p *Publisher) PublishMemberRevoked(_ context.Context, conversationID, userID uuid.UUID) error {
-	data, err := json.Marshal(MemberRevokedEvent{
-		ConversationID: conversationID.String(),
-		UserID:         userID.String(),
-	})
+	data, err := json.Marshal(MemberRevokedEvent{UserID: userID.String()})
 	if err != nil {
 		return fmt.Errorf("marshal member revoked event: %w", err)
 	}

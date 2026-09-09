@@ -47,12 +47,13 @@ type MessagePayload struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
-// MemberRevokedEvent is published on RevokeSubjectForConversation when a user is
-// kicked from or leaves a conversation. Every api pod consumes member.revoked.>
-// and drops that user's local WebSocket subscription to the conversation.
+// MemberRevokedEvent is published on RevokeSubjectForConversation(id) when a
+// member is kicked from or leaves conversation id. The conversation id travels
+// in the NATS subject, not the body (matching MessageEvent). Every api pod
+// consumes member.revoked.> and drops that user's local WebSocket subscription
+// to the conversation.
 type MemberRevokedEvent struct {
-	ConversationID string `json:"conversation_id"`
-	UserID         string `json:"user_id"`
+	UserID string `json:"user_id"`
 }
 
 func toPayload(m *message.Message) MessagePayload {

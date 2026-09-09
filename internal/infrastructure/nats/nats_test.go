@@ -47,6 +47,17 @@ func TestRevokeSubjectRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMemberRevokedEvent_JSONShape(t *testing.T) {
+	user := uuid.Must(uuid.NewV7())
+	data, err := json.Marshal(MemberRevokedEvent{UserID: user.String()})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if got, want := string(data), `{"user_id":"`+user.String()+`"}`; got != want {
+		t.Fatalf("marshalled %s, want %s", got, want)
+	}
+}
+
 func TestToPayload(t *testing.T) {
 	sender := uuid.Must(uuid.NewV7())
 	edited := time.Now().UTC()

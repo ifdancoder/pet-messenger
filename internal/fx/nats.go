@@ -82,15 +82,19 @@ func startMemberRevocationSubscription(lc fx.Lifecycle, nc *natsgo.Conn, hub *ws
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			s, err := nc.Subscribe(natsinfra.RevokeWildcardSubject, func(m *natsgo.Msg) {
+				cid, ok := natsinfra.ConversationIDFromRevokeSubject(m.Subject)
+				if !ok {
+					log.Printf("nats: member-revoked on unparseable subject %q", m.Subject)
+					return
+				}
 				var ev natsinfra.MemberRevokedEvent
 				if err := json.Unmarshal(m.Data, &ev); err != nil {
 					log.Printf("nats: bad member-revoked payload on %s: %v", m.Subject, err)
 					return
 				}
-				cid, err1 := uuid.Parse(ev.ConversationID)
-				uid, err2 := uuid.Parse(ev.UserID)
-				if err1 != nil || err2 != nil {
-					log.Printf("nats: member-revoked event with bad ids: %q / %q", ev.ConversationID, ev.UserID)
+				uid, err := uuid.Parse(ev.UserID)
+				if err != nil {
+					log.Printf("nats: member-revoked with bad user id %q", ev.UserID)
 					return
 				}
 				hub.DropSubscription(uid, cid)
