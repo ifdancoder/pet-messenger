@@ -360,6 +360,51 @@ func TestDeleteMessage_NotAuthor(t *testing.T) {
 	}
 }
 
+func TestDeleteMessage_ContentAdminDeletesAnothersMessage(t *testing.T) {
+	author := uuid.Must(uuid.NewV7())
+	moderator := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	msgID := uuid.Must(uuid.NewV7())
+
+	convs := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindChannelGroup},
+		member: &domainconv.Member{UserID: moderator, Role: domainconv.RoleMember, AdminTier: domainconv.TierContentAdmin},
+	}
+	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{
+		msgID: {ID: msgID, ConversationID: convID, SenderID: &author, Type: domainmsg.TypeText, Content: "x"},
+	}}
+	s, pub := newSvc(msgs, convs)
+
+	got, err := s.DeleteMessage(context.Background(), moderator, convID, msgID)
+	if err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+	if got.DeletedAt == nil {
+		t.Fatal("message not tombstoned")
+	}
+	if len(pub.deleted) != 1 {
+		t.Fatalf("PublishDeleted called %d times, want 1", len(pub.deleted))
+	}
+}
+
+func TestDeleteMessage_PlainMemberCannotDeleteAnothers(t *testing.T) {
+	author := uuid.Must(uuid.NewV7())
+	other := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	msgID := uuid.Must(uuid.NewV7())
+	convs := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: convID, Kind: domainconv.KindChannelGroup},
+		member: &domainconv.Member{UserID: other, Role: domainconv.RoleMember, AdminTier: domainconv.TierNone},
+	}
+	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{
+		msgID: {ID: msgID, ConversationID: convID, SenderID: &author, Type: domainmsg.TypeText, Content: "x"},
+	}}
+	s, _ := newSvc(msgs, convs)
+	if _, err := s.DeleteMessage(context.Background(), other, convID, msgID); !errors.Is(err, ErrNotAuthor) {
+		t.Fatalf("err = %v, want ErrNotAuthor", err)
+	}
+}
+
 func TestDeleteMessage_Idempotent(t *testing.T) {
 	actor := uuid.Must(uuid.NewV7())
 	convs := groupChatWithMember()

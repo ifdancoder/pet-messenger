@@ -149,7 +149,8 @@ func (s *Service) EditMessage(ctx context.Context, actor, convID, messageID uuid
 // DeleteMessage soft-deletes actor's own message in convID (idempotent). It
 // returns the tombstoned message (Content cleared, DeletedAt set).
 func (s *Service) DeleteMessage(ctx context.Context, actor, convID, messageID uuid.UUID) (*domainmsg.Message, error) {
-	if _, err := s.conversations.GetMember(ctx, convID, actor); err != nil {
+	member, err := s.conversations.GetMember(ctx, convID, actor)
+	if err != nil {
 		return nil, err
 	}
 	m, err := s.messages.GetByID(ctx, messageID)
@@ -160,7 +161,9 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, convID, messageID uu
 		return nil, domainmsg.ErrNotFound
 	}
 	if m.SenderID == nil || *m.SenderID != actor {
-		return nil, ErrNotAuthor
+		if !member.CanModerateMessages() {
+			return nil, ErrNotAuthor
+		}
 	}
 	m.MarkDeleted(time.Now().UTC())
 	if err := s.messages.Update(ctx, m); err != nil {
