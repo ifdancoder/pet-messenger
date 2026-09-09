@@ -75,7 +75,7 @@ func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Serv
 	issuer := infraauth.NewJWTIssuerWithKey(priv, time.Minute)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 	hub := NewHub()
-	h := NewWSHandler(hub, verifier, members, nil)
+	h := NewWSHandler(hub, verifier, members, nil, NopPresence{})
 	r := gin.New()
 	h.RegisterRoutes(r)
 	srv := httptest.NewServer(r)
@@ -94,7 +94,7 @@ func wsTestServerOpts(t *testing.T, members conversation.Repository, originPatte
 	}
 	issuer := infraauth.NewJWTIssuerWithKey(priv, ttl)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
-	h := NewWSHandler(NewHub(), verifier, members, originPatterns)
+	h := NewWSHandler(NewHub(), verifier, members, originPatterns, NopPresence{})
 	r := gin.New()
 	h.RegisterRoutes(r)
 	srv := httptest.NewServer(r)

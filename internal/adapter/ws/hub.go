@@ -10,12 +10,47 @@ import (
 // it. One Hub per pod; it holds no cross-pod state — the NATS subscription is
 // the only inbound path and Broadcast the only fan-out.
 type Hub struct {
-	mu   sync.RWMutex
-	subs map[uuid.UUID]map[*Conn]struct{}
+	mu        sync.RWMutex
+	subs      map[uuid.UUID]map[*Conn]struct{}
+	userConns map[uuid.UUID]map[*Conn]struct{}
 }
 
 func NewHub() *Hub {
-	return &Hub{subs: make(map[uuid.UUID]map[*Conn]struct{})}
+	return &Hub{
+		subs:      make(map[uuid.UUID]map[*Conn]struct{}),
+		userConns: make(map[uuid.UUID]map[*Conn]struct{}),
+	}
+}
+
+// Register adds c to its user's connection set. Called once per accepted
+// WebSocket, before any subscribe. A Conn that never subscribes to a
+// conversation still receives per-user notification pushes via SendToUser.
+func (h *Hub) Register(c *Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	set := h.userConns[c.userID]
+	if set == nil {
+		set = make(map[*Conn]struct{})
+		h.userConns[c.userID] = set
+	}
+	set[c] = struct{}{}
+}
+
+// UserConnCount returns how many of userID's connections this pod holds.
+func (h *Hub) UserConnCount(userID uuid.UUID) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.userConns[userID])
+}
+
+// SendToUser enqueues payload on every local connection belonging to userID.
+// enqueue never blocks: a full buffer closes that connection.
+func (h *Hub) SendToUser(userID uuid.UUID, payload []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for c := range h.userConns[userID] {
+		c.enqueue(payload)
+	}
 }
 
 // Subscribe adds c to conversationID's fan-out set.
@@ -37,12 +72,19 @@ func (h *Hub) Unsubscribe(c *Conn, conversationID uuid.UUID) {
 	h.removeLocked(c, conversationID)
 }
 
-// Remove drops c from every conversation it was subscribed to.
+// Remove drops c from every conversation it was subscribed to and from its
+// user's connection set.
 func (h *Hub) Remove(c *Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for cid := range h.subs {
 		h.removeLocked(c, cid)
+	}
+	if set := h.userConns[c.userID]; set != nil {
+		delete(set, c)
+		if len(set) == 0 {
+			delete(h.userConns, c.userID)
+		}
 	}
 }
 

@@ -132,6 +132,47 @@ func TestHub_DropSubscription(t *testing.T) {
 	hub.DropSubscription(u2, convA)
 }
 
+func TestHub_SendToUser(t *testing.T) {
+	hub := NewHub()
+	u1, u2 := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	c1a := newConn(u1, 4)
+	c1b := newConn(u1, 4)
+	c2 := newConn(u2, 4)
+	hub.Register(c1a)
+	hub.Register(c1b)
+	hub.Register(c2)
+
+	if hub.UserConnCount(u1) != 2 || hub.UserConnCount(u2) != 1 {
+		t.Fatalf("counts: u1=%d u2=%d", hub.UserConnCount(u1), hub.UserConnCount(u2))
+	}
+
+	hub.SendToUser(u1, []byte("hi"))
+	for _, c := range []*Conn{c1a, c1b} {
+		select {
+		case got := <-c.out:
+			if string(got) != "hi" {
+				t.Fatalf("payload = %q", got)
+			}
+		default:
+			t.Fatal("u1 conn did not receive")
+		}
+	}
+	select {
+	case <-c2.out:
+		t.Fatal("u2 conn should not have received")
+	default:
+	}
+
+	hub.Remove(c1a)
+	if hub.UserConnCount(u1) != 1 {
+		t.Fatalf("after Remove u1 count = %d, want 1", hub.UserConnCount(u1))
+	}
+	hub.Remove(c1b)
+	if hub.UserConnCount(u1) != 0 {
+		t.Fatalf("after Remove u1 count = %d, want 0", hub.UserConnCount(u1))
+	}
+}
+
 func TestHub_ConcurrentAccess(t *testing.T) {
 	h := NewHub()
 	cid := uuid.Must(uuid.NewV7())

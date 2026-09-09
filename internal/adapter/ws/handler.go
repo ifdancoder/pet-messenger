@@ -33,18 +33,20 @@ type WSHandler struct {
 	members        memberChecker
 	originPatterns []string
 	bufSize        int
+	presence       PresenceRecorder
 }
 
 // NewWSHandler builds the handler. originPatterns is passed straight to
 // websocket.AcceptOptions.OriginPatterns; a nil/empty slice keeps
 // coder/websocket's same-origin default.
-func NewWSHandler(hub *Hub, verifier *infraauth.JWTVerifier, members conversation.Repository, originPatterns []string) *WSHandler {
+func NewWSHandler(hub *Hub, verifier *infraauth.JWTVerifier, members conversation.Repository, originPatterns []string, presence PresenceRecorder) *WSHandler {
 	return &WSHandler{
 		hub:            hub,
 		verifier:       verifier,
 		members:        members,
 		originPatterns: originPatterns,
 		bufSize:        defaultConnBuffer,
+		presence:       presence,
 	}
 }
 
@@ -76,10 +78,22 @@ func (h *WSHandler) Handle(c *gin.Context) {
 	log.Printf("ws: connected user=%s", userID)
 	defer log.Printf("ws: disconnected user=%s", userID)
 
-	conn := newConn(userID, h.bufSize)
-	defer h.hub.Remove(conn)
-
 	ctx := c.Request.Context()
+
+	conn := newConn(userID, h.bufSize)
+	h.hub.Register(conn)
+	if err := h.presence.Connected(ctx, userID); err != nil {
+		log.Printf("ws: presence Connected user=%s: %v", userID, err)
+	}
+	defer func() {
+		h.hub.Remove(conn)
+		if h.hub.UserConnCount(userID) == 0 {
+			if err := h.presence.Disconnected(context.Background(), userID); err != nil {
+				log.Printf("ws: presence Disconnected user=%s: %v", userID, err)
+			}
+		}
+	}()
+
 	go h.writePump(ctx, sock, conn, expiresAt)
 
 	for {
@@ -123,6 +137,9 @@ func (h *WSHandler) writePump(ctx context.Context, sock *websocket.Conn, conn *C
 			if err != nil {
 				conn.close()
 				return
+			}
+			if err := h.presence.Heartbeat(context.Background(), conn.userID); err != nil {
+				log.Printf("ws: presence Heartbeat user=%s: %v", conn.userID, err)
 			}
 		case payload := <-conn.out:
 			wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
