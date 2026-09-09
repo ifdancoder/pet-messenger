@@ -29,6 +29,8 @@ type fakeConversationService struct {
 	removeMember       func(actor, conversationID, target uuid.UUID) error
 	setMemberTier      func(actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error)
 	listMembers        func(actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error)
+	setArchived        func(actor, conversationID uuid.UUID, archived bool) error
+	claimCreator       func(actor, conversationID uuid.UUID) (*domainconv.Member, error)
 }
 
 func (f *fakeConversationService) OpenDirect(_ context.Context, me, other uuid.UUID) (*domainconv.Conversation, error) {
@@ -63,6 +65,12 @@ func (f *fakeConversationService) SetMemberTier(_ context.Context, actor, conver
 }
 func (f *fakeConversationService) ListMembers(_ context.Context, actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error) {
 	return f.listMembers(actor, conversationID, adminsOnly, before, beforeUserID, limit)
+}
+func (f *fakeConversationService) SetArchived(_ context.Context, actor, conversationID uuid.UUID, archived bool) error {
+	return f.setArchived(actor, conversationID, archived)
+}
+func (f *fakeConversationService) ClaimCreator(_ context.Context, actor, conversationID uuid.UUID) (*domainconv.Member, error) {
+	return f.claimCreator(actor, conversationID)
 }
 
 func convRouter(h *ConversationHandler, actor *uuid.UUID) *gin.Engine {
@@ -743,5 +751,64 @@ func TestConversationHandler_ListMembers_NotMember(t *testing.T) {
 	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/members", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", w.Code)
+	}
+}
+
+func TestConversationHandler_Archive(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	var gotArchived *bool
+	svc := &fakeConversationService{setArchived: func(_, _ uuid.UUID, archived bool) error {
+		gotArchived = &archived
+		return nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+
+	w := doConvJSON(t, r, http.MethodPost, "/conversations/"+convID.String()+"/archive", "")
+	if w.Code != http.StatusNoContent || gotArchived == nil || *gotArchived != true {
+		t.Fatalf("archive: status %d, gotArchived %v", w.Code, gotArchived)
+	}
+	w = doConvJSON(t, r, http.MethodPost, "/conversations/"+convID.String()+"/unarchive", "")
+	if w.Code != http.StatusNoContent || *gotArchived != false {
+		t.Fatalf("unarchive: status %d, gotArchived %v", w.Code, *gotArchived)
+	}
+}
+
+func TestConversationHandler_Archive_Forbidden(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{setArchived: func(_, _ uuid.UUID, _ bool) error { return usecaseconv.ErrForbidden }}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/archive", "")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d", w.Code)
+	}
+}
+
+func TestConversationHandler_ClaimCreator(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{claimCreator: func(a, _ uuid.UUID) (*domainconv.Member, error) {
+		return &domainconv.Member{UserID: a, IsCreator: true, AdminTier: domainconv.TierCreatorAdmin, JoinedAt: time.Now()}, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPost, "/conversations/"+convID.String()+"/claim-creator", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+}
+
+func TestConversationHandler_ClaimCreator_SeatTaken(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{claimCreator: func(_, _ uuid.UUID) (*domainconv.Member, error) {
+		return nil, domainconv.ErrCreatorSeatTaken
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/claim-creator", "")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", w.Code)
 	}
 }

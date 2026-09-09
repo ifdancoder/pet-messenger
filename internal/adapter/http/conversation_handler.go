@@ -28,6 +28,8 @@ type conversationService interface {
 	RemoveMember(ctx context.Context, actor, conversationID, target uuid.UUID) error
 	SetMemberTier(ctx context.Context, actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error)
 	ListMembers(ctx context.Context, actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error)
+	SetArchived(ctx context.Context, actor, conversationID uuid.UUID, archived bool) error
+	ClaimCreator(ctx context.Context, actor, conversationID uuid.UUID) (*domainconv.Member, error)
 }
 
 type ConversationHandler struct {
@@ -47,6 +49,9 @@ func (h *ConversationHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/channels", h.ListPublicChannels)
 	rg.GET("", h.ListMine)
 	rg.POST("/:id/join", h.JoinChannel)
+	rg.POST("/:id/archive", h.Archive)
+	rg.POST("/:id/unarchive", h.Unarchive)
+	rg.POST("/:id/claim-creator", h.ClaimCreator)
 	rg.POST("/:id/members", h.AddMember)
 	rg.GET("/:id/members", h.ListMembers)
 	rg.PATCH("/:id/members/me", h.SetOwnTier)
@@ -130,13 +135,14 @@ func toMemberProfileResponse(mp *domainconv.MemberProfile) memberProfileResponse
 }
 
 type conversationResponse struct {
-	ID            string    `json:"id"`
-	Kind          string    `json:"kind"`
-	Title         string    `json:"title"`
-	AvatarURL     string    `json:"avatar_url"`
-	Public        bool      `json:"public"`
-	CreatedAt     time.Time `json:"created_at"`
-	LastMessageAt time.Time `json:"last_message_at"`
+	ID            string     `json:"id"`
+	Kind          string     `json:"kind"`
+	Title         string     `json:"title"`
+	AvatarURL     string     `json:"avatar_url"`
+	Public        bool       `json:"public"`
+	CreatedAt     time.Time  `json:"created_at"`
+	LastMessageAt time.Time  `json:"last_message_at"`
+	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
 }
 
 type conversationListResponse struct {
@@ -158,6 +164,7 @@ func toConversationResponse(c *domainconv.Conversation) conversationResponse {
 		Public:        c.Public,
 		CreatedAt:     c.CreatedAt,
 		LastMessageAt: c.LastMessageAt,
+		ArchivedAt:    c.ArchivedAt,
 	}
 }
 
@@ -171,7 +178,11 @@ func writeConversationError(c *gin.Context, err error) {
 		errors.Is(err, usecaseconv.ErrCannotKickSelf),
 		errors.Is(err, usecaseconv.ErrInvalidTier):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, usecaseconv.ErrForbidden):
+	case errors.Is(err, domainconv.ErrConversationArchived),
+		errors.Is(err, domainconv.ErrCreatorSeatTaken):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, usecaseconv.ErrForbidden),
+		errors.Is(err, domainconv.ErrNotCreatorHeir):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, usecaseconv.ErrRecipientNotFound),
 		errors.Is(err, usecaseconv.ErrInviteeNotFound),
@@ -516,4 +527,44 @@ func (h *ConversationHandler) LeaveConversation(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *ConversationHandler) Archive(c *gin.Context)   { h.setArchived(c, true) }
+func (h *ConversationHandler) Unarchive(c *gin.Context) { h.setArchived(c, false) }
+
+func (h *ConversationHandler) setArchived(c *gin.Context, archived bool) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	if err := h.svc.SetArchived(c.Request.Context(), me, id, archived); err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *ConversationHandler) ClaimCreator(c *gin.Context) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	m, err := h.svc.ClaimCreator(c.Request.Context(), me, id)
+	if err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toMemberResponse(m))
 }

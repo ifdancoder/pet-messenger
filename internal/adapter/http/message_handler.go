@@ -108,7 +108,8 @@ func writeMessageError(c *gin.Context, err error) {
 		errors.Is(err, domainmsg.ErrEmptyContent),
 		errors.Is(err, domainmsg.ErrContentTooLong):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, domainmsg.ErrNotEditable):
+	case errors.Is(err, domainmsg.ErrNotEditable),
+		errors.Is(err, usecasemsg.ErrConversationArchived):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
