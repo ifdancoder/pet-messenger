@@ -238,6 +238,18 @@ func TestSendMessage_IdempotentReplay(t *testing.T) {
 	}
 }
 
+func TestSendMessage_ArchivedRejected(t *testing.T) {
+	now := time.Now()
+	convs := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat, ArchivedAt: &now},
+		member: &domainconv.Member{Role: domainconv.RoleMember},
+	}
+	s, _ := newSvc(&fakeMsgRepo{}, convs)
+	if _, err := s.SendMessage(context.Background(), uuid.Must(uuid.NewV7()), convs.conv.ID, "hi", nil, ""); !errors.Is(err, ErrConversationArchived) {
+		t.Fatalf("err = %v, want ErrConversationArchived", err)
+	}
+}
+
 func TestSendMessage_EmptyContent(t *testing.T) {
 	convs := groupChatWithMember()
 	s, _ := newSvc(&fakeMsgRepo{}, convs)

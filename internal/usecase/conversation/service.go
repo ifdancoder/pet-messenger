@@ -164,6 +164,9 @@ func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
 	}
+	if conv.IsArchived() {
+		return nil, domainconv.ErrConversationArchived
+	}
 	if !conv.Kind.IsChannel() {
 		return nil, domainconv.ErrNotFound
 	}
@@ -207,7 +210,7 @@ func (s *Service) LeaveConversation(ctx context.Context, actor, conversationID u
 	if conv.Kind == domainconv.KindDirect {
 		return domainconv.ErrNotFound
 	}
-	if err := s.conversations.RemoveMember(ctx, conversationID, actor); err != nil {
+	if _, err := s.conversations.RemoveMemberWithSuccession(ctx, conversationID, actor); err != nil {
 		return err // conversation.ErrNotMember
 	}
 	if err := s.revoker.PublishMemberRevoked(ctx, conversationID, actor); err != nil {
@@ -224,6 +227,9 @@ func (s *Service) AddMember(ctx context.Context, actor, conversationID, invitee 
 	conv, err := s.conversations.GetByID(ctx, conversationID)
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
+	}
+	if conv.IsArchived() {
+		return nil, domainconv.ErrConversationArchived
 	}
 	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
 	if err != nil {
@@ -318,6 +324,44 @@ func (s *Service) SetMemberTier(ctx context.Context, actor, conversationID, targ
 		return nil, fmt.Errorf("reload retiered member: %w", err)
 	}
 	return updated, nil
+}
+
+// SetArchived archives or unarchives a conversation on actor's authority
+// (superadmin+). Archiving makes it read-only and hides it from lists and
+// discovery; unarchiving restores it.
+func (s *Service) SetArchived(ctx context.Context, actor, conversationID uuid.UUID, archived bool) error {
+	conv, err := s.conversations.GetByID(ctx, conversationID)
+	if err != nil {
+		return err // conversation.ErrNotFound
+	}
+	_ = conv
+	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
+	if err != nil {
+		return err // conversation.ErrNotMember
+	}
+	if !domainconv.CanArchive(actorM) {
+		return ErrForbidden
+	}
+	if err := s.conversations.SetArchived(ctx, conversationID, archived); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ClaimCreator makes actor the creator of a conversation whose seat is vacant.
+// Only the highest-ranked current member may claim (ErrNotCreatorHeir);
+// ErrCreatorSeatTaken if a creator already exists.
+func (s *Service) ClaimCreator(ctx context.Context, actor, conversationID uuid.UUID) (*domainconv.Member, error) {
+	conv, err := s.conversations.GetByID(ctx, conversationID)
+	if err != nil {
+		return nil, err // conversation.ErrNotFound
+	}
+	_ = conv
+	m, err := s.conversations.ClaimCreator(ctx, conversationID, actor)
+	if err != nil {
+		return nil, err // ErrCreatorSeatTaken / ErrNotCreatorHeir / ErrNotMember
+	}
+	return m, nil
 }
 
 // ListPublicChannels returns discoverable channels newest-activity-first. query

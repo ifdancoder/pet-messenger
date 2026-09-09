@@ -34,6 +34,9 @@ var (
 	ErrReplyNotFound = errors.New("message: reply target does not exist in this conversation")
 	// ErrConflictingCursors: ListMessages was given both afterSeq and beforeSeq.
 	ErrConflictingCursors = errors.New("message: specify at most one of after_seq / before_seq")
+	// ErrConversationArchived: SendMessage was attempted against an archived
+	// conversation.
+	ErrConversationArchived = errors.New("message: conversation is archived")
 )
 
 // Service is the message usecase.
@@ -72,6 +75,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, convID uuid.UUID, cont
 	conv, err := s.conversations.GetByID(ctx, convID)
 	if err != nil {
 		return nil, err // conversation.ErrNotFound
+	}
+	if conv.IsArchived() {
+		return nil, ErrConversationArchived
 	}
 	member, err := s.conversations.GetMember(ctx, convID, actor)
 	if err != nil {
