@@ -20,6 +20,7 @@ func TestModulesWireTogether(t *testing.T) {
 		fxapp.ConversationModule,
 		fxapp.MessageModule,
 		fxapp.NATSModule,
+		fxapp.RedisModule,
 		fxapp.WSModule,
 		fxapp.HTTPModule,
 	); err != nil {

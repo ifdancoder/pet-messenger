@@ -15,6 +15,7 @@ func main() {
 		fxapp.ConversationModule,
 		fxapp.MessageModule,
 		fxapp.NATSModule,
+		fxapp.RedisModule,
 		fxapp.WSModule,
 		fxapp.HTTPModule,
 	).Run()
