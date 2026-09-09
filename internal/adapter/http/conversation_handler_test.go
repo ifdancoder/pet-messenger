@@ -28,6 +28,7 @@ type fakeConversationService struct {
 	addMember          func(actor, conversationID, invitee uuid.UUID) (*domainconv.Member, error)
 	removeMember       func(actor, conversationID, target uuid.UUID) error
 	setMemberTier      func(actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error)
+	listMembers        func(actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error)
 }
 
 func (f *fakeConversationService) OpenDirect(_ context.Context, me, other uuid.UUID) (*domainconv.Conversation, error) {
@@ -59,6 +60,9 @@ func (f *fakeConversationService) RemoveMember(_ context.Context, actor, convers
 }
 func (f *fakeConversationService) SetMemberTier(_ context.Context, actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error) {
 	return f.setMemberTier(actor, conversationID, target, tier)
+}
+func (f *fakeConversationService) ListMembers(_ context.Context, actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error) {
+	return f.listMembers(actor, conversationID, adminsOnly, before, beforeUserID, limit)
 }
 
 func convRouter(h *ConversationHandler, actor *uuid.UUID) *gin.Engine {
@@ -693,5 +697,51 @@ func TestConversationHandler_ChannelRoutesCoexist(t *testing.T) {
 		if w.Code == http.StatusNotFound {
 			t.Fatalf("%s %s → 404 (route did not resolve)", tc.method, tc.path)
 		}
+	}
+}
+
+func TestConversationHandler_ListMembers(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{listMembers: func(_, _ uuid.UUID, adminsOnly bool, _ time.Time, _ uuid.UUID, _ int) ([]*domainconv.MemberProfile, error) {
+		if !adminsOnly {
+			t.Errorf("expected admins_only=true")
+		}
+		return []*domainconv.MemberProfile{{
+			Member:   domainconv.Member{UserID: actor, Role: domainconv.RoleMember, AdminTier: domainconv.TierAdmin, JoinedAt: time.Now()},
+			Username: "alice", DisplayName: "Alice", AvatarURL: "http://x/a.png",
+		}}, nil
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+convID.String()+"/members?admins_only=true", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	var body struct {
+		Members []struct {
+			UserID    string `json:"user_id"`
+			Username  string `json:"username"`
+			AdminTier string `json:"admin_tier"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Members) != 1 || body.Members[0].Username != "alice" || body.Members[0].AdminTier != "admin" {
+		t.Fatalf("members = %+v", body.Members)
+	}
+}
+
+func TestConversationHandler_ListMembers_NotMember(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	svc := &fakeConversationService{listMembers: func(_, _ uuid.UUID, _ bool, _ time.Time, _ uuid.UUID, _ int) ([]*domainconv.MemberProfile, error) {
+		return nil, domainconv.ErrNotMember
+	}}
+	h := &ConversationHandler{svc: svc}
+	r := convRouter(h, &actor)
+	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/members", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", w.Code)
 	}
 }

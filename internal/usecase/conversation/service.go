@@ -364,6 +364,22 @@ func (s *Service) ClaimCreator(ctx context.Context, actor, conversationID uuid.U
 	return m, nil
 }
 
+// ListMembers returns a page of the conversation's roster. Any current member
+// may read it. adminsOnly restricts to tier-holders and the creator.
+func (s *Service) ListMembers(ctx context.Context, actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error) {
+	if _, err := s.conversations.GetByID(ctx, conversationID); err != nil {
+		return nil, err // conversation.ErrNotFound
+	}
+	if _, err := s.conversations.GetMember(ctx, conversationID, actor); err != nil {
+		return nil, err // conversation.ErrNotMember
+	}
+	list, err := s.conversations.ListMembers(ctx, conversationID, adminsOnly, before, beforeUserID, EffectiveListLimit(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+	return list, nil
+}
+
 // ListPublicChannels returns discoverable channels newest-activity-first. query
 // is a case-insensitive title substring; limit is clamped via EffectiveListLimit.
 func (s *Service) ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error) {

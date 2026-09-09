@@ -27,6 +27,7 @@ type conversationService interface {
 	AddMember(ctx context.Context, actor, conversationID, invitee uuid.UUID) (*domainconv.Member, error)
 	RemoveMember(ctx context.Context, actor, conversationID, target uuid.UUID) error
 	SetMemberTier(ctx context.Context, actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error)
+	ListMembers(ctx context.Context, actor, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error)
 }
 
 type ConversationHandler struct {
@@ -47,6 +48,7 @@ func (h *ConversationHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("", h.ListMine)
 	rg.POST("/:id/join", h.JoinChannel)
 	rg.POST("/:id/members", h.AddMember)
+	rg.GET("/:id/members", h.ListMembers)
 	rg.PATCH("/:id/members/me", h.SetOwnTier)
 	rg.DELETE("/:id/members/me", h.LeaveConversation)
 	rg.PATCH("/:id/members/:user_id", h.SetMemberTier)
@@ -103,6 +105,27 @@ func toMemberResponse(m *domainconv.Member) memberResponse {
 		AdminTier: string(m.AdminTier),
 		IsCreator: m.IsCreator,
 		JoinedAt:  m.JoinedAt,
+	}
+}
+
+type memberProfileResponse struct {
+	memberResponse
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	AvatarURL   string `json:"avatar_url"`
+}
+
+type memberListResponse struct {
+	Members    []memberProfileResponse `json:"members"`
+	NextCursor string                  `json:"next_cursor,omitempty"`
+}
+
+func toMemberProfileResponse(mp *domainconv.MemberProfile) memberProfileResponse {
+	return memberProfileResponse{
+		memberResponse: toMemberResponse(&mp.Member),
+		Username:       mp.Username,
+		DisplayName:    mp.DisplayName,
+		AvatarURL:      mp.AvatarURL,
 	}
 }
 
@@ -354,6 +377,49 @@ func (h *ConversationHandler) AddMember(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toMemberResponse(m))
+}
+
+func (h *ConversationHandler) ListMembers(c *gin.Context) {
+	me, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	before, beforeUserID, err := decodeConversationCursor(c.Query("cursor"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cursor"})
+		return
+	}
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		limit = n
+	}
+	adminsOnly := c.Query("admins_only") == "true"
+
+	list, err := h.svc.ListMembers(c.Request.Context(), me, id, adminsOnly, before, beforeUserID, limit)
+	if err != nil {
+		writeConversationError(c, err)
+		return
+	}
+	resp := memberListResponse{Members: make([]memberProfileResponse, 0, len(list))}
+	for _, mp := range list {
+		resp.Members = append(resp.Members, toMemberProfileResponse(mp))
+	}
+	if eff := usecaseconv.EffectiveListLimit(limit); len(list) == eff && len(list) > 0 {
+		last := list[len(list)-1]
+		resp.NextCursor = encodeConversationCursor(last.JoinedAt, last.UserID)
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *ConversationHandler) RemoveMember(c *gin.Context) {

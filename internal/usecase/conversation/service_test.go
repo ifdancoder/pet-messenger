@@ -846,3 +846,32 @@ func TestClaimCreator_SeatTaken(t *testing.T) {
 		t.Fatalf("err = %v, want ErrCreatorSeatTaken", err)
 	}
 }
+
+func TestListMembers(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:       &domainconv.Conversation{ID: convID, Kind: domainconv.KindGroupChat},
+		member:     &domainconv.Member{UserID: actor},
+		memberList: []*domainconv.MemberProfile{{Member: domainconv.Member{UserID: actor}, Username: "u"}},
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	got, err := s.ListMembers(context.Background(), actor, convID, true, time.Time{}, uuid.Nil, 999)
+	if err != nil {
+		t.Fatalf("ListMembers: %v", err)
+	}
+	if len(got) != 1 || !repo.gotAdminsOnly {
+		t.Fatalf("got %d rows, adminsOnly=%v", len(got), repo.gotAdminsOnly)
+	}
+}
+
+func TestListMembers_NonMember(t *testing.T) {
+	repo := &fakeConvRepo{
+		conv:      &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindGroupChat},
+		memberErr: domainconv.ErrNotMember,
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if _, err := s.ListMembers(context.Background(), uuid.Must(uuid.NewV7()), repo.conv.ID, false, time.Time{}, uuid.Nil, 20); !errors.Is(err, domainconv.ErrNotMember) {
+		t.Fatalf("err = %v, want ErrNotMember", err)
+	}
+}
