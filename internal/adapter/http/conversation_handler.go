@@ -22,7 +22,7 @@ type conversationService interface {
 	ListMine(ctx context.Context, me uuid.UUID, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error)
 	CreateChannel(ctx context.Context, creator uuid.UUID, kind domainconv.Kind, title string, public bool) (*domainconv.Conversation, error)
 	JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (*domainconv.Conversation, error)
-	LeaveChannel(ctx context.Context, actor, channelID uuid.UUID) error
+	LeaveConversation(ctx context.Context, actor, channelID uuid.UUID) error
 	ListPublicChannels(ctx context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error)
 }
 
@@ -298,7 +298,7 @@ func (h *ConversationHandler) LeaveChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
 		return
 	}
-	if err := h.svc.LeaveChannel(c.Request.Context(), me, id); err != nil {
+	if err := h.svc.LeaveConversation(c.Request.Context(), me, id); err != nil {
 		writeConversationError(c, err)
 		return
 	}

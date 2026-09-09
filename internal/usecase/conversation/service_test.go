@@ -23,10 +23,11 @@ type fakeConvRepo struct {
 	}
 	listResult []*domainconv.Conversation
 
-	conv      *domainconv.Conversation
-	convErr   error
-	member    *domainconv.Member
-	memberErr error
+	conv          *domainconv.Conversation
+	convErr       error
+	member        *domainconv.Member
+	memberErr     error
+	getMemberFunc func(ctx context.Context, conversationID, userID uuid.UUID) (*domainconv.Member, error)
 
 	added      []*domainconv.Member
 	addErr     error
@@ -62,7 +63,10 @@ func (f *fakeConvRepo) GetByID(context.Context, uuid.UUID) (*domainconv.Conversa
 	}
 	return nil, domainconv.ErrNotFound
 }
-func (f *fakeConvRepo) GetMember(context.Context, uuid.UUID, uuid.UUID) (*domainconv.Member, error) {
+func (f *fakeConvRepo) GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*domainconv.Member, error) {
+	if f.getMemberFunc != nil {
+		return f.getMemberFunc(ctx, conversationID, userID)
+	}
 	if f.memberErr != nil {
 		return nil, f.memberErr
 	}
@@ -124,11 +128,25 @@ func (f *fakeUserRepo) GetByUsername(context.Context, string) (*user.User, error
 	return nil, user.ErrNotFound
 }
 
+type fakeRevoker struct {
+	revoked [][2]uuid.UUID
+	err     error
+}
+
+func (f *fakeRevoker) PublishMemberRevoked(_ context.Context, conversationID, userID uuid.UUID) error {
+	f.revoked = append(f.revoked, [2]uuid.UUID{conversationID, userID})
+	return f.err
+}
+
+func convMember(userID uuid.UUID, tier domainconv.AdminTier, creator bool) *domainconv.Member {
+	return &domainconv.Member{UserID: userID, AdminTier: tier, IsCreator: creator, Role: domainconv.RoleMember}
+}
+
 func TestOpenDirect_CreatesWhenAbsent(t *testing.T) {
 	me, other := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
 	convs := &fakeConvRepo{}
 	users := &fakeUserRepo{exists: map[uuid.UUID]bool{other: true}}
-	s := NewService(convs, users)
+	s := NewService(convs, users, &fakeRevoker{})
 
 	got, err := s.OpenDirect(context.Background(), me, other)
 	if err != nil {
@@ -147,7 +165,7 @@ func TestOpenDirect_ReturnsExisting(t *testing.T) {
 	existing := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindDirect}
 	convs := &fakeConvRepo{getDirect: func(_, _ uuid.UUID) (*domainconv.Conversation, error) { return existing, nil }}
 	users := &fakeUserRepo{exists: map[uuid.UUID]bool{other: true}}
-	s := NewService(convs, users)
+	s := NewService(convs, users, &fakeRevoker{})
 
 	got, err := s.OpenDirect(context.Background(), me, other)
 	if err != nil {
@@ -163,7 +181,7 @@ func TestOpenDirect_ReturnsExisting(t *testing.T) {
 
 func TestOpenDirect_Self(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
-	s := NewService(&fakeConvRepo{}, &fakeUserRepo{})
+	s := NewService(&fakeConvRepo{}, &fakeUserRepo{}, &fakeRevoker{})
 	_, err := s.OpenDirect(context.Background(), me, me)
 	if !errors.Is(err, ErrCannotDirectSelf) {
 		t.Fatalf("err = %v, want ErrCannotDirectSelf", err)
@@ -172,7 +190,7 @@ func TestOpenDirect_Self(t *testing.T) {
 
 func TestOpenDirect_RecipientMissing(t *testing.T) {
 	me, other := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
-	s := NewService(&fakeConvRepo{}, &fakeUserRepo{exists: map[uuid.UUID]bool{}})
+	s := NewService(&fakeConvRepo{}, &fakeUserRepo{exists: map[uuid.UUID]bool{}}, &fakeRevoker{})
 	_, err := s.OpenDirect(context.Background(), me, other)
 	if !errors.Is(err, ErrRecipientNotFound) {
 		t.Fatalf("err = %v, want ErrRecipientNotFound", err)
@@ -194,7 +212,7 @@ func TestOpenDirect_CreateRaceReReads(t *testing.T) {
 		},
 	}
 	users := &fakeUserRepo{exists: map[uuid.UUID]bool{other: true}}
-	s := NewService(convs, users)
+	s := NewService(convs, users, &fakeRevoker{})
 
 	got, err := s.OpenDirect(context.Background(), me, other)
 	if err != nil {
@@ -208,7 +226,7 @@ func TestOpenDirect_CreateRaceReReads(t *testing.T) {
 func TestCreateGroupChat_OK(t *testing.T) {
 	creator := uuid.Must(uuid.NewV7())
 	convs := &fakeConvRepo{}
-	s := NewService(convs, &fakeUserRepo{})
+	s := NewService(convs, &fakeUserRepo{}, &fakeRevoker{})
 
 	got, err := s.CreateGroupChat(context.Background(), creator, "  Team  ")
 	if err != nil {
@@ -225,7 +243,7 @@ func TestCreateGroupChat_OK(t *testing.T) {
 func TestCreateGroupChat_BlankTitle(t *testing.T) {
 	creator := uuid.Must(uuid.NewV7())
 	convs := &fakeConvRepo{}
-	s := NewService(convs, &fakeUserRepo{})
+	s := NewService(convs, &fakeUserRepo{}, &fakeRevoker{})
 
 	_, err := s.CreateGroupChat(context.Background(), creator, "   ")
 	if !errors.Is(err, domainconv.ErrInvalidTitle) {
@@ -240,7 +258,7 @@ func TestListMine_ClampsLimit(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	for _, tc := range []struct{ in, want int }{{0, DefaultListLimit}, {-5, DefaultListLimit}, {500, MaxListLimit}, {30, 30}} {
 		convs := &fakeConvRepo{}
-		s := NewService(convs, &fakeUserRepo{})
+		s := NewService(convs, &fakeUserRepo{}, &fakeRevoker{})
 		if _, err := s.ListMine(context.Background(), me, time.Time{}, uuid.Nil, tc.in); err != nil {
 			t.Fatalf("ListMine(%d): %v", tc.in, err)
 		}
@@ -254,7 +272,7 @@ func TestCreateChannel(t *testing.T) {
 	creator := uuid.Must(uuid.NewV7())
 	for _, kind := range []domainconv.Kind{domainconv.KindChannelGroup, domainconv.KindChannelBroadcast} {
 		repo := &fakeConvRepo{}
-		s := NewService(repo, &fakeUserRepo{})
+		s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 		c, err := s.CreateChannel(context.Background(), creator, kind, "  News  ", true)
 		if err != nil {
 			t.Fatalf("CreateChannel(%s): %v", kind, err)
@@ -270,7 +288,7 @@ func TestCreateChannel(t *testing.T) {
 
 func TestCreateChannel_InvalidKind(t *testing.T) {
 	repo := &fakeConvRepo{}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 	_, err := s.CreateChannel(context.Background(), uuid.Must(uuid.NewV7()), domainconv.KindGroupChat, "x", true)
 	if !errors.Is(err, domainconv.ErrInvalidKind) {
 		t.Fatalf("err = %v, want ErrInvalidKind", err)
@@ -287,7 +305,7 @@ func TestJoinChannel_GroupAddsMember(t *testing.T) {
 		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
 		memberErr: domainconv.ErrNotMember,
 	}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 
 	got, err := s.JoinChannel(context.Background(), actor, chID)
 	if err != nil {
@@ -308,7 +326,7 @@ func TestJoinChannel_BroadcastAddsSubscriber(t *testing.T) {
 		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelBroadcast, Public: true},
 		memberErr: domainconv.ErrNotMember,
 	}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 
 	if _, err := s.JoinChannel(context.Background(), actor, chID); err != nil {
 		t.Fatalf("JoinChannel: %v", err)
@@ -321,7 +339,7 @@ func TestJoinChannel_BroadcastAddsSubscriber(t *testing.T) {
 func TestJoinChannel_NotAChannel(t *testing.T) {
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat, Public: true}}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), chID)
 	if !errors.Is(err, domainconv.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound (a non-channel's existence is not disclosed)", err)
@@ -331,7 +349,7 @@ func TestJoinChannel_NotAChannel(t *testing.T) {
 func TestJoinChannel_NotPublic(t *testing.T) {
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: false}}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), chID)
 	if !errors.Is(err, domainconv.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound (a private channel is not disclosed)", err)
@@ -345,7 +363,7 @@ func TestJoinChannel_AlreadyMemberIsIdempotent(t *testing.T) {
 		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
 		member: &domainconv.Member{ConversationID: chID, UserID: actor, Role: domainconv.RoleMember},
 	}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 
 	got, err := s.JoinChannel(context.Background(), actor, chID)
 	if err != nil {
@@ -358,51 +376,51 @@ func TestJoinChannel_AlreadyMemberIsIdempotent(t *testing.T) {
 
 func TestJoinChannel_NotFound(t *testing.T) {
 	repo := &fakeConvRepo{convErr: domainconv.ErrNotFound}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 	_, err := s.JoinChannel(context.Background(), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()))
 	if !errors.Is(err, domainconv.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 
-func TestLeaveChannel(t *testing.T) {
+func TestLeaveConversation_ChannelRemovesMember(t *testing.T) {
 	actor := uuid.Must(uuid.NewV7())
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelBroadcast, Public: true}}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 
-	if err := s.LeaveChannel(context.Background(), actor, chID); err != nil {
-		t.Fatalf("LeaveChannel: %v", err)
+	if err := s.LeaveConversation(context.Background(), actor, chID); err != nil {
+		t.Fatalf("LeaveConversation: %v", err)
 	}
 	if len(repo.removed) != 1 || repo.removed[0] != [2]uuid.UUID{chID, actor} {
 		t.Fatalf("removed = %+v", repo.removed)
 	}
 }
 
-func TestLeaveChannel_NotAChannel(t *testing.T) {
+func TestLeaveConversation_DirectNotAllowed(t *testing.T) {
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindDirect}}
-	s := NewService(repo, &fakeUserRepo{})
-	if err := s.LeaveChannel(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound (a non-channel's existence is not disclosed)", err)
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if err := s.LeaveConversation(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound (a direct conversation cannot be left)", err)
 	}
 }
 
-func TestLeaveChannel_NotMember(t *testing.T) {
+func TestLeaveConversation_NotMember(t *testing.T) {
 	chID := uuid.Must(uuid.NewV7())
 	repo := &fakeConvRepo{
 		conv:      &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup, Public: true},
 		removeErr: domainconv.ErrNotMember,
 	}
-	s := NewService(repo, &fakeUserRepo{})
-	if err := s.LeaveChannel(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotMember) {
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if err := s.LeaveConversation(context.Background(), uuid.Must(uuid.NewV7()), chID); !errors.Is(err, domainconv.ErrNotMember) {
 		t.Fatalf("err = %v, want ErrNotMember", err)
 	}
 }
 
 func TestListPublicChannels_TrimsAndClamps(t *testing.T) {
 	repo := &fakeConvRepo{}
-	s := NewService(repo, &fakeUserRepo{})
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
 	if _, err := s.ListPublicChannels(context.Background(), "  news  ", time.Time{}, uuid.Nil, 999); err != nil {
 		t.Fatalf("ListPublicChannels: %v", err)
 	}
@@ -411,5 +429,235 @@ func TestListPublicChannels_TrimsAndClamps(t *testing.T) {
 	}
 	if repo.gotLimit != MaxListLimit {
 		t.Errorf("limit passed to repo = %d, want %d", repo.gotLimit, MaxListLimit)
+	}
+}
+
+func TestAddMember_AdminInvitesToGroupChat(t *testing.T) {
+	actor, invitee := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat},
+		member: convMember(actor, domainconv.TierAdmin, false),
+	}
+	users := &fakeUserRepo{exists: map[uuid.UUID]bool{invitee: true}}
+	s := NewService(repo, users, &fakeRevoker{})
+
+	m, err := s.AddMember(context.Background(), actor, chID, invitee)
+	if err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	if len(repo.added) != 1 || repo.added[0].UserID != invitee || repo.added[0].Role != domainconv.RoleMember {
+		t.Fatalf("added = %+v", repo.added)
+	}
+	_ = m
+}
+
+func TestAddMember_BroadcastInviteIsSubscriber(t *testing.T) {
+	actor, invitee := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelBroadcast},
+		member: convMember(actor, domainconv.TierAdmin, false),
+	}
+	users := &fakeUserRepo{exists: map[uuid.UUID]bool{invitee: true}}
+	s := NewService(repo, users, &fakeRevoker{})
+	if _, err := s.AddMember(context.Background(), actor, chID, invitee); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	if repo.added[0].Role != domainconv.RoleSubscriber {
+		t.Fatalf("invited role = %q, want subscriber", repo.added[0].Role)
+	}
+}
+
+func TestAddMember_PlainMemberForbidden(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat},
+		member: convMember(actor, domainconv.TierNone, false),
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	_, err := s.AddMember(context.Background(), actor, chID, uuid.Must(uuid.NewV7()))
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+	if len(repo.added) != 0 {
+		t.Error("AddMember should not have been called")
+	}
+}
+
+func TestAddMember_InviteeMissing(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat},
+		member: convMember(actor, domainconv.TierAdmin, false),
+	}
+	users := &fakeUserRepo{exists: map[uuid.UUID]bool{}} // the invitee does not resolve
+	s := NewService(repo, users, &fakeRevoker{})
+	_, err := s.AddMember(context.Background(), actor, chID, uuid.Must(uuid.NewV7()))
+	if !errors.Is(err, ErrInviteeNotFound) {
+		t.Fatalf("err = %v, want ErrInviteeNotFound", err)
+	}
+}
+
+func TestRemoveMember_SuperadminKicksAdminAndRevokes(t *testing.T) {
+	actor, target := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			switch uid {
+			case actor:
+				return convMember(actor, domainconv.TierSuperAdmin, false), nil
+			case target:
+				return convMember(target, domainconv.TierAdmin, false), nil
+			}
+			return nil, domainconv.ErrNotMember
+		},
+	}
+	rev := &fakeRevoker{}
+	s := NewService(repo, &fakeUserRepo{}, rev)
+
+	if err := s.RemoveMember(context.Background(), actor, chID, target); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
+	}
+	if len(repo.removed) != 1 || repo.removed[0] != [2]uuid.UUID{chID, target} {
+		t.Fatalf("removed = %+v", repo.removed)
+	}
+	if len(rev.revoked) != 1 || rev.revoked[0] != [2]uuid.UUID{chID, target} {
+		t.Fatalf("revoked = %+v, want one (chID, target)", rev.revoked)
+	}
+}
+
+func TestRemoveMember_AdminCannotKickContentAdmin(t *testing.T) {
+	actor, target := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			if uid == actor {
+				return convMember(actor, domainconv.TierAdmin, false), nil
+			}
+			return convMember(target, domainconv.TierContentAdmin, false), nil
+		},
+	}
+	rev := &fakeRevoker{}
+	s := NewService(repo, &fakeUserRepo{}, rev)
+	if err := s.RemoveMember(context.Background(), actor, chID, target); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+	if len(repo.removed) != 0 || len(rev.revoked) != 0 {
+		t.Fatal("nothing should have been removed or revoked")
+	}
+}
+
+func TestRemoveMember_SelfIsRejected(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		member: convMember(actor, domainconv.TierSuperAdmin, false),
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if err := s.RemoveMember(context.Background(), actor, chID, actor); !errors.Is(err, ErrCannotKickSelf) {
+		t.Fatalf("err = %v, want ErrCannotKickSelf", err)
+	}
+}
+
+func TestSetMemberTier_SuperadminPromotesNoRevoke(t *testing.T) {
+	actor, target := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			if uid == actor {
+				return convMember(actor, domainconv.TierSuperAdmin, false), nil
+			}
+			return convMember(target, domainconv.TierNone, false), nil
+		},
+	}
+	rev := &fakeRevoker{}
+	s := NewService(repo, &fakeUserRepo{}, rev)
+	if _, err := s.SetMemberTier(context.Background(), actor, chID, target, domainconv.TierAdmin); err != nil {
+		t.Fatalf("SetMemberTier: %v", err)
+	}
+	if len(repo.tierSet) != 1 || repo.tierSet[0].Tier != domainconv.TierAdmin || repo.tierSet[0].UserID != target {
+		t.Fatalf("tierSet = %+v", repo.tierSet)
+	}
+	if len(rev.revoked) != 0 {
+		t.Fatal("a tier change must not publish a revoke")
+	}
+}
+
+func TestSetMemberTier_SuperadminCannotMintSuperadmin(t *testing.T) {
+	actor, target := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		getMemberFunc: func(_ context.Context, _ uuid.UUID, uid uuid.UUID) (*domainconv.Member, error) {
+			if uid == actor {
+				return convMember(actor, domainconv.TierSuperAdmin, false), nil
+			}
+			return convMember(target, domainconv.TierNone, false), nil
+		},
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if _, err := s.SetMemberTier(context.Background(), actor, chID, target, domainconv.TierSuperAdmin); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+}
+
+func TestSetMemberTier_CreatorSelfRestore(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		member: convMember(actor, domainconv.TierNone, true),
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if _, err := s.SetMemberTier(context.Background(), actor, chID, actor, domainconv.TierCreatorAdmin); err != nil {
+		t.Fatalf("creator self-restore: %v", err)
+	}
+	if len(repo.tierSet) != 1 || repo.tierSet[0].Tier != domainconv.TierCreatorAdmin {
+		t.Fatalf("tierSet = %+v", repo.tierSet)
+	}
+}
+
+func TestSetMemberTier_InvalidTier(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{
+		conv:   &domainconv.Conversation{ID: chID, Kind: domainconv.KindChannelGroup},
+		member: convMember(actor, domainconv.TierSuperAdmin, false),
+	}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if _, err := s.SetMemberTier(context.Background(), actor, chID, uuid.Must(uuid.NewV7()), domainconv.AdminTier("mod")); !errors.Is(err, ErrInvalidTier) {
+		t.Fatalf("err = %v, want ErrInvalidTier", err)
+	}
+}
+
+func TestLeaveConversation_GroupChatPublishesRevoke(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	chID := uuid.Must(uuid.NewV7())
+	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: chID, Kind: domainconv.KindGroupChat}}
+	rev := &fakeRevoker{}
+	s := NewService(repo, &fakeUserRepo{}, rev)
+	if err := s.LeaveConversation(context.Background(), actor, chID); err != nil {
+		t.Fatalf("LeaveConversation: %v", err)
+	}
+	if len(repo.removed) != 1 || repo.removed[0] != [2]uuid.UUID{chID, actor} {
+		t.Fatalf("removed = %+v", repo.removed)
+	}
+	if len(rev.revoked) != 1 {
+		t.Fatalf("revoked = %+v, want one", rev.revoked)
+	}
+}
+
+func TestLeaveConversation_DirectRejected(t *testing.T) {
+	repo := &fakeConvRepo{conv: &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindDirect}}
+	s := NewService(repo, &fakeUserRepo{}, &fakeRevoker{})
+	if err := s.LeaveConversation(context.Background(), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())); !errors.Is(err, domainconv.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }

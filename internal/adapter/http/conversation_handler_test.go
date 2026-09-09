@@ -23,7 +23,7 @@ type fakeConversationService struct {
 	listMine           func(me uuid.UUID, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error)
 	createChannel      func(creator uuid.UUID, kind domainconv.Kind, title string, public bool) (*domainconv.Conversation, error)
 	joinChannel        func(actor, channelID uuid.UUID) (*domainconv.Conversation, error)
-	leaveChannel       func(actor, channelID uuid.UUID) error
+	leaveConversation  func(actor, channelID uuid.UUID) error
 	listPublicChannels func(query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error)
 }
 
@@ -42,8 +42,8 @@ func (f *fakeConversationService) CreateChannel(_ context.Context, creator uuid.
 func (f *fakeConversationService) JoinChannel(_ context.Context, actor, channelID uuid.UUID) (*domainconv.Conversation, error) {
 	return f.joinChannel(actor, channelID)
 }
-func (f *fakeConversationService) LeaveChannel(_ context.Context, actor, channelID uuid.UUID) error {
-	return f.leaveChannel(actor, channelID)
+func (f *fakeConversationService) LeaveConversation(_ context.Context, actor, channelID uuid.UUID) error {
+	return f.leaveConversation(actor, channelID)
 }
 func (f *fakeConversationService) ListPublicChannels(_ context.Context, query string, before time.Time, beforeID uuid.UUID, limit int) ([]*domainconv.Conversation, error) {
 	return f.listPublicChannels(query, before, beforeID, limit)
@@ -426,7 +426,7 @@ func TestConversationHandler_LeaveChannel(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	chID := uuid.Must(uuid.NewV7())
 	h := &ConversationHandler{svc: &fakeConversationService{
-		leaveChannel: func(actor, channelID uuid.UUID) error {
+		leaveConversation: func(actor, channelID uuid.UUID) error {
 			if actor != me || channelID != chID {
 				t.Errorf("LeaveChannel(%v, %v)", actor, channelID)
 			}
@@ -443,7 +443,7 @@ func TestConversationHandler_LeaveChannel(t *testing.T) {
 func TestConversationHandler_LeaveChannel_NotMember(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	h := &ConversationHandler{svc: &fakeConversationService{
-		leaveChannel: func(uuid.UUID, uuid.UUID) error { return domainconv.ErrNotMember },
+		leaveConversation: func(uuid.UUID, uuid.UUID) error { return domainconv.ErrNotMember },
 	}}
 	r := convRouter(h, &me)
 	w := doConvJSON(t, r, http.MethodDelete, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/members/me", "")
@@ -518,7 +518,7 @@ func TestConversationHandler_ChannelRoutesCoexist(t *testing.T) {
 		listPublicChannels: func(string, time.Time, uuid.UUID, int) ([]*domainconv.Conversation, error) {
 			return nil, nil
 		},
-		leaveChannel: func(uuid.UUID, uuid.UUID) error { return nil },
+		leaveConversation: func(uuid.UUID, uuid.UUID) error { return nil },
 	}}
 	msgH := &MessageHandler{svc: &fakeMessageService{
 		send: func(_, cv uuid.UUID, _ string, _ *uuid.UUID, _ string) (*domainmsg.Message, error) {

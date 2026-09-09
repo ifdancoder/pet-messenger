@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -29,19 +30,32 @@ var (
 	ErrRecipientNotFound = errors.New("conversation: recipient user does not exist")
 	// ErrCannotDirectSelf: OpenDirect was called with me == other.
 	ErrCannotDirectSelf = errors.New("conversation: cannot open a direct conversation with yourself")
+	// ErrForbidden: the actor is a member but their tier does not permit this
+	// action on this target.
+	ErrForbidden = errors.New("conversation: actor is not permitted to perform this action")
+	// ErrCannotKickSelf: RemoveMember was called with actor == target; use
+	// LeaveConversation instead.
+	ErrCannotKickSelf = errors.New("conversation: cannot remove yourself; leave instead")
+	// ErrInvalidTier: SetMemberTier was given an unknown admin_tier value.
+	ErrInvalidTier = errors.New("conversation: unknown admin tier")
+	// ErrInviteeNotFound: AddMember was asked to add a user id that does not
+	// resolve to an account.
+	ErrInviteeNotFound = errors.New("conversation: invitee user does not exist")
 )
 
 // Service is the conversation usecase.
 type Service struct {
 	conversations domainconv.Repository
 	users         user.Repository
+	revoker       MemberEventPublisher
 }
 
 // NewService wires the service. conversations is implemented by
 // internal/infrastructure/postgres.ConversationRepository; users by
-// internal/infrastructure/postgres.UserRepository.
-func NewService(conversations domainconv.Repository, users user.Repository) *Service {
-	return &Service{conversations: conversations, users: users}
+// internal/infrastructure/postgres.UserRepository; revoker by
+// internal/infrastructure/nats.Publisher.
+func NewService(conversations domainconv.Repository, users user.Repository, revoker MemberEventPublisher) *Service {
+	return &Service{conversations: conversations, users: users, revoker: revoker}
 }
 
 // EffectiveListLimit clamps a client-requested page size: non-positive means
@@ -178,31 +192,132 @@ func (s *Service) JoinChannel(ctx context.Context, actor, channelID uuid.UUID) (
 	return conv, nil
 }
 
-// LeaveChannel removes actor's membership from a channel. A non-channel target
-// is refused as ErrNotFound, so a non-channel conversation's existence is not
-// disclosed. The owner may leave; the channel then has no owner until ownership
-// is transferred (a later slice).
+// LeaveConversation removes actor's own membership from a group chat or channel
+// and publishes a revoke so every pod drops their live subscription. A direct
+// conversation cannot be left (refused as ErrNotFound). The creator may leave;
+// the conversation then has no creator (a known gap — see the spec).
 //
-// NOTE: this removes the membership row but does not tear down the departed
-// user's live WebSocket subscription — they keep receiving this conversation's
-// real-time events on an already-open socket until they unsubscribe or
-// reconnect. A cross-pod membership-revocation event for the Hub is deferred to
-// the moderation slice.
-//
-// The owner may leave (a deliberate product choice); for a channel_broadcast
-// this leaves the channel with no one who may post (CanPost requires
-// owner/admin) while it stays public and discoverable. Ownership transfer,
-// admin promotion, and channel delete/archive are a prerequisite slice before
-// launch.
-func (s *Service) LeaveChannel(ctx context.Context, actor, channelID uuid.UUID) error {
-	conv, err := s.conversations.GetByID(ctx, channelID)
+// The publish is best-effort: the membership row is already gone, so a failed
+// revoke is logged and the call still succeeds.
+func (s *Service) LeaveConversation(ctx context.Context, actor, conversationID uuid.UUID) error {
+	conv, err := s.conversations.GetByID(ctx, conversationID)
 	if err != nil {
 		return err // conversation.ErrNotFound
 	}
-	if !conv.Kind.IsChannel() {
+	if conv.Kind == domainconv.KindDirect {
 		return domainconv.ErrNotFound
 	}
-	return s.conversations.RemoveMember(ctx, channelID, actor) // conversation.ErrNotMember
+	if err := s.conversations.RemoveMember(ctx, conversationID, actor); err != nil {
+		return err // conversation.ErrNotMember
+	}
+	if err := s.revoker.PublishMemberRevoked(ctx, conversationID, actor); err != nil {
+		log.Printf("conversation: publish member revoked %s/%s: %v", conversationID, actor, err)
+	}
+	return nil
+}
+
+// AddMember adds invitee to a group chat or channel on actor's authority. actor
+// must hold an admin tier (rank >= 2) in a non-direct conversation. A
+// channel_broadcast invitee joins as a subscriber; everywhere else as a plain
+// member.
+func (s *Service) AddMember(ctx context.Context, actor, conversationID, invitee uuid.UUID) (*domainconv.Member, error) {
+	conv, err := s.conversations.GetByID(ctx, conversationID)
+	if err != nil {
+		return nil, err // conversation.ErrNotFound
+	}
+	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
+	if err != nil {
+		return nil, err // conversation.ErrNotMember
+	}
+	if !conv.CanAddMembers(actorM) {
+		return nil, ErrForbidden
+	}
+	if _, err := s.users.GetByID(ctx, invitee); err != nil {
+		if errors.Is(err, user.ErrNotFound) {
+			return nil, ErrInviteeNotFound
+		}
+		return nil, fmt.Errorf("load invitee: %w", err)
+	}
+	role := domainconv.RoleMember
+	if conv.Kind == domainconv.KindChannelBroadcast {
+		role = domainconv.RoleSubscriber
+	}
+	m := &domainconv.Member{
+		ConversationID: conversationID,
+		UserID:         invitee,
+		Role:           role,
+		AdminTier:      domainconv.TierNone,
+		JoinedAt:       time.Now().UTC(),
+	}
+	if err := s.conversations.AddMember(ctx, m); err != nil {
+		return nil, fmt.Errorf("add member: %w", err)
+	}
+	added, err := s.conversations.GetMember(ctx, conversationID, invitee)
+	if err != nil {
+		return nil, fmt.Errorf("reload added member: %w", err)
+	}
+	return added, nil
+}
+
+// RemoveMember kicks target on actor's authority and publishes a revoke. Use
+// LeaveConversation to remove yourself. Rank rules live in the domain
+// (CanManageMember).
+func (s *Service) RemoveMember(ctx context.Context, actor, conversationID, target uuid.UUID) error {
+	if actor == target {
+		return ErrCannotKickSelf
+	}
+	if _, err := s.conversations.GetByID(ctx, conversationID); err != nil {
+		return err // conversation.ErrNotFound
+	}
+	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
+	if err != nil {
+		return err // conversation.ErrNotMember
+	}
+	targetM, err := s.conversations.GetMember(ctx, conversationID, target)
+	if err != nil {
+		return err // conversation.ErrNotMember -> target absent
+	}
+	if !domainconv.CanManageMember(actorM, targetM) {
+		return ErrForbidden
+	}
+	if err := s.conversations.RemoveMember(ctx, conversationID, target); err != nil {
+		return err
+	}
+	if err := s.revoker.PublishMemberRevoked(ctx, conversationID, target); err != nil {
+		log.Printf("conversation: publish member revoked %s/%s: %v", conversationID, target, err)
+	}
+	return nil
+}
+
+// SetMemberTier promotes, demotes, or retiers target on actor's authority. It
+// does not publish a revoke — a retiered member stays in the conversation. Who
+// may assign what lives in the domain (CanAssignTier).
+func (s *Service) SetMemberTier(ctx context.Context, actor, conversationID, target uuid.UUID, tier domainconv.AdminTier) (*domainconv.Member, error) {
+	if !tier.Valid() {
+		return nil, ErrInvalidTier
+	}
+	if _, err := s.conversations.GetByID(ctx, conversationID); err != nil {
+		return nil, err // conversation.ErrNotFound
+	}
+	actorM, err := s.conversations.GetMember(ctx, conversationID, actor)
+	if err != nil {
+		return nil, err // conversation.ErrNotMember
+	}
+	targetM, err := s.conversations.GetMember(ctx, conversationID, target)
+	if err != nil {
+		return nil, err // conversation.ErrNotMember
+	}
+	if !domainconv.CanAssignTier(actorM, targetM, tier) {
+		return nil, ErrForbidden
+	}
+	if err := s.conversations.SetMemberTier(ctx, conversationID, target, tier); err != nil {
+		return nil, err
+	}
+	updated, err := s.conversations.GetMember(ctx, conversationID, target)
+	if err != nil {
+		return nil, fmt.Errorf("reload retiered member: %w", err)
+	}
+	return updated, nil
 }
 
 // ListPublicChannels returns discoverable channels newest-activity-first. query
