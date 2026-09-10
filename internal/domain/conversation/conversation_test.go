@@ -518,3 +518,22 @@ func TestIsMuted(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminTier_AtLeast(t *testing.T) {
+	cases := []struct {
+		t, other conversation.AdminTier
+		want     bool
+	}{
+		{conversation.TierAdmin, conversation.TierAdmin, true},
+		{conversation.TierSuperAdmin, conversation.TierAdmin, true},
+		{conversation.TierCreatorAdmin, conversation.TierSuperAdmin, true},
+		{conversation.TierContentAdmin, conversation.TierAdmin, false},
+		{conversation.TierNone, conversation.TierContentAdmin, false},
+		{conversation.TierAdmin, conversation.TierNone, true},
+	}
+	for _, c := range cases {
+		if got := c.t.AtLeast(c.other); got != c.want {
+			t.Errorf("%q.AtLeast(%q) = %v, want %v", c.t, c.other, got, c.want)
+		}
+	}
+}

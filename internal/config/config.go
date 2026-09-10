@@ -49,6 +49,23 @@ type PushConfig struct {
 	FCMCredentialsJSON string
 }
 
+type MediaConfig struct {
+	NodeID        string
+	GRPCAddr      string
+	WSAddr        string
+	RPCToken      string
+	RoomCapacity  int
+	MaxRoomPeers  int
+	JoinTicketTTL time.Duration
+}
+
+type TURNConfig struct {
+	URL           string
+	TLSURL        string
+	Secret        string
+	CredentialTTL time.Duration
+}
+
 type CORSConfig struct {
 	AllowedOrigins []string
 }
@@ -70,13 +87,16 @@ func (c CORSConfig) OriginHostPatterns() []string {
 }
 
 type Config struct {
-	Port  int
-	DB    DBConfig
-	JWT   JWTConfig
-	NATS  NATSConfig
-	Redis RedisConfig
-	Push  PushConfig
-	CORS  CORSConfig
+	Port     int
+	DB       DBConfig
+	JWT      JWTConfig
+	NATS     NATSConfig
+	Redis    RedisConfig
+	Push     PushConfig
+	CORS     CORSConfig
+	Media    MediaConfig
+	TURN     TURNConfig
+	STUNURLs []string
 }
 
 // Load reads configuration from the environment (and .env, if present).
@@ -120,6 +140,40 @@ func Load() (*Config, error) {
 		origins = []string{"http://localhost:5173"}
 	}
 
+	roomCap := 50
+	if v := os.Getenv("MEDIA_ROOM_CAPACITY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			roomCap = n
+		}
+	}
+	maxPeers := 16
+	if v := os.Getenv("MEDIA_MAX_ROOM_PEERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxPeers = n
+		}
+	}
+	joinTTL := 60 * time.Second
+	if v := os.Getenv("MEDIA_JOIN_TICKET_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			joinTTL = d
+		}
+	}
+	credTTL := time.Hour
+	if v := os.Getenv("TURN_CREDENTIAL_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			credTTL = d
+		}
+	}
+	var stun []string
+	for _, s := range strings.Split(os.Getenv("STUN_URLS"), ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			stun = append(stun, s)
+		}
+	}
+	if len(stun) == 0 {
+		stun = []string{"stun:stun.l.google.com:19302"}
+	}
+
 	return &Config{
 		Port: port,
 		DB: DBConfig{
@@ -146,5 +200,21 @@ func Load() (*Config, error) {
 			FCMCredentialsJSON: os.Getenv("PUSH_FCM_CREDENTIALS_JSON"),
 		},
 		CORS: CORSConfig{AllowedOrigins: origins},
+		Media: MediaConfig{
+			NodeID:        os.Getenv("MEDIA_NODE_ID"),
+			GRPCAddr:      os.Getenv("MEDIA_GRPC_ADDR"),
+			WSAddr:        os.Getenv("MEDIA_WS_ADDR"),
+			RPCToken:      os.Getenv("MEDIA_RPC_TOKEN"),
+			RoomCapacity:  roomCap,
+			MaxRoomPeers:  maxPeers,
+			JoinTicketTTL: joinTTL,
+		},
+		TURN: TURNConfig{
+			URL:           os.Getenv("TURN_URL"),
+			TLSURL:        os.Getenv("TURN_TLS_URL"),
+			Secret:        os.Getenv("TURN_SECRET"),
+			CredentialTTL: credTTL,
+		},
+		STUNURLs: stun,
 	}, nil
 }
