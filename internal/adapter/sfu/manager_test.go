@@ -36,14 +36,31 @@ func (f *fakeEvents) Ended(callID uuid.UUID) {
 	f.ended = append(f.ended, callID)
 }
 
-func newTestManager(capacity int) (Manager, *fakeEvents) {
+// sawEnded reports whether Ended was recorded for callID.
+func (f *fakeEvents) sawEnded(callID uuid.UUID) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range f.ended {
+		if id == callID {
+			return true
+		}
+	}
+	return false
+}
+
+func newTestManager(t *testing.T, capacity int) (Manager, *fakeEvents) {
+	t.Helper()
 	ev := &fakeEvents{}
 	cfg := &config.Config{Media: config.MediaConfig{RoomCapacity: capacity}}
-	return NewManager(cfg, ev), ev
+	m, err := NewManager(cfg, ev)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	return m, ev
 }
 
 func TestCreateRoomIdempotent(t *testing.T) {
-	m, _ := newTestManager(0)
+	m, _ := newTestManager(t, 0)
 	id := uuid.Must(uuid.NewV7())
 	if err := m.CreateRoom(id); err != nil {
 		t.Fatalf("first CreateRoom: %v", err)
@@ -57,7 +74,7 @@ func TestCreateRoomIdempotent(t *testing.T) {
 }
 
 func TestCreateRoomAtCapacity(t *testing.T) {
-	m, _ := newTestManager(2)
+	m, _ := newTestManager(t, 2)
 	for i := 0; i < 2; i++ {
 		if err := m.CreateRoom(uuid.Must(uuid.NewV7())); err != nil {
 			t.Fatalf("CreateRoom %d: %v", i, err)
@@ -69,7 +86,7 @@ func TestCreateRoomAtCapacity(t *testing.T) {
 }
 
 func TestCloseRoomFiresEnded(t *testing.T) {
-	m, ev := newTestManager(0)
+	m, ev := newTestManager(t, 0)
 	id := uuid.Must(uuid.NewV7())
 	if err := m.CreateRoom(id); err != nil {
 		t.Fatalf("CreateRoom: %v", err)
@@ -90,7 +107,7 @@ func TestCloseRoomFiresEnded(t *testing.T) {
 }
 
 func TestStatsAndTotals(t *testing.T) {
-	m, _ := newTestManager(0)
+	m, _ := newTestManager(t, 0)
 	if st := m.Stats(uuid.Must(uuid.NewV7())); st.Exists || st.Participants != 0 {
 		t.Fatalf("Stats of missing room = %+v, want zero value", st)
 	}
@@ -110,7 +127,7 @@ func TestStatsAndTotals(t *testing.T) {
 }
 
 func TestMuteRemoveMissingRoom(t *testing.T) {
-	m, _ := newTestManager(0)
+	m, _ := newTestManager(t, 0)
 	id := uuid.Must(uuid.NewV7())
 	uid := uuid.Must(uuid.NewV7())
 	if err := m.Mute(id, uid); !errors.Is(err, ErrRoomNotFound) {
@@ -118,5 +135,37 @@ func TestMuteRemoveMissingRoom(t *testing.T) {
 	}
 	if err := m.Remove(id, uid); !errors.Is(err, ErrRoomNotFound) {
 		t.Fatalf("Remove missing room = %v, want ErrRoomNotFound", err)
+	}
+}
+
+// nopSignaller is a Signaller that drops everything on the floor.
+type nopSignaller struct{}
+
+func (nopSignaller) Send([]byte) error { return nil }
+func (nopSignaller) Close()            {}
+
+func TestJoinAndClientFrameMissingRoom(t *testing.T) {
+	m, _ := newTestManager(t, 0)
+	id := uuid.Must(uuid.NewV7())
+	uid := uuid.Must(uuid.NewV7())
+	if err := m.Join(id, uid, "publisher", nopSignaller{}); !errors.Is(err, ErrRoomNotFound) {
+		t.Fatalf("Join missing room = %v, want ErrRoomNotFound", err)
+	}
+	// A frame for a room this node does not host is dropped, not a panic.
+	m.ClientFrame(id, uid, []byte(`{"type":"candidate"}`))
+}
+
+func TestMuteRemoveMissingParticipant(t *testing.T) {
+	m, _ := newTestManager(t, 0)
+	id := uuid.Must(uuid.NewV7())
+	if err := m.CreateRoom(id); err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	uid := uuid.Must(uuid.NewV7())
+	if err := m.Mute(id, uid); !errors.Is(err, ErrParticipantNotInRoom) {
+		t.Fatalf("Mute missing participant = %v, want ErrParticipantNotInRoom", err)
+	}
+	if err := m.Remove(id, uid); !errors.Is(err, ErrParticipantNotInRoom) {
+		t.Fatalf("Remove missing participant = %v, want ErrParticipantNotInRoom", err)
 	}
 }

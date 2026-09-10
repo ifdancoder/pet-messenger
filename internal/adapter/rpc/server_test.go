@@ -31,7 +31,10 @@ func startRoomControl(t *testing.T, cfg *config.Config) mediav1.RoomControlClien
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	mgr := sfu.NewManager(cfg, nopEvents{})
+	mgr, err := sfu.NewManager(cfg, nopEvents{})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
 	srv := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerAuthInterceptor(cfg.Media.RPCToken)))
 	mediav1.RegisterRoomControlServer(srv, NewRoomControlServer(mgr))
 	go func() { _ = srv.Serve(lis) }()
@@ -121,7 +124,10 @@ func TestRoomControlServer_BadToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	mgr := sfu.NewManager(cfg, nopEvents{})
+	mgr, err := sfu.NewManager(cfg, nopEvents{})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
 	srv := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerAuthInterceptor(cfg.Media.RPCToken)))
 	mediav1.RegisterRoomControlServer(srv, NewRoomControlServer(mgr))
 	go func() { _ = srv.Serve(lis) }()
