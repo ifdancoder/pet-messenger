@@ -30,6 +30,7 @@ type NotifIntent struct {
 	Preview        string  `json:"preview,omitempty"`
 	RecipientID    *string `json:"recipient_id,omitempty"`
 	NewTier        string  `json:"new_tier,omitempty"`
+	CallID         string  `json:"call_id,omitempty"`
 	DedupPrefix    string  `json:"dedup_prefix"`
 }
 

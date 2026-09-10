@@ -49,13 +49,16 @@ const (
 	SystemMemberTierChanged      SystemEvent = "member_tier_changed"
 	SystemConversationArchived   SystemEvent = "conversation_archived"
 	SystemConversationUnarchived SystemEvent = "conversation_unarchived"
+	SystemCallStarted            SystemEvent = "call_started"
+	SystemCallEnded              SystemEvent = "call_ended"
 )
 
-// Valid reports whether e is one of the six known system events.
+// Valid reports whether e is one of the known system events.
 func (e SystemEvent) Valid() bool {
 	switch e {
 	case SystemMemberJoined, SystemMemberLeft, SystemMemberRemoved,
-		SystemMemberTierChanged, SystemConversationArchived, SystemConversationUnarchived:
+		SystemMemberTierChanged, SystemConversationArchived, SystemConversationUnarchived,
+		SystemCallStarted, SystemCallEnded:
 		return true
 	default:
 		return false

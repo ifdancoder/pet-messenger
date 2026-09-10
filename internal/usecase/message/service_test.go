@@ -691,6 +691,17 @@ func TestPostSystemEvent_NotifiesMembershipEvent(t *testing.T) {
 	}
 }
 
+func TestPostSystemEvent_CallEventInDirect(t *testing.T) {
+	s, pub := newSvc(&fakeMsgRepo{}, &fakeConvRepo{})
+	direct := &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindDirect}
+	if err := s.PostSystemEvent(context.Background(), direct, nil, domainmsg.SystemCallStarted, uuid.Must(uuid.NewV7()), ""); err != nil {
+		t.Fatalf("PostSystemEvent: %v", err)
+	}
+	if len(pub.created) != 1 || pub.created[0].SystemEvent != domainmsg.SystemCallStarted {
+		t.Fatalf("expected one call_started system message, got %+v", pub.created)
+	}
+}
+
 func TestPostSystemEvent_PersistErrorReturned(t *testing.T) {
 	msgs := &fakeMsgRepo{createErr: errors.New("db down")}
 	s, _ := newSvc(msgs, &fakeConvRepo{})

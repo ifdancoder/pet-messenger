@@ -514,6 +514,49 @@ func TestWorker_MemberEvent_SingleTarget(t *testing.T) {
 	e.waitAckPending(t, 0)
 }
 
+//  7. call_started group intent [A(initiator), B, C] -> one call_started row for
+//     B and C (not A); a redeliver of the same message adds no rows.
+func TestWorker_CallStarted_FansOut(t *testing.T) {
+	e := newEnv(t)
+
+	a, b, c := mkUser(t), mkUser(t), mkUser(t)
+	convID := mkGroupChat(t, a, b, c)
+
+	callID := uuid.Must(uuid.NewV7()).String()
+	intent := notifinfra.NotifIntent{
+		Kind: "call_started", ConversationID: convID.String(),
+		SenderID: strptr(a.String()), CallID: callID, DedupPrefix: "call",
+	}
+	m := e.publishAndPull(t, "call."+callID, intent)
+
+	e.w.HandleMsg(m)
+
+	if got := notifCount(t, a); got != 0 {
+		t.Errorf("initiator rows = %d, want 0", got)
+	}
+	for _, uid := range []uuid.UUID{b, c} {
+		if got := notifCount(t, uid); got != 1 {
+			t.Errorf("member %s rows = %d, want 1", uid, got)
+		}
+		var kind string
+		if err := testDB.QueryRow(`SELECT kind FROM notifications WHERE user_id = $1`, uid).Scan(&kind); err != nil {
+			t.Fatalf("select kind: %v", err)
+		}
+		if kind != "call_started" {
+			t.Errorf("member %s kind = %q, want call_started", uid, kind)
+		}
+	}
+	e.waitAckPending(t, 0)
+
+	e.w.HandleMsg(m) // redelivery
+	for _, uid := range []uuid.UUID{b, c} {
+		if got := notifCount(t, uid); got != 1 {
+			t.Errorf("member %s rows after redeliver = %d, want 1 (dedup)", uid, got)
+		}
+	}
+	e.waitAckPending(t, 0)
+}
+
 // 6. (controller ruling) unknown Kind -> no row written, message Ack'd.
 func TestWorker_UnknownKind_DroppedNoRow(t *testing.T) {
 	e := newEnv(t)

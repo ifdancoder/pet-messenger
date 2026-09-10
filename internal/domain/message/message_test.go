@@ -206,6 +206,14 @@ func TestSystemEvent_Valid(t *testing.T) {
 	}
 }
 
+func TestSystemEvent_Valid_CallEvents(t *testing.T) {
+	for _, e := range []message.SystemEvent{message.SystemCallStarted, message.SystemCallEnded} {
+		if !e.Valid() {
+			t.Errorf("%q should be Valid", e)
+		}
+	}
+}
+
 func TestNewSystemEvent(t *testing.T) {
 	conv := uuid.Must(uuid.NewV7())
 	actor := uuid.Must(uuid.NewV7())

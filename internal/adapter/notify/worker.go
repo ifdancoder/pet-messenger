@@ -91,7 +91,7 @@ func (w *Worker) recipients(ctx context.Context, in notifinfra.NotifIntent) ([]u
 
 func (w *Worker) deliverOne(ctx context.Context, uid uuid.UUID, in notifinfra.NotifIntent) error {
 	switch in.Kind {
-	case "message", "member_removed", "member_tier_changed":
+	case "message", "member_removed", "member_tier_changed", "call_started":
 		// known — proceed
 	default:
 		log.Printf("notify: unknown intent kind %q for %s — skipping", in.Kind, uid)
@@ -151,6 +151,8 @@ func dedupKey(uid uuid.UUID, in notifinfra.NotifIntent) string {
 		return "kick:" + in.ConversationID + ":" + uid.String()
 	case "member_tier_changed":
 		return "tier:" + in.ConversationID + ":" + uid.String() + ":" + in.NewTier
+	case "call_started":
+		return "call:" + in.CallID + ":" + uid.String()
 	}
 	return ""
 }
@@ -169,6 +171,11 @@ func kindAndPayload(uid uuid.UUID, in notifinfra.NotifIntent) (domainnotif.Kind,
 	case "member_tier_changed":
 		b, _ := json.Marshal(map[string]any{"conversation_id": in.ConversationID, "new_tier": in.NewTier})
 		return domainnotif.KindMemberTierChanged, b
+	case "call_started":
+		b, _ := json.Marshal(map[string]any{
+			"conversation_id": in.ConversationID, "call_id": in.CallID,
+		})
+		return domainnotif.KindCallStarted, b
 	}
 	return domainnotif.KindMessage, json.RawMessage(`{}`) // unreachable — deliverOne guards on a known Kind
 }

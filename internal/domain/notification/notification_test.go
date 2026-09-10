@@ -19,6 +19,9 @@ func TestKind_Valid(t *testing.T) {
 	if notification.Kind("reaction").Valid() {
 		t.Error(`Kind("reaction") should be invalid`)
 	}
+	if !notification.KindCallStarted.Valid() {
+		t.Error("KindCallStarted should be Valid")
+	}
 }
 
 func TestNew(t *testing.T) {

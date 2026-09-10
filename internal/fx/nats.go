@@ -64,7 +64,7 @@ func ensureNotifStream(lc fx.Lifecycle, js natsgo.JetStreamContext) {
 	lc.Append(fx.Hook{OnStart: func(context.Context) error {
 		cfg := &natsgo.StreamConfig{
 			Name:      notifStreamName,
-			Subjects:  []string{"notif.msg.*", "notif.member.*"},
+			Subjects:  []string{"notif.msg.*", "notif.member.*", "notif.call.*"},
 			Retention: natsgo.WorkQueuePolicy,
 			Storage:   natsgo.FileStorage,
 			MaxAge:    24 * time.Hour,

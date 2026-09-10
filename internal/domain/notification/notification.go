@@ -20,11 +20,12 @@ const (
 	KindMessage           Kind = "message"
 	KindMemberRemoved     Kind = "member_removed"
 	KindMemberTierChanged Kind = "member_tier_changed"
+	KindCallStarted       Kind = "call_started"
 )
 
 func (k Kind) Valid() bool {
 	switch k {
-	case KindMessage, KindMemberRemoved, KindMemberTierChanged:
+	case KindMessage, KindMemberRemoved, KindMemberTierChanged, KindCallStarted:
 		return true
 	default:
 		return false
