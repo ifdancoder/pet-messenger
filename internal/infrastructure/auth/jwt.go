@@ -84,6 +84,9 @@ func (v *JWTVerifier) VerifyWithExpiry(tokenStr string) (uuid.UUID, time.Time, e
 	if !ok {
 		return uuid.Nil, time.Time{}, ErrInvalidToken
 	}
+	if len(c.Audience) > 0 {
+		return uuid.Nil, time.Time{}, ErrInvalidToken
+	}
 	if c.ExpiresAt == nil {
 		return uuid.Nil, time.Time{}, ErrInvalidToken
 	}
