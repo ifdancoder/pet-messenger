@@ -16,6 +16,7 @@ func main() {
 		fxapp.MessageModule,
 		fxapp.NotificationModule,
 		fxapp.PushModule,
+		fxapp.CallModule,
 		fxapp.NATSModule,
 		fxapp.RedisModule,
 		fxapp.WSModule,
