@@ -4,53 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
-	tcnats "github.com/testcontainers/testcontainers-go/modules/nats"
 
 	domainconv "pet-messenger/internal/domain/conversation"
 	domainmsg "pet-messenger/internal/domain/message"
 )
 
-// startJetStream boots a JetStream-enabled nats container, connects, ensures the
-// NOTIF stream and returns the context plus a cleanup.
+// startJetStream returns the package-shared JetStream context with the NOTIF
+// stream purged, so each test starts from an empty work queue.
 func startJetStream(t *testing.T) natsgo.JetStreamContext {
 	t.Helper()
-	ctx := context.Background()
-
-	container, err := tcnats.Run(ctx, "nats:2.10")
-	if err != nil {
-		t.Fatalf("start nats container: %v", err)
+	if err := testJS.PurgeStream(notifStream); err != nil {
+		t.Fatalf("purge %s stream: %v", notifStream, err)
 	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	url, err := container.ConnectionString(ctx)
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	nc, err := natsgo.Connect(url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(nc.Close)
-
-	js, err := nc.JetStream()
-	if err != nil {
-		t.Fatalf("jetstream context: %v", err)
-	}
-	if _, err := js.AddStream(&natsgo.StreamConfig{
-		Name:      "NOTIF",
-		Subjects:  []string{"notif.msg.*", "notif.member.*"},
-		Retention: natsgo.WorkQueuePolicy,
-		Storage:   natsgo.FileStorage,
-		MaxAge:    24 * time.Hour,
-		Discard:   natsgo.DiscardOld,
-	}); err != nil {
-		t.Fatalf("add NOTIF stream: %v", err)
-	}
-	return js
+	return testJS
 }
 
 func TestProducer_MessageSent_GroupChat(t *testing.T) {

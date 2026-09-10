@@ -98,7 +98,15 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("nats connection string: %v", err)
 	}
-	conn, err := natsgo.Connect(natsURL)
+	// A freshly-booted nats server resets the first connections it accepts even
+	// after the port is listening; retry briefly to absorb that window.
+	var conn *natsgo.Conn
+	for range 20 {
+		if conn, err = natsgo.Connect(natsURL); err == nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 	if err != nil {
 		log.Fatalf("nats connect: %v", err)
 	}

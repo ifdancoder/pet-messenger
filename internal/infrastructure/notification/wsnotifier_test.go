@@ -1,36 +1,17 @@
 package notification
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
-	tcnats "github.com/testcontainers/testcontainers-go/modules/nats"
 )
 
-// startNATSConn boots a plain nats container and returns a connected client.
+// startNATSConn returns the package-shared nats connection.
 func startNATSConn(t *testing.T) *natsgo.Conn {
 	t.Helper()
-	ctx := context.Background()
-
-	container, err := tcnats.Run(ctx, "nats:2.10")
-	if err != nil {
-		t.Fatalf("start nats container: %v", err)
-	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	url, err := container.ConnectionString(ctx)
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	nc, err := natsgo.Connect(url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(nc.Close)
-	return nc
+	return testNC
 }
 
 func TestWSNotifier_PublishesPerUserSubject(t *testing.T) {
