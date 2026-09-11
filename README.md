@@ -87,4 +87,6 @@ the files land at `internal/adapter/rpc/mediav1/media.pb.go` and
 ### Running the call stack
 
 `deploy/media/docker-compose.yml` brings up the full call stack (api-service,
-media-service, Postgres, Redis, NATS, coturn).
+media-service, Postgres, Redis, NATS, coturn). See `deploy/media/README.md`
+for the step-by-step key generation, migration, and manual two-tab call
+verification procedure (including forcing the TURN relay path).
