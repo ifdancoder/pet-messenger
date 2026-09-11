@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	}
 	if _, err := testJS.AddStream(&natsgo.StreamConfig{
 		Name:      notifStream,
-		Subjects:  []string{"notif.msg.*", "notif.member.*"},
+		Subjects:  []string{"notif.msg.*", "notif.member.*", "notif.call.*"},
 		Retention: natsgo.WorkQueuePolicy,
 		Storage:   natsgo.FileStorage,
 		MaxAge:    24 * time.Hour,

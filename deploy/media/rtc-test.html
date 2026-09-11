@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>pet-messenger call test</title>
+<style>
+  body { font-family: sans-serif; margin: 1rem; }
+  input { width: 28rem; }
+  video { width: 320px; background: #222; margin: 4px; }
+  #log { white-space: pre-wrap; font-family: monospace; font-size: 12px; height: 10rem; overflow: auto; border: 1px solid #ccc; padding: 4px; }
+</style>
+</head>
+<body>
+<h3>pet-messenger manual call test (one tab per participant)</h3>
+<div>
+  API base <input id="api" value="http://localhost:8080"><br>
+  Access token <input id="token"><br>
+  Conversation id <input id="conv"><br>
+  <button id="start">Start / Join</button>
+  <button id="share">Share screen</button>
+</div>
+<div id="videos"></div>
+<div id="log"></div>
+
+<script>
+const log = (...a) => { const el = document.getElementById('log'); el.textContent += a.join(' ') + '\n'; el.scrollTop = el.scrollHeight; };
+
+let pc, ws, callID;
+const remoteVideos = new Map(); // track id -> <video>
+
+async function api(method, path, token) {
+  const res = await fetch(document.getElementById('api').value + path, {
+    method, headers: { Authorization: 'Bearer ' + token },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(method + ' ' + path + ' -> ' + res.status + ' ' + JSON.stringify(body));
+  return body;
+}
+
+async function startOrJoin() {
+  const token = document.getElementById('token').value;
+  const conv = document.getElementById('conv').value;
+  let join;
+  try {
+    const started = await api('POST', `/conversations/${conv}/calls`, token);
+    callID = started.call.id;
+    join = started.join;
+    log('started call', callID);
+  } catch (e) {
+    log('start failed (', e.message, '), trying live call + join');
+    const live = await api('GET', `/conversations/${conv}/calls/live`, token);
+    callID = live.call.id;
+    join = await (await api('POST', `/calls/${callID}/join`, token)).join;
+    log('joined call', callID);
+  }
+  await connect(join);
+}
+
+async function connect(join) {
+  pc = new RTCPeerConnection({
+    iceServers: join.ice_servers.map(s => ({ urls: s.urls, username: s.username, credential: s.credential })),
+  });
+  pc.oniceconnectionstatechange = () => log('ice state', pc.iceConnectionState);
+  pc.onicecandidate = (e) => {
+    if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate.toJSON() }));
+  };
+  pc.ontrack = (e) => {
+    const stream = e.streams[0];
+    let v = remoteVideos.get(stream.id);
+    if (!v) {
+      v = document.createElement('video');
+      v.autoplay = true; v.playsInline = true;
+      document.getElementById('videos').appendChild(v);
+      remoteVideos.set(stream.id, v);
+    }
+    v.srcObject = stream;
+  };
+
+  const local = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+  for (const track of local.getTracks()) pc.addTrack(track, local);
+  const localVideo = document.createElement('video');
+  localVideo.autoplay = true; localVideo.muted = true; localVideo.playsInline = true;
+  localVideo.srcObject = local;
+  document.getElementById('videos').prepend(localVideo);
+
+  ws = new WebSocket(join.media_ws_url + '?ticket=' + encodeURIComponent(join.ticket));
+  ws.onopen = () => {
+    log('signalling connected');
+    enqueue(() => offer());
+  };
+  ws.onclose = () => log('signalling closed');
+  let operations = Promise.resolve();
+  const pendingCandidates = [];
+  const enqueue = (fn) => { operations = operations.then(fn).catch(e => log('ERROR', e.message)); };
+  ws.onmessage = (ev) => enqueue(async () => {
+    const frame = JSON.parse(ev.data);
+    switch (frame.type) {
+      case 'offer':
+        await pc.setRemoteDescription({ type: 'offer', sdp: frame.sdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+        break;
+      case 'answer':
+        await pc.setRemoteDescription({ type: 'answer', sdp: frame.sdp });
+        break;
+      case 'candidate':
+        if (pc.remoteDescription) await pc.addIceCandidate(frame.candidate);
+        else pendingCandidates.push(frame.candidate);
+        break;
+      case 'peers':
+        log('peers', JSON.stringify(frame.peers));
+        break;
+      case 'unmuted':
+        log('unmuted by', frame.by);
+        break;
+      case 'muted':
+        log('muted by', frame.by);
+        break;
+      case 'removed':
+        log('removed by', frame.by);
+        ws.close();
+        pc.close();
+        break;
+      default:
+        log('frame', frame.type);
+    }
+    if (pc.remoteDescription) {
+      for (const candidate of pendingCandidates.splice(0)) await pc.addIceCandidate(candidate);
+    }
+  });
+}
+
+// The client sends the initial offer and offers again when adding screen media.
+async function offer() {
+  if (pc.signalingState !== 'stable') throw new Error('Negotiation in progress; try again after the answer');
+  const description = await pc.createOffer();
+  await pc.setLocalDescription(description);
+  ws.send(JSON.stringify({ type: 'offer', sdp: description.sdp }));
+}
+
+async function shareScreen() {
+  const display = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  const track = display.getVideoTracks()[0];
+  // stream id containing "screen" is how the server labels camera vs screen
+  const screenStream = new MediaStream([track]);
+  Object.defineProperty(screenStream, 'id', { value: 'screen-' + crypto.randomUUID() });
+  pc.addTrack(track, screenStream);
+  await offer();
+  const v = document.createElement('video');
+  v.autoplay = true; v.muted = true; v.playsInline = true;
+  v.srcObject = screenStream;
+  document.getElementById('videos').appendChild(v);
+}
+
+document.getElementById('start').onclick = () => startOrJoin().catch(e => log('ERROR', e.message));
+document.getElementById('share').onclick = () => shareScreen().catch(e => log('ERROR', e.message));
+</script>
+</body>
+</html>

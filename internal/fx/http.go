@@ -29,6 +29,7 @@ func newGinEngine(
 	notifHandler *httpadapter.NotificationHandler,
 	pushTokenHandler *httpadapter.PushTokenHandler,
 	wsHandler *wsadapter.WSHandler,
+	callHandler *httpadapter.CallHandler,
 	verifier *infraauth.JWTVerifier,
 ) *gin.Engine {
 	r := gin.Default()
@@ -50,6 +51,11 @@ func newGinEngine(
 	conversations.Use(httpadapter.AuthMiddleware(verifier))
 	convHandler.RegisterRoutes(conversations)
 	msgHandler.RegisterRoutes(conversations)
+	callHandler.RegisterConversationRoutes(conversations)
+
+	calls := r.Group("/calls")
+	calls.Use(httpadapter.AuthMiddleware(verifier))
+	callHandler.RegisterRoutes(calls)
 
 	notifs := r.Group("/notifications")
 	notifs.Use(httpadapter.AuthMiddleware(verifier))

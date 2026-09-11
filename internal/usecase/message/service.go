@@ -191,14 +191,16 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, convID, messageID uu
 // message.created. It is a no-op (returns nil) for direct conversations, and
 // for channel_broadcast when the event is a member_* event (join/leave/kick
 // churn there would flood the timeline). conversation_archived /
-// conversation_unarchived are posted for every non-direct kind. A publish
-// failure is logged; a persist failure is returned.
+// conversation_unarchived are posted for every non-direct kind; call_started /
+// call_ended are posted for every kind, direct included. A publish failure is
+// logged; a persist failure is returned.
 func (s *Service) PostSystemEvent(ctx context.Context, conv *domainconv.Conversation, actorID *uuid.UUID, event domainmsg.SystemEvent, targetID uuid.UUID, detail string) error {
-	if conv.Kind == domainconv.KindDirect {
+	isCallEvent := event == domainmsg.SystemCallStarted || event == domainmsg.SystemCallEnded
+	if conv.Kind == domainconv.KindDirect && !isCallEvent {
 		return nil
 	}
 	isConversationEvent := event == domainmsg.SystemConversationArchived || event == domainmsg.SystemConversationUnarchived
-	if !isConversationEvent && conv.Kind == domainconv.KindChannelBroadcast {
+	if !isConversationEvent && !isCallEvent && conv.Kind == domainconv.KindChannelBroadcast {
 		return nil
 	}
 	m, err := domainmsg.NewSystemEvent(conv.ID, actorID, event, targetID, detail)

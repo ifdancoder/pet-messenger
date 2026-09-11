@@ -1,0 +1,25 @@
+syntax = "proto3";
+package media.v1;
+option go_package = "pet-messenger/internal/adapter/rpc/mediav1;mediav1";
+
+service RoomControl {
+  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
+  rpc CloseRoom(CloseRoomRequest) returns (CloseRoomResponse);
+  rpc MuteParticipant(MuteParticipantRequest) returns (MuteParticipantResponse);
+  rpc UnmuteParticipant(UnmuteParticipantRequest) returns (UnmuteParticipantResponse);
+  rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
+  rpc RoomStats(RoomStatsRequest) returns (RoomStatsResponse);
+}
+
+message CreateRoomRequest         { string call_id = 1; }
+message CreateRoomResponse        {}
+message CloseRoomRequest          { string call_id = 1; }
+message CloseRoomResponse         {}
+message MuteParticipantRequest    { string call_id = 1; string user_id = 2; }
+message MuteParticipantResponse   {}
+message UnmuteParticipantRequest  { string call_id = 1; string user_id = 2; }
+message UnmuteParticipantResponse {}
+message RemoveParticipantRequest  { string call_id = 1; string user_id = 2; }
+message RemoveParticipantResponse {}
+message RoomStatsRequest          { string call_id = 1; }
+message RoomStatsResponse         { uint32 participants = 1; bool exists = 2; }

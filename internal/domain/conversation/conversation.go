@@ -102,6 +102,10 @@ func (t AdminTier) rank() int {
 	}
 }
 
+// AtLeast reports whether t sits at or above other on the moderation ladder.
+// Cross-package callers use this instead of the unexported rank().
+func (t AdminTier) AtLeast(other AdminTier) bool { return t.rank() >= other.rank() }
+
 // Domain errors.
 var (
 	ErrInvalidKind          = errors.New("conversation: invalid kind")
