@@ -1,6 +1,8 @@
 package sfu
 
 import (
+	"errors"
+	"io"
 	"log"
 
 	"github.com/pion/rtcp"
@@ -101,15 +103,24 @@ func (r *room) dropLocal(local *webrtc.TrackLocalStaticRTP) {
 // pump is the one copy loop per published track: read RTP off the publisher's
 // remote track, write it to the local, which Pion fans out to every attached
 // sender. Runs off the actor.
+//
+// Only a read failure ends the loop. TrackLocalStaticRTP.Write fans out to
+// every binding and returns an aggregate error, so a single subscriber whose
+// SRTP session died would otherwise take the publisher's track away from the
+// whole room permanently — OnTrack never fires again for it. Write errors are
+// logged once and the loop carries on; the dead subscriber is cleaned up by its
+// own connection state change.
 func (r *room) pump(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP) {
 	buf := make([]byte, rtpBufferSize)
+	warned := false
 	for {
 		n, _, err := remote.Read(buf)
 		if err != nil {
 			break
 		}
-		if _, err := local.Write(buf[:n]); err != nil {
-			break
+		if _, err := local.Write(buf[:n]); err != nil && !errors.Is(err, io.ErrClosedPipe) && !warned {
+			warned = true
+			log.Printf("sfu: room %s: forwarding %s (continuing): %v", r.callID, local.ID(), err)
 		}
 	}
 	r.do(func() { r.dropLocal(local) })
