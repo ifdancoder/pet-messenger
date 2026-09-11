@@ -84,9 +84,15 @@ async function connect(join) {
   document.getElementById('videos').prepend(localVideo);
 
   ws = new WebSocket(join.media_ws_url + '?ticket=' + encodeURIComponent(join.ticket));
-  ws.onopen = () => log('signalling connected');
+  ws.onopen = () => {
+    log('signalling connected');
+    enqueue(() => offer());
+  };
   ws.onclose = () => log('signalling closed');
-  ws.onmessage = async (ev) => {
+  let operations = Promise.resolve();
+  const pendingCandidates = [];
+  const enqueue = (fn) => { operations = operations.then(fn).catch(e => log('ERROR', e.message)); };
+  ws.onmessage = (ev) => enqueue(async () => {
     const frame = JSON.parse(ev.data);
     switch (frame.type) {
       case 'offer':
@@ -99,10 +105,14 @@ async function connect(join) {
         await pc.setRemoteDescription({ type: 'answer', sdp: frame.sdp });
         break;
       case 'candidate':
-        await pc.addIceCandidate(frame.candidate);
+        if (pc.remoteDescription) await pc.addIceCandidate(frame.candidate);
+        else pendingCandidates.push(frame.candidate);
         break;
       case 'peers':
         log('peers', JSON.stringify(frame.peers));
+        break;
+      case 'unmuted':
+        log('unmuted by', frame.by);
         break;
       case 'muted':
         log('muted by', frame.by);
@@ -110,16 +120,23 @@ async function connect(join) {
       case 'removed':
         log('removed by', frame.by);
         ws.close();
+        pc.close();
         break;
       default:
         log('frame', frame.type);
     }
-  };
+    if (pc.remoteDescription) {
+      for (const candidate of pendingCandidates.splice(0)) await pc.addIceCandidate(candidate);
+    }
+  });
+}
 
-  // A publisher renegotiates whenever it adds a track (initial join + screen
-  // share); the server also renegotiates when other participants change. This
-  // client always answers offers and never initiates one itself, matching the
-  // server-side-offer signalling model described in the design doc.
+// The client sends the initial offer and offers again when adding screen media.
+async function offer() {
+  if (pc.signalingState !== 'stable') throw new Error('Negotiation in progress; try again after the answer');
+  const description = await pc.createOffer();
+  await pc.setLocalDescription(description);
+  ws.send(JSON.stringify({ type: 'offer', sdp: description.sdp }));
 }
 
 async function shareScreen() {
@@ -129,6 +146,7 @@ async function shareScreen() {
   const screenStream = new MediaStream([track]);
   Object.defineProperty(screenStream, 'id', { value: 'screen-' + crypto.randomUUID() });
   pc.addTrack(track, screenStream);
+  await offer();
   const v = document.createElement('video');
   v.autoplay = true; v.muted = true; v.playsInline = true;
   v.srcObject = screenStream;

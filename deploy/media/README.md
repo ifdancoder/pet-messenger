@@ -59,3 +59,16 @@ In the page's `RTCPeerConnection` config, temporarily set
 devtools) and confirm the call still connects — check the `coturn`
 container's logs for an allocation, which confirms `TURN_URL` / `TURN_SECRET`
 on the `api` service match `turnserver.conf`'s `static-auth-secret`.
+
+### Moderator mute and unmute
+
+Use authenticated `POST /calls/{callID}/participants/{userID}/mute` and
+`POST /calls/{callID}/participants/{userID}/unmute` requests. Both require the
+existing call moderation permissions (call initiator or eligible conversation
+admin), and neither permits self-targeting. The target receives a `muted` or
+`unmuted` signaling frame with `by: "server"`.
+
+A client offer, replacement connection, or leave/rejoin cannot clear a moderator
+mute. The media room retains that decision for its lifetime. Video and screen
+sharing continue while audio forwarding is muted. Unmute restores forwarding;
+clients retain control of their local microphone capture settings.
