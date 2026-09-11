@@ -19,6 +19,7 @@ type fakeCallService struct {
 	start   func(actorID, conversationID uuid.UUID) (*domaincall.Call, usecasecall.JoinInfo, error)
 	join    func(actorID, callID uuid.UUID, role domaincall.Role) (usecasecall.JoinInfo, error)
 	end     func(actorID, callID uuid.UUID) error
+	unmute  func(actorID, callID, targetID uuid.UUID) error
 	mute    func(actorID, callID, targetID uuid.UUID) error
 	remove  func(actorID, callID, targetID uuid.UUID) error
 	getLive func(actorID, conversationID uuid.UUID) (*domaincall.Call, error)
@@ -35,6 +36,10 @@ func (f *fakeCallService) EndCall(_ context.Context, actorID, callID uuid.UUID) 
 }
 func (f *fakeCallService) MuteParticipant(_ context.Context, actorID, callID, targetID uuid.UUID) error {
 	return f.mute(actorID, callID, targetID)
+}
+
+func (f *fakeCallService) UnmuteParticipant(_ context.Context, actorID, callID, targetID uuid.UUID) error {
+	return f.unmute(actorID, callID, targetID)
 }
 func (f *fakeCallService) RemoveParticipant(_ context.Context, actorID, callID, targetID uuid.UUID) error {
 	return f.remove(actorID, callID, targetID)
@@ -245,5 +250,33 @@ func TestCallHandler_Mute_ConversationArchived_Conflict(t *testing.T) {
 	w := doConvJSON(t, r, http.MethodPost, "/calls/"+callID.String()+"/participants/"+target.String()+"/mute", "")
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", w.Code)
+	}
+}
+
+func TestCallHandler_Unmute(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"success", nil, http.StatusNoContent},
+		{"forbidden", usecasecall.ErrForbidden, http.StatusForbidden},
+		{"self", usecasecall.ErrCannotTargetSelf, http.StatusConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actor, callID, target := uuid.New(), uuid.New(), uuid.New()
+			called := false
+			svc := &fakeCallService{unmute: func(a, c, u uuid.UUID) error {
+				called = true
+				if a != actor || c != callID || u != target {
+					t.Fatal("incorrect unmute IDs")
+				}
+				return tc.err
+			}}
+			w := doConvJSON(t, callRouter(svc, &actor), http.MethodPost, "/calls/"+callID.String()+"/participants/"+target.String()+"/unmute", "")
+			if !called || w.Code != tc.status {
+				t.Fatalf("called=%v status=%d, want %d", called, w.Code, tc.status)
+			}
+		})
 	}
 }

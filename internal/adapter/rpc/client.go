@@ -95,6 +95,14 @@ func (c *RoomControlClient) MuteParticipant(ctx context.Context, node usecasecal
 	})
 }
 
+// UnmuteParticipant asks the media pod to unmute userID in callID.
+func (c *RoomControlClient) UnmuteParticipant(ctx context.Context, node usecasecall.Node, callID, userID uuid.UUID) error {
+	return c.call(ctx, node, func(s mediav1.RoomControlClient, ctx context.Context) error {
+		_, err := s.UnmuteParticipant(ctx, &mediav1.UnmuteParticipantRequest{CallId: callID.String(), UserId: userID.String()})
+		return err
+	})
+}
+
 // RemoveParticipant asks the media pod to drop userID from callID.
 func (c *RoomControlClient) RemoveParticipant(ctx context.Context, node usecasecall.Node, callID, userID uuid.UUID) error {
 	return c.call(ctx, node, func(s mediav1.RoomControlClient, ctx context.Context) error {

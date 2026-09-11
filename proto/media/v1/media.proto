@@ -6,6 +6,7 @@ service RoomControl {
   rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
   rpc CloseRoom(CloseRoomRequest) returns (CloseRoomResponse);
   rpc MuteParticipant(MuteParticipantRequest) returns (MuteParticipantResponse);
+  rpc UnmuteParticipant(UnmuteParticipantRequest) returns (UnmuteParticipantResponse);
   rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
   rpc RoomStats(RoomStatsRequest) returns (RoomStatsResponse);
 }
@@ -16,6 +17,8 @@ message CloseRoomRequest          { string call_id = 1; }
 message CloseRoomResponse         {}
 message MuteParticipantRequest    { string call_id = 1; string user_id = 2; }
 message MuteParticipantResponse   {}
+message UnmuteParticipantRequest  { string call_id = 1; string user_id = 2; }
+message UnmuteParticipantResponse {}
 message RemoveParticipantRequest  { string call_id = 1; string user_id = 2; }
 message RemoveParticipantResponse {}
 message RoomStatsRequest          { string call_id = 1; }

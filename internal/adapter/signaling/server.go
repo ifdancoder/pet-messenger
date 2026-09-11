@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/google/uuid"
 
 	"pet-messenger/internal/adapter/sfu"
 	"pet-messenger/internal/config"
@@ -56,23 +55,24 @@ func (s *Server) handleRTC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sig := newWSSignaller(conn)
-	if err := s.mgr.Join(claims.CallID, claims.UserID, string(claims.Role), sig); err != nil {
+	session, err := s.mgr.JoinSession(claims.CallID, claims.UserID, string(claims.Role), sig)
+	if err != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, "join rejected")
 		return
 	}
-	s.readLoop(r.Context(), conn, claims.CallID, claims.UserID)
+	s.readLoop(r.Context(), conn, session)
 }
 
 // readLoop pumps raw client frames into the room actor until the socket
 // errors or closes; either one means the participant left.
-func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, callID, userID uuid.UUID) {
-	defer s.mgr.Remove(callID, userID)
+func (s *Server) readLoop(ctx context.Context, conn *websocket.Conn, session sfu.Session) {
+	defer session.Close()
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
 			return
 		}
-		s.mgr.ClientFrame(callID, userID, data)
+		session.ClientFrame(data)
 	}
 }
 

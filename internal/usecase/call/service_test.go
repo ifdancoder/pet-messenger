@@ -188,8 +188,8 @@ func (f *fakeRegistry) Get(context.Context, string) (Node, error) {
 }
 
 type fakeRooms struct {
-	createErr                       error
-	created, closed, muted, removed []string
+	createErr                                error
+	created, closed, muted, unmuted, removed []string
 }
 
 func (f *fakeRooms) CreateRoom(_ context.Context, _ Node, id uuid.UUID) error {
@@ -205,6 +205,11 @@ func (f *fakeRooms) CloseRoom(_ context.Context, _ Node, id uuid.UUID) error {
 }
 func (f *fakeRooms) MuteParticipant(_ context.Context, _ Node, id, u uuid.UUID) error {
 	f.muted = append(f.muted, id.String()+"/"+u.String())
+	return nil
+}
+
+func (f *fakeRooms) UnmuteParticipant(_ context.Context, _ Node, id, u uuid.UUID) error {
+	f.unmuted = append(f.unmuted, id.String()+"/"+u.String())
 	return nil
 }
 func (f *fakeRooms) RemoveParticipant(_ context.Context, _ Node, id, u uuid.UUID) error {
@@ -686,5 +691,47 @@ func TestReapStaleCalls(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("ReapStaleCalls (2nd) = %d, want 0", n)
+	}
+}
+
+func TestUnmuteParticipant_Authorization(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		tier            conversation.AdminTier
+		initiator, self bool
+		want            error
+	}{
+		{name: "initiator", initiator: true},
+		{name: "admin", tier: conversation.TierAdmin},
+		{name: "plain member", tier: conversation.TierNone, want: ErrForbidden},
+		{name: "self unmute denied", initiator: true, self: true, want: ErrCannotTargetSelf},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, calls, convs, _, rooms, _, _ := newSvc(t)
+			convID, _ := groupChat(t, convs)
+			c := mustCall(t, convID, uuid.Must(uuid.NewV7()))
+			calls.seedLive(c)
+			actor := addMember(convs, convID, tc.tier)
+			if tc.initiator {
+				actor = c.InitiatorID
+			}
+			target := addMember(convs, convID, conversation.TierNone)
+			if tc.self {
+				target = actor
+			}
+			err := s.UnmuteParticipant(context.Background(), actor, c.ID, target)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("UnmuteParticipant = %v, want %v", err, tc.want)
+			}
+			if tc.want != nil {
+				if len(rooms.unmuted) != 0 {
+					t.Fatal("unauthorized request reached media node")
+				}
+				return
+			}
+			if len(rooms.unmuted) != 1 || rooms.unmuted[0] != c.ID.String()+"/"+target.String() {
+				t.Fatalf("unmuted = %v", rooms.unmuted)
+			}
+		})
 	}
 }

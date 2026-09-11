@@ -15,6 +15,7 @@ const (
 	FrameCandidate = "candidate"
 	FramePeers     = "peers"
 	FrameMuted     = "muted"
+	FrameUnmuted   = "unmuted"
 	FrameRemoved   = "removed"
 	FrameError     = "error"
 	FrameBye       = "bye"

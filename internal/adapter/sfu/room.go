@@ -38,20 +38,22 @@ type room struct {
 	done chan struct{}
 
 	// Below here: actor goroutine only.
-	peers  map[uuid.UUID]*participant
-	closed bool
+	mutedUsers map[uuid.UUID]bool
+	peers      map[uuid.UUID]*participant
+	closed     bool
 }
 
 func newRoom(callID uuid.UUID, cfg *config.Config, api *webrtc.API, events CallEventPublisher, onDrained func(*room)) *room {
 	r := &room{
-		callID:    callID,
-		cfg:       cfg,
-		api:       api,
-		events:    events,
-		onDrained: onDrained,
-		cmds:      make(chan func(), cmdBuffer),
-		done:      make(chan struct{}),
-		peers:     map[uuid.UUID]*participant{},
+		callID:     callID,
+		cfg:        cfg,
+		api:        api,
+		events:     events,
+		onDrained:  onDrained,
+		cmds:       make(chan func(), cmdBuffer),
+		done:       make(chan struct{}),
+		peers:      map[uuid.UUID]*participant{},
+		mutedUsers: map[uuid.UUID]bool{},
 	}
 	go r.loop()
 	return r
@@ -110,6 +112,42 @@ func ask[T any](r *room, fn func() T) T {
 	}
 }
 
+// askError preserves a closed-room failure instead of returning a nil error
+// when shutdown prevents the actor from executing the command.
+func askError(r *room, fn func() error) error {
+	result := ask(r, func() *error { err := fn(); return &err })
+	if result == nil {
+		return ErrRoomNotFound
+	}
+	return *result
+}
+
+type roomSession struct {
+	room        *room
+	participant *participant
+}
+
+func (s *roomSession) ClientFrame(frame []byte) {
+	var f Frame
+	if err := json.Unmarshal(frame, &f); err != nil {
+		return
+	}
+	s.room.do(func() {
+		if s.room.peers[s.participant.userID] != s.participant {
+			return
+		}
+		s.room.dispatchClientFrame(s.participant.userID, f)
+	})
+}
+
+func (s *roomSession) Close() {
+	s.room.do(func() {
+		if s.room.peers[s.participant.userID] == s.participant {
+			s.room.removeParticipant(s.participant.userID)
+		}
+	})
+}
+
 // --- control-plane entry points (called from the manager, off the actor) ---
 
 func (r *room) count() int {
@@ -117,15 +155,15 @@ func (r *room) count() int {
 }
 
 func (r *room) join(userID uuid.UUID, role string, sig Signaller) error {
-	return ask(r, func() error { return r.addParticipant(userID, role, sig) })
+	return askError(r, func() error { return r.addParticipant(userID, role, sig) })
 }
 
 func (r *room) mute(userID uuid.UUID) error {
-	return ask(r, func() error { return r.muteParticipant(userID) })
+	return askError(r, func() error { return r.muteParticipant(userID) })
 }
 
 func (r *room) remove(userID uuid.UUID) error {
-	return ask(r, func() error { return r.kickParticipant(userID) })
+	return askError(r, func() error { return r.kickParticipant(userID) })
 }
 
 func (r *room) close() {
@@ -140,15 +178,19 @@ func (r *room) handleClientFrame(userID uuid.UUID, frame []byte) {
 		log.Printf("sfu: room %s: bad frame from %s: %v", r.callID, userID, err)
 		return
 	}
+	r.do(func() { r.dispatchClientFrame(userID, f) })
+}
+
+func (r *room) dispatchClientFrame(userID uuid.UUID, f Frame) {
 	switch f.Type {
 	case FrameOffer:
-		r.do(func() { r.handleOffer(userID, f.SDP) })
+		r.handleOffer(userID, f.SDP)
 	case FrameAnswer:
-		r.do(func() { r.handleAnswer(userID, f.SDP) })
+		r.handleAnswer(userID, f.SDP)
 	case FrameCandidate:
-		r.do(func() { r.handleCandidate(userID, f.Candidate) })
+		r.handleCandidate(userID, f.Candidate)
 	case FrameBye:
-		r.do(func() { r.removeParticipant(userID) })
+		r.removeParticipant(userID)
 	default:
 		log.Printf("sfu: room %s: unknown frame type %q from %s", r.callID, f.Type, userID)
 	}
@@ -160,23 +202,19 @@ func (r *room) addParticipant(userID uuid.UUID, role string, sig Signaller) erro
 	if r.closed {
 		return ErrRoomNotFound
 	}
-	if _, ok := r.peers[userID]; ok {
-		// A reconnect: the stale session goes first so its tracks are dropped
-		// from everyone before the new PeerConnection is wired in.
-		r.removeParticipant(userID)
-		if r.closed {
-			return ErrRoomNotFound
-		}
-	}
-	if max := r.cfg.Media.MaxRoomPeers; max > 0 && len(r.peers) >= max {
+	previous := r.peers[userID]
+	if max := r.cfg.Media.MaxRoomPeers; previous == nil && max > 0 && len(r.peers) >= max {
 		return ErrRoomFull
 	}
-
 	pc, err := r.api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return fmt.Errorf("new peer connection: %w", err)
 	}
+	if previous != nil {
+		r.detachParticipant(previous)
+	}
 	p := newParticipant(userID, role, sig, pc)
+	p.muted = r.mutedUsers[userID]
 
 	pc.OnICECandidate(func(cand *webrtc.ICECandidate) {
 		if cand == nil {
@@ -215,29 +253,57 @@ func (r *room) addParticipant(userID uuid.UUID, role string, sig Signaller) erro
 		}
 	}
 
-	r.events.ParticipantJoined(r.callID, userID, role)
+	if previous == nil {
+		r.events.ParticipantJoined(r.callID, userID, role)
+	}
 	r.broadcastPeers()
 	r.flushRenegotiation()
 	return nil
 }
 
 // muteParticipant drops the participant's audio locals from every subscriber.
-// Unmuting is the client re-offering the track, which re-publishes it.
+// Tracks stay registered so only an explicit moderator unmute restores them.
 func (r *room) muteParticipant(userID uuid.UUID) error {
 	p, ok := r.peers[userID]
 	if !ok {
 		return ErrParticipantNotInRoom
 	}
 	p.muted = true
-	for id, local := range p.published {
+	r.mutedUsers[userID] = true
+	for _, local := range p.published {
 		if local.Kind() != webrtc.RTPCodecTypeAudio {
 			continue
 		}
-		delete(p.published, id)
-		delete(p.remoteSSRC, id)
 		r.unsubscribeAll(local)
 	}
 	p.send(mutedFrame(actorServer))
+	r.broadcastPeers()
+	r.flushRenegotiation()
+	return nil
+}
+
+// unmuteParticipant restores audio forwarding after moderator approval.
+func (r *room) unmuteParticipant(userID uuid.UUID) error {
+	p, ok := r.peers[userID]
+	if !ok {
+		return ErrParticipantNotInRoom
+	}
+	if !p.muted {
+		return nil
+	}
+	p.muted = false
+	delete(r.mutedUsers, userID)
+	for _, local := range p.published {
+		if local.Kind() != webrtc.RTPCodecTypeAudio {
+			continue
+		}
+		for id, sub := range r.peers {
+			if id != userID {
+				r.subscribe(sub, p, local)
+			}
+		}
+	}
+	p.send(marshalFrame(Frame{Type: FrameUnmuted, By: actorServer}))
 	r.broadcastPeers()
 	r.flushRenegotiation()
 	return nil
@@ -261,13 +327,7 @@ func (r *room) removeParticipant(userID uuid.UUID) {
 	if !ok {
 		return
 	}
-	delete(r.peers, userID)
-	for id, local := range p.published {
-		delete(p.published, id)
-		delete(p.remoteSSRC, id)
-		r.unsubscribeAll(local)
-	}
-	go p.teardown()
+	r.detachParticipant(p)
 
 	r.events.ParticipantLeft(r.callID, userID)
 	if len(r.peers) == 0 {
@@ -276,6 +336,17 @@ func (r *room) removeParticipant(userID uuid.UUID) {
 	}
 	r.broadcastPeers()
 	r.flushRenegotiation()
+}
+
+// detachParticipant releases a session without treating replacement as a leave.
+func (r *room) detachParticipant(p *participant) {
+	delete(r.peers, p.userID)
+	for id, local := range p.published {
+		delete(p.published, id)
+		delete(p.remoteSSRC, id)
+		r.unsubscribeAll(local)
+	}
+	go p.teardown()
 }
 
 // flushRenegotiation sends one server offer to every participant whose set of

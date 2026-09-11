@@ -139,6 +139,9 @@ func (stubRooms) CloseRoom(context.Context, usecasecall.Node, uuid.UUID) error  
 func (stubRooms) MuteParticipant(context.Context, usecasecall.Node, uuid.UUID, uuid.UUID) error {
 	return nil
 }
+func (stubRooms) UnmuteParticipant(context.Context, usecasecall.Node, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 func (stubRooms) RemoveParticipant(context.Context, usecasecall.Node, uuid.UUID, uuid.UUID) error {
 	return nil
 }

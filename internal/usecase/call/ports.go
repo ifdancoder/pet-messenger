@@ -39,6 +39,7 @@ type RoomControl interface {
 	CreateRoom(ctx context.Context, node Node, callID uuid.UUID) error
 	CloseRoom(ctx context.Context, node Node, callID uuid.UUID) error
 	MuteParticipant(ctx context.Context, node Node, callID, userID uuid.UUID) error
+	UnmuteParticipant(ctx context.Context, node Node, callID, userID uuid.UUID) error
 	RemoveParticipant(ctx context.Context, node Node, callID, userID uuid.UUID) error
 }
 

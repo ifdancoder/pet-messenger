@@ -18,7 +18,7 @@ const rtpBufferSize = 1500
 // it, no matter how many subscribers there are — that is the whole point of an
 // SFU. Runs on the actor.
 func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
-	if r.closed {
+	if r.closed || pub.role != "publisher" {
 		return
 	}
 	if cur, ok := r.peers[pub.userID]; !ok || cur != pub {
@@ -33,11 +33,8 @@ func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
 	pub.published[remote.ID()] = local
 	pub.remoteSSRC[remote.ID()] = remote.SSRC()
 
-	if !(pub.muted && local.Kind() == webrtc.RTPCodecTypeAudio) {
-		for id, sub := range r.peers {
-			if id == pub.userID {
-				continue
-			}
+	for id, sub := range r.peers {
+		if id != pub.userID {
 			r.subscribe(sub, pub, local)
 		}
 	}
@@ -50,6 +47,14 @@ func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
 // subscribe attaches one publisher's local track to one subscriber's
 // PeerConnection and marks the subscriber for renegotiation. Runs on the actor.
 func (r *room) subscribe(sub, pub *participant, local *webrtc.TrackLocalStaticRTP) {
+	if pub.role != "publisher" || (pub.muted && local.Kind() == webrtc.RTPCodecTypeAudio) {
+		return
+	}
+	for _, sender := range sub.pc.GetSenders() {
+		if sender.Track() == local {
+			return
+		}
+	}
 	sender, err := sub.pc.AddTrack(local)
 	if err != nil {
 		log.Printf("sfu: room %s: add track %s to %s: %v", r.callID, local.ID(), sub.userID, err)

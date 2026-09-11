@@ -46,13 +46,29 @@ func (f *fakeManager) Join(_, userID uuid.UUID, _ string, _ sfu.Signaller) error
 	return nil
 }
 
+func (f *fakeManager) JoinSession(callID, userID uuid.UUID, role string, sig sfu.Signaller) (sfu.Session, error) {
+	if err := f.Join(callID, userID, role, sig); err != nil {
+		return nil, err
+	}
+	return &fakeSession{manager: f, callID: callID, userID: userID}, nil
+}
+
+type fakeSession struct {
+	manager        *fakeManager
+	callID, userID uuid.UUID
+}
+
+func (s *fakeSession) ClientFrame(frame []byte) { s.manager.ClientFrame(s.callID, s.userID, frame) }
+func (s *fakeSession) Close()                   { _ = s.manager.Remove(s.callID, s.userID) }
+
 func (f *fakeManager) ClientFrame(_, _ uuid.UUID, frame []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.frames = append(f.frames, frame)
 }
 
-func (f *fakeManager) Mute(uuid.UUID, uuid.UUID) error { return nil }
+func (f *fakeManager) Mute(uuid.UUID, uuid.UUID) error   { return nil }
+func (f *fakeManager) Unmute(uuid.UUID, uuid.UUID) error { return nil }
 
 func (f *fakeManager) Remove(_, userID uuid.UUID) error {
 	f.mu.Lock()
@@ -177,5 +193,60 @@ func TestServer_WrongNode_Forbidden(t *testing.T) {
 	}
 	if mgr.joinCount() != 0 {
 		t.Fatalf("Join called for the wrong node: %d", mgr.joinCount())
+	}
+}
+
+type discardEvents struct{}
+
+func (discardEvents) ParticipantJoined(uuid.UUID, uuid.UUID, string) {}
+func (discardEvents) ParticipantLeft(uuid.UUID, uuid.UUID)           {}
+func (discardEvents) Ended(uuid.UUID)                                {}
+
+func TestServerReconnectKeepsReplacementSession(t *testing.T) {
+	cfg := testConfig(t)
+	mgr, err := sfu.NewManager(cfg, discardEvents{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callID, userID := uuid.New(), uuid.New()
+	if err := mgr.CreateRoom(callID); err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.CloseRoom(callID)
+	srv := httptest.NewServer(NewServer(mgr, infraauth.NewJoinTicketVerifier(cfg), cfg).Handler())
+	defer srv.Close()
+	token, _, err := infraauth.NewJoinTicketIssuer(cfg).Issue(callID, userID, call.RolePublisher, cfg.Media.NodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	dial := func() *websocket.Conn {
+		t.Helper()
+		conn, _, err := websocket.Dial(ctx, wsURL(srv.URL)+"/rtc?ticket="+token, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.CloseNow() })
+		if _, _, err := conn.Read(ctx); err != nil {
+			t.Fatalf("initial roster: %v", err)
+		}
+		return conn
+	}
+	stale := dial()
+	current := dial()
+	if _, _, err := stale.Read(ctx); err == nil {
+		t.Fatal("replaced socket remained open")
+	}
+	// An invalid offer produces an error frame only from the active participant;
+	// it also proves the replacement socket still works after old cleanup.
+	if err := current.Write(ctx, websocket.MessageText, []byte(`{"type":"offer","sdp":"invalid"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := current.Read(ctx); err != nil {
+		t.Fatalf("replacement disconnected: %v", err)
+	}
+	if got := mgr.Stats(callID); !got.Exists || got.Participants != 1 {
+		t.Fatalf("replacement room: %+v", got)
 	}
 }

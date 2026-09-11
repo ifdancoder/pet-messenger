@@ -269,6 +269,94 @@ func (*MuteParticipantResponse) Descriptor() ([]byte, []int) {
 	return file_media_v1_media_proto_rawDescGZIP(), []int{5}
 }
 
+type UnmuteParticipantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CallId        string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnmuteParticipantRequest) Reset() {
+	*x = UnmuteParticipantRequest{}
+	mi := &file_media_v1_media_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnmuteParticipantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnmuteParticipantRequest) ProtoMessage() {}
+
+func (x *UnmuteParticipantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_media_v1_media_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnmuteParticipantRequest.ProtoReflect.Descriptor instead.
+func (*UnmuteParticipantRequest) Descriptor() ([]byte, []int) {
+	return file_media_v1_media_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UnmuteParticipantRequest) GetCallId() string {
+	if x != nil {
+		return x.CallId
+	}
+	return ""
+}
+
+func (x *UnmuteParticipantRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type UnmuteParticipantResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnmuteParticipantResponse) Reset() {
+	*x = UnmuteParticipantResponse{}
+	mi := &file_media_v1_media_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnmuteParticipantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnmuteParticipantResponse) ProtoMessage() {}
+
+func (x *UnmuteParticipantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_media_v1_media_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnmuteParticipantResponse.ProtoReflect.Descriptor instead.
+func (*UnmuteParticipantResponse) Descriptor() ([]byte, []int) {
+	return file_media_v1_media_proto_rawDescGZIP(), []int{7}
+}
+
 type RemoveParticipantRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CallId        string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
@@ -279,7 +367,7 @@ type RemoveParticipantRequest struct {
 
 func (x *RemoveParticipantRequest) Reset() {
 	*x = RemoveParticipantRequest{}
-	mi := &file_media_v1_media_proto_msgTypes[6]
+	mi := &file_media_v1_media_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -291,7 +379,7 @@ func (x *RemoveParticipantRequest) String() string {
 func (*RemoveParticipantRequest) ProtoMessage() {}
 
 func (x *RemoveParticipantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_media_v1_media_proto_msgTypes[6]
+	mi := &file_media_v1_media_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -304,7 +392,7 @@ func (x *RemoveParticipantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveParticipantRequest.ProtoReflect.Descriptor instead.
 func (*RemoveParticipantRequest) Descriptor() ([]byte, []int) {
-	return file_media_v1_media_proto_rawDescGZIP(), []int{6}
+	return file_media_v1_media_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RemoveParticipantRequest) GetCallId() string {
@@ -329,7 +417,7 @@ type RemoveParticipantResponse struct {
 
 func (x *RemoveParticipantResponse) Reset() {
 	*x = RemoveParticipantResponse{}
-	mi := &file_media_v1_media_proto_msgTypes[7]
+	mi := &file_media_v1_media_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -341,7 +429,7 @@ func (x *RemoveParticipantResponse) String() string {
 func (*RemoveParticipantResponse) ProtoMessage() {}
 
 func (x *RemoveParticipantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_media_v1_media_proto_msgTypes[7]
+	mi := &file_media_v1_media_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -354,7 +442,7 @@ func (x *RemoveParticipantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveParticipantResponse.ProtoReflect.Descriptor instead.
 func (*RemoveParticipantResponse) Descriptor() ([]byte, []int) {
-	return file_media_v1_media_proto_rawDescGZIP(), []int{7}
+	return file_media_v1_media_proto_rawDescGZIP(), []int{9}
 }
 
 type RoomStatsRequest struct {
@@ -366,7 +454,7 @@ type RoomStatsRequest struct {
 
 func (x *RoomStatsRequest) Reset() {
 	*x = RoomStatsRequest{}
-	mi := &file_media_v1_media_proto_msgTypes[8]
+	mi := &file_media_v1_media_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -378,7 +466,7 @@ func (x *RoomStatsRequest) String() string {
 func (*RoomStatsRequest) ProtoMessage() {}
 
 func (x *RoomStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_media_v1_media_proto_msgTypes[8]
+	mi := &file_media_v1_media_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +479,7 @@ func (x *RoomStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomStatsRequest.ProtoReflect.Descriptor instead.
 func (*RoomStatsRequest) Descriptor() ([]byte, []int) {
-	return file_media_v1_media_proto_rawDescGZIP(), []int{8}
+	return file_media_v1_media_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RoomStatsRequest) GetCallId() string {
@@ -411,7 +499,7 @@ type RoomStatsResponse struct {
 
 func (x *RoomStatsResponse) Reset() {
 	*x = RoomStatsResponse{}
-	mi := &file_media_v1_media_proto_msgTypes[9]
+	mi := &file_media_v1_media_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +511,7 @@ func (x *RoomStatsResponse) String() string {
 func (*RoomStatsResponse) ProtoMessage() {}
 
 func (x *RoomStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_media_v1_media_proto_msgTypes[9]
+	mi := &file_media_v1_media_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +524,7 @@ func (x *RoomStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomStatsResponse.ProtoReflect.Descriptor instead.
 func (*RoomStatsResponse) Descriptor() ([]byte, []int) {
-	return file_media_v1_media_proto_rawDescGZIP(), []int{9}
+	return file_media_v1_media_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RoomStatsResponse) GetParticipants() uint32 {
@@ -468,6 +556,10 @@ const file_media_v1_media_proto_rawDesc = "" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x19\n" +
 	"\x17MuteParticipantResponse\"L\n" +
+	"\x18UnmuteParticipantRequest\x12\x17\n" +
+	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1b\n" +
+	"\x19UnmuteParticipantResponse\"L\n" +
 	"\x18RemoveParticipantRequest\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"\x1b\n" +
@@ -476,12 +568,13 @@ const file_media_v1_media_proto_rawDesc = "" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\"O\n" +
 	"\x11RoomStatsResponse\x12\"\n" +
 	"\fparticipants\x18\x01 \x01(\rR\fparticipants\x12\x16\n" +
-	"\x06exists\x18\x02 \x01(\bR\x06exists2\x98\x03\n" +
+	"\x06exists\x18\x02 \x01(\bR\x06exists2\xf6\x03\n" +
 	"\vRoomControl\x12G\n" +
 	"\n" +
 	"CreateRoom\x12\x1b.media.v1.CreateRoomRequest\x1a\x1c.media.v1.CreateRoomResponse\x12D\n" +
 	"\tCloseRoom\x12\x1a.media.v1.CloseRoomRequest\x1a\x1b.media.v1.CloseRoomResponse\x12V\n" +
 	"\x0fMuteParticipant\x12 .media.v1.MuteParticipantRequest\x1a!.media.v1.MuteParticipantResponse\x12\\\n" +
+	"\x11UnmuteParticipant\x12\".media.v1.UnmuteParticipantRequest\x1a#.media.v1.UnmuteParticipantResponse\x12\\\n" +
 	"\x11RemoveParticipant\x12\".media.v1.RemoveParticipantRequest\x1a#.media.v1.RemoveParticipantResponse\x12D\n" +
 	"\tRoomStats\x12\x1a.media.v1.RoomStatsRequest\x1a\x1b.media.v1.RoomStatsResponseB4Z2pet-messenger/internal/adapter/rpc/mediav1;mediav1b\x06proto3"
 
@@ -497,7 +590,7 @@ func file_media_v1_media_proto_rawDescGZIP() []byte {
 	return file_media_v1_media_proto_rawDescData
 }
 
-var file_media_v1_media_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_media_v1_media_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_media_v1_media_proto_goTypes = []any{
 	(*CreateRoomRequest)(nil),         // 0: media.v1.CreateRoomRequest
 	(*CreateRoomResponse)(nil),        // 1: media.v1.CreateRoomResponse
@@ -505,27 +598,31 @@ var file_media_v1_media_proto_goTypes = []any{
 	(*CloseRoomResponse)(nil),         // 3: media.v1.CloseRoomResponse
 	(*MuteParticipantRequest)(nil),    // 4: media.v1.MuteParticipantRequest
 	(*MuteParticipantResponse)(nil),   // 5: media.v1.MuteParticipantResponse
-	(*RemoveParticipantRequest)(nil),  // 6: media.v1.RemoveParticipantRequest
-	(*RemoveParticipantResponse)(nil), // 7: media.v1.RemoveParticipantResponse
-	(*RoomStatsRequest)(nil),          // 8: media.v1.RoomStatsRequest
-	(*RoomStatsResponse)(nil),         // 9: media.v1.RoomStatsResponse
+	(*UnmuteParticipantRequest)(nil),  // 6: media.v1.UnmuteParticipantRequest
+	(*UnmuteParticipantResponse)(nil), // 7: media.v1.UnmuteParticipantResponse
+	(*RemoveParticipantRequest)(nil),  // 8: media.v1.RemoveParticipantRequest
+	(*RemoveParticipantResponse)(nil), // 9: media.v1.RemoveParticipantResponse
+	(*RoomStatsRequest)(nil),          // 10: media.v1.RoomStatsRequest
+	(*RoomStatsResponse)(nil),         // 11: media.v1.RoomStatsResponse
 }
 var file_media_v1_media_proto_depIdxs = []int32{
-	0, // 0: media.v1.RoomControl.CreateRoom:input_type -> media.v1.CreateRoomRequest
-	2, // 1: media.v1.RoomControl.CloseRoom:input_type -> media.v1.CloseRoomRequest
-	4, // 2: media.v1.RoomControl.MuteParticipant:input_type -> media.v1.MuteParticipantRequest
-	6, // 3: media.v1.RoomControl.RemoveParticipant:input_type -> media.v1.RemoveParticipantRequest
-	8, // 4: media.v1.RoomControl.RoomStats:input_type -> media.v1.RoomStatsRequest
-	1, // 5: media.v1.RoomControl.CreateRoom:output_type -> media.v1.CreateRoomResponse
-	3, // 6: media.v1.RoomControl.CloseRoom:output_type -> media.v1.CloseRoomResponse
-	5, // 7: media.v1.RoomControl.MuteParticipant:output_type -> media.v1.MuteParticipantResponse
-	7, // 8: media.v1.RoomControl.RemoveParticipant:output_type -> media.v1.RemoveParticipantResponse
-	9, // 9: media.v1.RoomControl.RoomStats:output_type -> media.v1.RoomStatsResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: media.v1.RoomControl.CreateRoom:input_type -> media.v1.CreateRoomRequest
+	2,  // 1: media.v1.RoomControl.CloseRoom:input_type -> media.v1.CloseRoomRequest
+	4,  // 2: media.v1.RoomControl.MuteParticipant:input_type -> media.v1.MuteParticipantRequest
+	6,  // 3: media.v1.RoomControl.UnmuteParticipant:input_type -> media.v1.UnmuteParticipantRequest
+	8,  // 4: media.v1.RoomControl.RemoveParticipant:input_type -> media.v1.RemoveParticipantRequest
+	10, // 5: media.v1.RoomControl.RoomStats:input_type -> media.v1.RoomStatsRequest
+	1,  // 6: media.v1.RoomControl.CreateRoom:output_type -> media.v1.CreateRoomResponse
+	3,  // 7: media.v1.RoomControl.CloseRoom:output_type -> media.v1.CloseRoomResponse
+	5,  // 8: media.v1.RoomControl.MuteParticipant:output_type -> media.v1.MuteParticipantResponse
+	7,  // 9: media.v1.RoomControl.UnmuteParticipant:output_type -> media.v1.UnmuteParticipantResponse
+	9,  // 10: media.v1.RoomControl.RemoveParticipant:output_type -> media.v1.RemoveParticipantResponse
+	11, // 11: media.v1.RoomControl.RoomStats:output_type -> media.v1.RoomStatsResponse
+	6,  // [6:12] is the sub-list for method output_type
+	0,  // [0:6] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_media_v1_media_proto_init() }
@@ -539,7 +636,7 @@ func file_media_v1_media_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_media_v1_media_proto_rawDesc), len(file_media_v1_media_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

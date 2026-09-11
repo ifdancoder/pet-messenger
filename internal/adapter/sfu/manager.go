@@ -46,12 +46,20 @@ type CallEventPublisher interface {
 	Ended(callID uuid.UUID)
 }
 
+// Session owns transport operations for exactly one participant connection.
+type Session interface {
+	ClientFrame(frame []byte)
+	Close()
+}
+
 type Manager interface {
 	CreateRoom(callID uuid.UUID) error
 	CloseRoom(callID uuid.UUID) error
 	Join(callID, userID uuid.UUID, role string, sig Signaller) error
+	JoinSession(callID, userID uuid.UUID, role string, sig Signaller) (Session, error)
 	ClientFrame(callID, userID uuid.UUID, frame []byte)
 	Mute(callID, userID uuid.UUID) error
+	Unmute(callID, userID uuid.UUID) error
 	Remove(callID, userID uuid.UUID) error
 	Stats(callID uuid.UUID) RoomStats
 	Totals() Totals
@@ -123,6 +131,24 @@ func (m *manager) Join(callID, userID uuid.UUID, role string, sig Signaller) err
 	return m.withRoom(callID, func(r *room) error { return r.join(userID, role, sig) })
 }
 
+// JoinSession binds transport callbacks to the accepted participant, so a stale
+// connection cannot act on a replacement connection with the same user ID.
+func (m *manager) JoinSession(callID, userID uuid.UUID, role string, sig Signaller) (Session, error) {
+	r, ok := m.roomFor(callID)
+	if !ok {
+		return nil, ErrRoomNotFound
+	}
+	var session Session
+	err := askError(r, func() error {
+		if err := r.addParticipant(userID, role, sig); err != nil {
+			return err
+		}
+		session = &roomSession{room: r, participant: r.peers[userID]}
+		return nil
+	})
+	return session, err
+}
+
 // ClientFrame routes one signalling frame from a client into the room actor.
 func (m *manager) ClientFrame(callID, userID uuid.UUID, frame []byte) {
 	if r, ok := m.roomFor(callID); ok {
@@ -175,4 +201,11 @@ func (m *manager) roomDrained(r *room) {
 		return
 	}
 	m.events.Ended(r.callID)
+}
+
+// Unmute restores a participant's audio after control-plane authorization.
+func (m *manager) Unmute(callID, userID uuid.UUID) error {
+	return m.withRoom(callID, func(r *room) error {
+		return askError(r, func() error { return r.unmuteParticipant(userID) })
+	})
 }

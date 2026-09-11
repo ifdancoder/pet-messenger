@@ -17,7 +17,7 @@ import (
 
 type fakeRoomServer struct {
 	mediav1.UnimplementedRoomControlServer
-	created, closed, muted, removed []string
+	created, closed, muted, unmuted, removed []string
 }
 
 func (f *fakeRoomServer) CreateRoom(_ context.Context, r *mediav1.CreateRoomRequest) (*mediav1.CreateRoomResponse, error) {
@@ -33,6 +33,11 @@ func (f *fakeRoomServer) CloseRoom(_ context.Context, r *mediav1.CloseRoomReques
 func (f *fakeRoomServer) MuteParticipant(_ context.Context, r *mediav1.MuteParticipantRequest) (*mediav1.MuteParticipantResponse, error) {
 	f.muted = append(f.muted, r.CallId+"/"+r.UserId)
 	return &mediav1.MuteParticipantResponse{}, nil
+}
+
+func (f *fakeRoomServer) UnmuteParticipant(_ context.Context, r *mediav1.UnmuteParticipantRequest) (*mediav1.UnmuteParticipantResponse, error) {
+	f.unmuted = append(f.unmuted, r.CallId+"/"+r.UserId)
+	return &mediav1.UnmuteParticipantResponse{}, nil
 }
 
 func (f *fakeRoomServer) RemoveParticipant(_ context.Context, r *mediav1.RemoveParticipantRequest) (*mediav1.RemoveParticipantResponse, error) {
@@ -75,5 +80,19 @@ func TestRoomControlClient_BadToken(t *testing.T) {
 	err := c.CreateRoom(context.Background(), usecasecall.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("want Unauthenticated, got %v", err)
+	}
+}
+
+func TestRoomControlClient_UnmuteParticipant(t *testing.T) {
+	fake := &fakeRoomServer{}
+	addr := startServer(t, "secret", fake)
+	c := NewRoomControlClient(&config.Config{Media: config.MediaConfig{RPCToken: "secret"}})
+	t.Cleanup(c.Close)
+	callID, userID := uuid.New(), uuid.New()
+	if err := c.UnmuteParticipant(context.Background(), usecasecall.Node{GRPCAddr: addr}, callID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.unmuted) != 1 || fake.unmuted[0] != callID.String()+"/"+userID.String() {
+		t.Fatalf("unmuted = %v", fake.unmuted)
 	}
 }

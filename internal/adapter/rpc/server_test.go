@@ -74,6 +74,9 @@ func TestRoomControlServer_Lifecycle(t *testing.T) {
 	if _, err := c.MuteParticipant(ctx, &mediav1.MuteParticipantRequest{CallId: callID.String(), UserId: userID.String()}); status.Code(err) != codes.NotFound {
 		t.Fatalf("MuteParticipant = %v, want NotFound", err)
 	}
+	if _, err := c.UnmuteParticipant(ctx, &mediav1.UnmuteParticipantRequest{CallId: callID.String(), UserId: userID.String()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("UnmuteParticipant = %v, want NotFound", err)
+	}
 	if _, err := c.RemoveParticipant(ctx, &mediav1.RemoveParticipantRequest{CallId: callID.String(), UserId: userID.String()}); status.Code(err) != codes.NotFound {
 		t.Fatalf("RemoveParticipant = %v, want NotFound", err)
 	}

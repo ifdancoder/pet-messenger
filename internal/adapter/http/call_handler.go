@@ -19,6 +19,7 @@ type callService interface {
 	JoinCall(ctx context.Context, actorID, callID uuid.UUID, role domaincall.Role) (usecasecall.JoinInfo, error)
 	EndCall(ctx context.Context, actorID, callID uuid.UUID) error
 	MuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error
+	UnmuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error
 	RemoveParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error
 	GetLiveForConversation(ctx context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, error)
 }
@@ -36,6 +37,7 @@ func (h *CallHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/:id/join", h.Join)
 	rg.POST("/:id/end", h.End)
 	rg.POST("/:id/participants/:userId/mute", h.Mute)
+	rg.POST("/:id/participants/:userId/unmute", h.Unmute)
 	rg.DELETE("/:id/participants/:userId", h.Remove)
 }
 
@@ -128,6 +130,10 @@ func (h *CallHandler) End(c *gin.Context) {
 
 func (h *CallHandler) Mute(c *gin.Context) {
 	h.targeted(c, h.svc.MuteParticipant)
+}
+
+func (h *CallHandler) Unmute(c *gin.Context) {
+	h.targeted(c, h.svc.UnmuteParticipant)
 }
 
 func (h *CallHandler) Remove(c *gin.Context) {

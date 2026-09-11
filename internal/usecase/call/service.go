@@ -244,14 +244,26 @@ func (s *Service) ReapStaleCalls(ctx context.Context) (int, error) {
 }
 
 func (s *Service) MuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error {
-	return s.moderateParticipant(ctx, actorID, callID, targetID, false)
+	return s.moderateParticipant(ctx, actorID, callID, targetID, s.rooms.MuteParticipant)
+}
+
+func (s *Service) UnmuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error {
+	return s.moderateParticipant(ctx, actorID, callID, targetID, s.rooms.UnmuteParticipant)
 }
 
 func (s *Service) RemoveParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error {
-	return s.moderateParticipant(ctx, actorID, callID, targetID, true)
+	return s.moderateParticipant(ctx, actorID, callID, targetID, func(ctx context.Context, node Node, callID, targetID uuid.UUID) error {
+		if err := s.rooms.RemoveParticipant(ctx, node, callID, targetID); err != nil {
+			return err
+		}
+		if err := s.calls.MarkParticipantLeft(ctx, callID, targetID, time.Now().UTC()); err != nil {
+			log.Printf("call: MarkParticipantLeft %s/%s: %v", callID, targetID, err)
+		}
+		return nil
+	})
 }
 
-func (s *Service) moderateParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID, remove bool) error {
+func (s *Service) moderateParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID, action func(context.Context, Node, uuid.UUID, uuid.UUID) error) error {
 	c, err := s.calls.GetByID(ctx, callID)
 	if err != nil {
 		return err
@@ -269,16 +281,7 @@ func (s *Service) moderateParticipant(ctx context.Context, actorID, callID, targ
 	if err != nil {
 		return ErrMediaNodeGone
 	}
-	if remove {
-		if err := s.rooms.RemoveParticipant(ctx, node, callID, targetID); err != nil {
-			return err
-		}
-		if err := s.calls.MarkParticipantLeft(ctx, callID, targetID, time.Now().UTC()); err != nil {
-			log.Printf("call: MarkParticipantLeft %s/%s: %v", callID, targetID, err)
-		}
-		return nil
-	}
-	return s.rooms.MuteParticipant(ctx, node, callID, targetID)
+	return action(ctx, node, callID, targetID)
 }
 
 func (s *Service) HandleParticipantLeft(ctx context.Context, callID, userID uuid.UUID) error {

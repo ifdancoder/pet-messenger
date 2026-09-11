@@ -22,6 +22,7 @@ const (
 	RoomControl_CreateRoom_FullMethodName        = "/media.v1.RoomControl/CreateRoom"
 	RoomControl_CloseRoom_FullMethodName         = "/media.v1.RoomControl/CloseRoom"
 	RoomControl_MuteParticipant_FullMethodName   = "/media.v1.RoomControl/MuteParticipant"
+	RoomControl_UnmuteParticipant_FullMethodName = "/media.v1.RoomControl/UnmuteParticipant"
 	RoomControl_RemoveParticipant_FullMethodName = "/media.v1.RoomControl/RemoveParticipant"
 	RoomControl_RoomStats_FullMethodName         = "/media.v1.RoomControl/RoomStats"
 )
@@ -33,6 +34,7 @@ type RoomControlClient interface {
 	CreateRoom(ctx context.Context, in *CreateRoomRequest, opts ...grpc.CallOption) (*CreateRoomResponse, error)
 	CloseRoom(ctx context.Context, in *CloseRoomRequest, opts ...grpc.CallOption) (*CloseRoomResponse, error)
 	MuteParticipant(ctx context.Context, in *MuteParticipantRequest, opts ...grpc.CallOption) (*MuteParticipantResponse, error)
+	UnmuteParticipant(ctx context.Context, in *UnmuteParticipantRequest, opts ...grpc.CallOption) (*UnmuteParticipantResponse, error)
 	RemoveParticipant(ctx context.Context, in *RemoveParticipantRequest, opts ...grpc.CallOption) (*RemoveParticipantResponse, error)
 	RoomStats(ctx context.Context, in *RoomStatsRequest, opts ...grpc.CallOption) (*RoomStatsResponse, error)
 }
@@ -75,6 +77,16 @@ func (c *roomControlClient) MuteParticipant(ctx context.Context, in *MutePartici
 	return out, nil
 }
 
+func (c *roomControlClient) UnmuteParticipant(ctx context.Context, in *UnmuteParticipantRequest, opts ...grpc.CallOption) (*UnmuteParticipantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnmuteParticipantResponse)
+	err := c.cc.Invoke(ctx, RoomControl_UnmuteParticipant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *roomControlClient) RemoveParticipant(ctx context.Context, in *RemoveParticipantRequest, opts ...grpc.CallOption) (*RemoveParticipantResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoveParticipantResponse)
@@ -102,6 +114,7 @@ type RoomControlServer interface {
 	CreateRoom(context.Context, *CreateRoomRequest) (*CreateRoomResponse, error)
 	CloseRoom(context.Context, *CloseRoomRequest) (*CloseRoomResponse, error)
 	MuteParticipant(context.Context, *MuteParticipantRequest) (*MuteParticipantResponse, error)
+	UnmuteParticipant(context.Context, *UnmuteParticipantRequest) (*UnmuteParticipantResponse, error)
 	RemoveParticipant(context.Context, *RemoveParticipantRequest) (*RemoveParticipantResponse, error)
 	RoomStats(context.Context, *RoomStatsRequest) (*RoomStatsResponse, error)
 	mustEmbedUnimplementedRoomControlServer()
@@ -122,6 +135,9 @@ func (UnimplementedRoomControlServer) CloseRoom(context.Context, *CloseRoomReque
 }
 func (UnimplementedRoomControlServer) MuteParticipant(context.Context, *MuteParticipantRequest) (*MuteParticipantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MuteParticipant not implemented")
+}
+func (UnimplementedRoomControlServer) UnmuteParticipant(context.Context, *UnmuteParticipantRequest) (*UnmuteParticipantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnmuteParticipant not implemented")
 }
 func (UnimplementedRoomControlServer) RemoveParticipant(context.Context, *RemoveParticipantRequest) (*RemoveParticipantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveParticipant not implemented")
@@ -204,6 +220,24 @@ func _RoomControl_MuteParticipant_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RoomControl_UnmuteParticipant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnmuteParticipantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RoomControlServer).UnmuteParticipant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RoomControl_UnmuteParticipant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RoomControlServer).UnmuteParticipant(ctx, req.(*UnmuteParticipantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _RoomControl_RemoveParticipant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RemoveParticipantRequest)
 	if err := dec(in); err != nil {
@@ -258,6 +292,10 @@ var RoomControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MuteParticipant",
 			Handler:    _RoomControl_MuteParticipant_Handler,
+		},
+		{
+			MethodName: "UnmuteParticipant",
+			Handler:    _RoomControl_UnmuteParticipant_Handler,
 		},
 		{
 			MethodName: "RemoveParticipant",

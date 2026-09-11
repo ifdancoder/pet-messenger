@@ -64,6 +64,21 @@ func (s *RoomControlServer) MuteParticipant(_ context.Context, r *mediav1.MutePa
 	return &mediav1.MuteParticipantResponse{}, nil
 }
 
+func (s *RoomControlServer) UnmuteParticipant(_ context.Context, r *mediav1.UnmuteParticipantRequest) (*mediav1.UnmuteParticipantResponse, error) {
+	cid, err := parseID(r.CallId)
+	if err != nil {
+		return nil, err
+	}
+	uid, err := parseID(r.UserId)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.mgr.Unmute(cid, uid); err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &mediav1.UnmuteParticipantResponse{}, nil
+}
+
 func (s *RoomControlServer) RemoveParticipant(_ context.Context, r *mediav1.RemoveParticipantRequest) (*mediav1.RemoveParticipantResponse, error) {
 	cid, err := parseID(r.CallId)
 	if err != nil {
