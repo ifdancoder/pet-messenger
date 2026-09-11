@@ -15,5 +15,6 @@ func main() {
 		fxapp.SFUModule,
 		fxapp.RPCServerModule,
 		fxapp.MediaNodeModule,
+		fxapp.SignalingModule,
 	).Run()
 }

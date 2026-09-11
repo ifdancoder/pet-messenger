@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
+	"net/http"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -15,6 +15,7 @@ import (
 	rpcadapter "pet-messenger/internal/adapter/rpc"
 	"pet-messenger/internal/adapter/rpc/mediav1"
 	"pet-messenger/internal/adapter/sfu"
+	"pet-messenger/internal/adapter/signaling"
 	"pet-messenger/internal/config"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	medianodeinfra "pet-messenger/internal/infrastructure/medianode"
@@ -102,15 +103,7 @@ var RPCServerModule = fx.Module("rpc-server",
 // --- media-node registry heartbeat ---
 
 func mediaNodeIdentity(cfg *config.Config) usecasecall.Node {
-	id := cfg.Media.NodeID
-	if id == "" {
-		if h, err := os.Hostname(); err == nil {
-			id = h
-		} else {
-			id = "media-unknown"
-		}
-	}
-	return usecasecall.Node{ID: id, GRPCAddr: cfg.Media.GRPCAddr, WSAddr: cfg.Media.WSAddr}
+	return usecasecall.Node{ID: config.MediaNodeID(cfg), GRPCAddr: cfg.Media.GRPCAddr, WSAddr: cfg.Media.WSAddr}
 }
 
 func startMediaNodeHeartbeat(lc fx.Lifecycle, cfg *config.Config, reg *medianodeinfra.RedisRegistry, mgr sfu.Manager) {
@@ -149,4 +142,45 @@ func startMediaNodeHeartbeat(lc fx.Lifecycle, cfg *config.Config, reg *medianode
 var MediaNodeModule = fx.Module("media-node",
 	fx.Provide(medianodeinfra.NewRedisRegistry),
 	fx.Invoke(startMediaNodeHeartbeat),
+)
+
+// --- WS signalling server ---
+
+func newSignalingServer(lc fx.Lifecycle, cfg *config.Config, srv *signaling.Server) {
+	httpSrv := &http.Server{Addr: wsListenAddr(cfg), Handler: srv.Handler()}
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			ln, err := net.Listen("tcp", httpSrv.Addr)
+			if err != nil {
+				return fmt.Errorf("signaling listen: %w", err)
+			}
+			go func() {
+				if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+					log.Printf("signaling: serve: %v", err)
+				}
+			}()
+			log.Printf("signaling: /rtc on %s", ln.Addr())
+			return nil
+		},
+		OnStop: func(ctx context.Context) error { return httpSrv.Shutdown(ctx) },
+	})
+}
+
+// wsListenAddr binds to the port of MEDIA_WS_ADDR (the host part may be a
+// non-locally-bindable advertised address, same reasoning as grpcListenAddr),
+// or ":8081" if unset.
+func wsListenAddr(cfg *config.Config) string {
+	if cfg.Media.WSAddr == "" {
+		return ":8081"
+	}
+	_, port, err := net.SplitHostPort(cfg.Media.WSAddr)
+	if err != nil {
+		return ":8081"
+	}
+	return ":" + port
+}
+
+var SignalingModule = fx.Module("signaling",
+	fx.Provide(signaling.NewServer),
+	fx.Invoke(newSignalingServer),
 )

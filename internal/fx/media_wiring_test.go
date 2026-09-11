@@ -17,6 +17,7 @@ func TestMediaModulesWireTogether(t *testing.T) {
 		fxapp.SFUModule,
 		fxapp.RPCServerModule,
 		fxapp.MediaNodeModule,
+		fxapp.SignalingModule,
 	); err != nil {
 		t.Fatalf("media fx graph does not resolve: %v", err)
 	}

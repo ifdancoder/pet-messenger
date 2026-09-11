@@ -86,6 +86,20 @@ func (c CORSConfig) OriginHostPatterns() []string {
 	return patterns
 }
 
+// MediaNodeID is this media pod's identity in the node registry and in
+// join-ticket claims: the configured MEDIA_NODE_ID, or the pod's hostname
+// when unset. Shared by the heartbeat and the signalling server so both
+// agree on which node a ticket was minted for.
+func MediaNodeID(cfg *Config) string {
+	if cfg.Media.NodeID != "" {
+		return cfg.Media.NodeID
+	}
+	if h, err := os.Hostname(); err == nil {
+		return h
+	}
+	return "media-unknown"
+}
+
 type Config struct {
 	Port     int
 	DB       DBConfig
