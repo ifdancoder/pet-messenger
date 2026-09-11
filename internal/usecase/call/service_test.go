@@ -33,6 +33,14 @@ func newFakeCallRepo() *fakeCallRepo {
 	}
 }
 
+func (f *fakeCallRepo) ListLive(context.Context) ([]*domaincall.Call, error) {
+	out := make([]*domaincall.Call, 0, len(f.live))
+	for _, c := range f.live {
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 func (f *fakeCallRepo) Create(_ context.Context, c *domaincall.Call) error {
 	if f.createErr != nil {
 		return f.createErr
@@ -107,6 +115,9 @@ func (f *fakeCallRepo) seedLive(c *domaincall.Call) {
 type fakeConvRepo struct {
 	conv    *conversation.Conversation
 	members map[uuid.UUID]*conversation.Member
+	// extra lets a test give GetByID more than the one `conv` it can resolve,
+	// for scenarios (like the reaper) that touch several conversations at once.
+	extra map[uuid.UUID]*conversation.Conversation
 }
 
 func (f *fakeConvRepo) Create(context.Context, *conversation.Conversation, []*conversation.Member) error {
@@ -115,6 +126,9 @@ func (f *fakeConvRepo) Create(context.Context, *conversation.Conversation, []*co
 func (f *fakeConvRepo) GetByID(_ context.Context, id uuid.UUID) (*conversation.Conversation, error) {
 	if f.conv != nil && f.conv.ID == id {
 		return f.conv, nil
+	}
+	if c, ok := f.extra[id]; ok {
+		return c, nil
 	}
 	return nil, conversation.ErrNotFound
 }
@@ -627,5 +641,50 @@ func TestHandleParticipantLeft(t *testing.T) {
 	// Unknown call / user is not an error.
 	if err := s.HandleParticipantLeft(context.Background(), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())); err != nil {
 		t.Fatalf("HandleParticipantLeft (unknown): %v", err)
+	}
+}
+
+func TestReapStaleCalls(t *testing.T) {
+	s, calls, convs, reg, _, events, _ := newSvc(t)
+	conv1ID, user1ID := groupChat(t, convs)
+	conv2ID := uuid.Must(uuid.NewV7())
+	convs.extra = map[uuid.UUID]*conversation.Conversation{
+		conv2ID: {ID: conv2ID, Kind: conversation.KindGroupChat},
+	}
+
+	c1 := mustCall(t, conv1ID, user1ID)
+	c2 := mustCall(t, conv2ID, user1ID)
+	calls.seedLive(c1)
+	calls.seedLive(c2)
+
+	reg.getErr = errors.New("node gone")
+
+	n, err := s.ReapStaleCalls(context.Background())
+	if err != nil {
+		t.Fatalf("ReapStaleCalls: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("ReapStaleCalls = %d, want 2", n)
+	}
+	if calls.byID[c1.ID].IsLive() || calls.byID[c2.ID].IsLive() {
+		t.Fatalf("both calls should be ended: %+v %+v", calls.byID[c1.ID], calls.byID[c2.ID])
+	}
+	var ended int
+	for _, e := range events.events {
+		if e == message.SystemCallEnded {
+			ended++
+		}
+	}
+	if ended != 2 {
+		t.Fatalf("call_ended posted %d times, want 2", ended)
+	}
+
+	// Idempotent: nothing is live anymore, so a second sweep ends nothing.
+	n, err = s.ReapStaleCalls(context.Background())
+	if err != nil {
+		t.Fatalf("ReapStaleCalls (2nd): %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("ReapStaleCalls (2nd) = %d, want 0", n)
 	}
 }

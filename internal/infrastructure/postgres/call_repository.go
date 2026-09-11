@@ -135,3 +135,24 @@ func (r *CallRepository) ListParticipants(ctx context.Context, callID uuid.UUID)
 	}
 	return out, nil
 }
+
+func (r *CallRepository) ListLive(ctx context.Context) ([]*call.Call, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+callCols+` FROM calls WHERE status = 'active' ORDER BY started_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query live calls: %w", err)
+	}
+	defer rows.Close()
+	var out []*call.Call
+	for rows.Next() {
+		c, err := scanCall(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan live call: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate live calls: %w", err)
+	}
+	return out, nil
+}

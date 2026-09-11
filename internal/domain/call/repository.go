@@ -29,4 +29,6 @@ type Repository interface {
 	// active row is not an error (idempotent).
 	MarkParticipantLeft(ctx context.Context, callID, userID uuid.UUID, leftAt time.Time) error
 	ListParticipants(ctx context.Context, callID uuid.UUID) ([]*Participant, error)
+	// ListLive returns every currently-active call, oldest first.
+	ListLive(ctx context.Context) ([]*Call, error)
 }

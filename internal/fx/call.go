@@ -44,7 +44,7 @@ var CallModule = fx.Module("call",
 		func(n *notifinfra.CallNotifier) usecasecall.CallNotifier { return n },
 		notifinfra.NewCallNotifier,
 	),
-	fx.Invoke(startCallEventSubscription),
+	fx.Invoke(startCallEventSubscription, callevents.StartReaper),
 )
 
 func startCallEventSubscription(lc fx.Lifecycle, nc *natsgo.Conn, cons *callevents.Consumer) {

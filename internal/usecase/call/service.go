@@ -221,6 +221,28 @@ func (s *Service) finishCall(ctx context.Context, c *domaincall.Call, actorID *u
 	return nil
 }
 
+// ReapStaleCalls is the hard-crash backstop: a media pod that dies without
+// ever publishing call.<id>.ended leaves its calls stuck 'active' forever.
+// Called periodically, it treats a live call whose node is no longer in the
+// registry as dead and closes it server-side.
+func (s *Service) ReapStaleCalls(ctx context.Context) (int, error) {
+	live, err := s.calls.ListLive(ctx)
+	if err != nil {
+		return 0, err
+	}
+	ended := 0
+	for _, c := range live {
+		if _, gerr := s.nodes.Get(ctx, c.MediaNodeID); gerr != nil {
+			if err := s.finishCall(ctx, c, nil); err != nil {
+				log.Printf("call: reap %s: %v", c.ID, err)
+				continue
+			}
+			ended++
+		}
+	}
+	return ended, nil
+}
+
 func (s *Service) MuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error {
 	return s.moderateParticipant(ctx, actorID, callID, targetID, false)
 }

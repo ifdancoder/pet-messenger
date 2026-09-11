@@ -32,6 +32,15 @@ func (f *fakeCallRepo) Create(_ context.Context, c *domaincall.Call) error {
 	f.byID[c.ID] = c
 	return nil
 }
+func (f *fakeCallRepo) ListLive(context.Context) ([]*domaincall.Call, error) {
+	var out []*domaincall.Call
+	for _, c := range f.byID {
+		if c.IsLive() {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
 func (f *fakeCallRepo) GetByID(_ context.Context, id uuid.UUID) (*domaincall.Call, error) {
 	if c, ok := f.byID[id]; ok {
 		return c, nil
