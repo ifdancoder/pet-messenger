@@ -38,7 +38,7 @@ func TestCrossPodDelivery(t *testing.T) {
 	}
 
 	// pod B: hub + msg.> subscription + WS handler behind httptest
-	ncB, err := natsgo.Connect(url)
+	ncB, err := connectTestNATS(url)
 	if err != nil {
 		t.Fatalf("pod B connect: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestCrossPodDelivery(t *testing.T) {
 	}
 
 	// pod A publishes
-	ncA, err := natsgo.Connect(url)
+	ncA, err := connectTestNATS(url)
 	if err != nil {
 		t.Fatalf("pod A connect: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 
 	// pod B: Hub + a member.revoked.> subscription that calls hub.DropSubscription
 	hub := NewHub()
-	ncB, err := natsgo.Connect(url)
+	ncB, err := connectTestNATS(url)
 	if err != nil {
 		t.Fatalf("pod B connect: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 	hub.Subscribe(conn, conv)
 
 	// pod A publishes the revoke
-	ncA, err := natsgo.Connect(url)
+	ncA, err := connectTestNATS(url)
 	if err != nil {
 		t.Fatalf("pod A connect: %v", err)
 	}
@@ -204,4 +204,18 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+// The listening port can become ready before NATS completes startup.
+func connectTestNATS(url string) (*natsgo.Conn, error) {
+	var lastErr error
+	for range 20 {
+		nc, err := natsgo.Connect(url, natsgo.Timeout(time.Second))
+		if err == nil {
+			return nc, nil
+		}
+		lastErr = err
+		time.Sleep(250 * time.Millisecond)
+	}
+	return nil, lastErr
 }
