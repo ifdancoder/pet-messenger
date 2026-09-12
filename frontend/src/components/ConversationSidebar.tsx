@@ -25,7 +25,7 @@ export function ConversationSidebar({ session, conversations, activeConversation
   }
   return <aside className="sidebar">
     <header className="sidebar__header"><Brand /><IconButton label="Выйти" onClick={onLogout}>↗</IconButton></header>
-    <section className="identity"><div className="identity__avatar">{(session.user.display_name || session.user.username).slice(0, 1).toUpperCase()}</div><div><strong>{session.user.display_name || session.user.username}</strong><span>@{session.user.username}</span></div><Button variant="ghost" className="identity__copy" onClick={() => void copyID()}>{copied ? 'Скопировано' : 'Копировать ID'}</Button></section>
+    <section className="identity"><div className="identity__avatar">{(session.user.display_name || session.user.username).slice(0, 1).toUpperCase()}</div><div><strong>{session.user.display_name || session.user.username}</strong><span>@{session.user.username}</span></div><Button variant="ghost" className="identity__copy" onClick={() => void copyID()}>{copied ? 'Скопировано' : 'Копировать мой ID'}</Button></section>
     <div className="sidebar__section-title"><h2>Диалоги</h2><Button variant="secondary" className="button--compact" onClick={() => setIsComposerOpen(value => !value)}>Новый</Button></div>
     {isComposerOpen ? <NewConversationForm onCreate={onCreate} /> : null}
     <nav className="conversation-list" aria-label="Диалоги">

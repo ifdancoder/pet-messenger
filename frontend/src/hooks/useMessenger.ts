@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { APIError, api } from '../lib/api'
 import { clearSession } from '../lib/session'
 import type { Conversation, Message, Session } from '../types'
+import { useRealtimeChat } from './useRealtimeChat'
 
 const refreshInterval = 5_000
 
@@ -51,7 +52,9 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
   const selectConversation = useCallback((conversation: Conversation) => { setError(''); setActiveConversation(conversation) }, [])
   const createConversation = useCallback(async (kind: 'direct' | 'group', value: string) => {
     try {
-      const conversation = kind === 'direct' ? await api.createDirect(value, session.access_token) : await api.createGroup(value, session.access_token)
+      const conversation = kind === 'direct'
+        ? await api.userByUsername(value, session.access_token).then(user => api.createDirect(user.id, session.access_token))
+        : await api.createGroup(value, session.access_token)
       setConversations(previous => [conversation, ...previous.filter(item => item.id !== conversation.id)])
       setActiveConversation(conversation); setMessages([]); setError('')
       return true
@@ -66,5 +69,15 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     } catch (error) { handleError(error); return false }
   }, [activeConversation, handleError, loadConversations, session.access_token])
 
-  return { conversations, activeConversation, messages, error, setError, isLoadingConversations, isLoadingMessages, selectConversation, createConversation, sendMessage }
+  const receiveRealtimeFrame = useCallback((frame: { type: string; conversation_id?: string; message?: Message }) => {
+    if (!frame.conversation_id || frame.conversation_id !== activeConversation?.id) return
+    if (frame.type === 'message.created' && frame.message) {
+      const message = frame.message
+      setMessages(previous => previous.some(item => item.id === message.id) ? previous : [...previous, message])
+      void loadConversations()
+    } else if (frame.type === 'message.updated' || frame.type === 'message.deleted') void loadMessages(activeConversation)
+  }, [activeConversation, loadConversations, loadMessages])
+  const isRealtimeConnected = useRealtimeChat(session.access_token, activeConversation?.id, receiveRealtimeFrame)
+
+  return { conversations, activeConversation, messages, error, setError, isLoadingConversations, isLoadingMessages, isRealtimeConnected, selectConversation, createConversation, sendMessage }
 }

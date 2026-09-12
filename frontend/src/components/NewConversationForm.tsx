@@ -19,7 +19,7 @@ export function NewConversationForm({ onCreate }: Props) {
   }
   return <form className="new-conversation-form" onSubmit={submit}>
     <SelectField value={kind} onChange={event => setKind(event.target.value as 'direct' | 'group')} aria-label="Тип диалога"><option value="direct">Личный диалог</option><option value="group">Группа</option></SelectField>
-    <TextField name="value" placeholder={kind === 'direct' ? 'UUID пользователя' : 'Название группы'} required />
+    <TextField name="value" placeholder={kind === 'direct' ? 'Логин пользователя' : 'Название группы'} required />
     <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Создаю…' : 'Создать'}</Button>
   </form>
 }

@@ -11,6 +11,7 @@ export type Conversation = {
 
 export type Message = {
   id: string
+  seq?: number
   sender_id?: string
   content: string
   created_at: string

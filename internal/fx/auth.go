@@ -26,5 +26,6 @@ var AuthModule = fx.Module("auth",
 		newRefreshTTL,
 		usecaseauth.NewService,
 		httpadapter.NewAuthHandler,
+		httpadapter.NewUserHandler,
 	),
 )
