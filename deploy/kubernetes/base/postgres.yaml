@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata: {name: postgres}
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgres}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - {name: POSTGRES_DB, value: app}
+            - {name: POSTGRES_USER, value: app}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: pet-messenger-secrets, key: BLUEPRINT_DB_PASSWORD}}
+          ports: [{containerPort: 5432}]
+          readinessProbe: {exec: {command: [sh, -c, 'pg_isready -U app -d app']}, initialDelaySeconds: 5}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 2Gi}}}

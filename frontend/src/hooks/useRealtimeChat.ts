@@ -5,7 +5,10 @@ type Frame = { type: string; conversation_id?: string; message?: Message }
 
 function websocketURL() {
   const apiURL = import.meta.env.VITE_API_URL ?? `http://localhost:${import.meta.env.VITE_PORT ?? '8080'}`
-  return `${apiURL.replace(/^http/, 'ws')}/ws`
+  const url = new URL(apiURL, window.location.origin)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.pathname = `${url.pathname.replace(/\/$/, '')}/ws`
+  return url.toString()
 }
 
 export function useRealtimeChat(token: string, conversationID: string | undefined, onMessage: (frame: Frame) => void) {

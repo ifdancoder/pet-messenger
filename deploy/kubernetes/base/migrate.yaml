@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: migrate}
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      imagePullSecrets: [{name: registry-credentials}]
+      containers:
+        - name: migrate
+          image: 130.17.20.23:5000/pet-messenger-migrate:7d63ee0
+          imagePullPolicy: Always
+          envFrom: [{configMapRef: {name: pet-messenger-config}}, {secretRef: {name: pet-messenger-secrets}}]

@@ -1,0 +1,2 @@
+namespace: pet-messenger
+resources: [../../base]

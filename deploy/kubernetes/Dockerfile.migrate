@@ -1,0 +1,11 @@
+FROM golang:1.26-alpine AS build
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o migrate ./cmd/migrate
+
+FROM alpine:3.20.1
+WORKDIR /app
+COPY --from=build /app/migrate /app/migrate
+ENTRYPOINT ["/app/migrate", "-direction", "up"]

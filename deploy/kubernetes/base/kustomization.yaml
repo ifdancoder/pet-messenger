@@ -1,0 +1,11 @@
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - redis.yaml
+  - nats.yaml
+  - coturn.yaml
+  - media.yaml
+  - api.yaml
+  - frontend.yaml
+  - migrate.yaml

@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: coturn-config}
+data:
+  turnserver.conf: |
+    listening-port=3478
+    fingerprint
+    use-auth-secret
+    static-auth-secret=devsecret
+    realm=media.local
+    no-tls
+    no-dtls
+    min-port=49160
+    max-port=49200
+    log-file=stdout
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: coturn}
+spec:
+  selector: {matchLabels: {app: coturn}}
+  template:
+    metadata: {labels: {app: coturn}}
+    spec:
+      hostNetwork: true
+      containers:
+        - name: coturn
+          image: coturn/coturn:4.6
+          args: [-c, /etc/coturn/turnserver.conf]
+          volumeMounts: [{name: config, mountPath: /etc/coturn}]
+      volumes: [{name: config, configMap: {name: coturn-config}}]
