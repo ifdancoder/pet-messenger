@@ -1,0 +1,17 @@
+export type User = { id: string; username: string; display_name: string }
+
+export type Session = { access_token: string; user: User }
+
+export type Conversation = {
+  id: string
+  kind: string
+  title: string
+  last_message_at: string
+}
+
+export type Message = {
+  id: string
+  sender_id?: string
+  content: string
+  created_at: string
+}
