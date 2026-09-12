@@ -2,8 +2,9 @@ import { useCallback, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
-type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string }
+type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
 type StreamEntry = { id: string; stream: MediaStream }
+export type CallPeer = { user_id: string; role: string; muted: boolean }
 
 async function localMedia() {
   const devices = await navigator.mediaDevices.enumerateDevices()
@@ -20,6 +21,7 @@ export function useCall(session: Session) {
   const callID = useRef<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<StreamEntry[]>([])
+  const [peers, setPeers] = useState<CallPeer[]>([])
   const [error, setError] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
@@ -29,7 +31,7 @@ export function useCall(session: Session) {
     signal.current?.close(); signal.current = null
     peer.current?.close(); peer.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
-    setLocalStream(null); setRemoteStreams([]); setIsOpen(false); setIsConnecting(false)
+    setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false)
     callID.current = null
     if (end && id) await api.endCall(id, session.access_token).catch(() => undefined)
   }, [session.access_token])
@@ -69,7 +71,8 @@ export function useCall(session: Session) {
         } else if (frame.type === 'answer' && frame.sdp) await connection.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
         else if (frame.type === 'candidate' && frame.candidate) {
           if (connection.remoteDescription) await connection.addIceCandidate(frame.candidate); else pendingCandidates.push(frame.candidate)
-        } else if (frame.type === 'removed') await close(false)
+        } else if (frame.type === 'peers' && frame.peers) setPeers(frame.peers)
+        else if (frame.type === 'removed') await close(false)
         else if (frame.type === 'error') setError(frame.message ?? 'Ошибка звонка')
         if (connection.remoteDescription) for (const candidate of pendingCandidates.splice(0)) await connection.addIceCandidate(candidate)
       })
@@ -91,5 +94,14 @@ export function useCall(session: Session) {
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [])
 
-  return { start, close, shareScreen, localStream, remoteStreams, error, isConnecting, isOpen }
+  const moderate = useCallback(async (userID: string, action: 'mute' | 'unmute' | 'remove') => {
+    if (!callID.current) return
+    try {
+      if (action === 'mute') await api.muteCallParticipant(callID.current, userID, session.access_token)
+      else if (action === 'unmute') await api.unmuteCallParticipant(callID.current, userID, session.access_token)
+      else await api.removeCallParticipant(callID.current, userID, session.access_token)
+    } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
+  }, [session.access_token])
+
+  return { start, close, shareScreen, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen }
 }
