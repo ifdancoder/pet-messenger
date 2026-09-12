@@ -30,6 +30,7 @@ export const api = {
   createGroup: (title: string, token: string) => request<Conversation>('/conversations/groups', token, { method: 'POST', body: JSON.stringify({ title }) }),
   members: (conversationID: string, token: string) => request<{ members: MemberProfile[] }>(`/conversations/${conversationID}/members`, token),
   addMember: (conversationID: string, userID: string, token: string) => request<void>(`/conversations/${conversationID}/members`, token, { method: 'POST', body: JSON.stringify({ user_id: userID }) }),
+  removeMember: (conversationID: string, userID: string, token: string) => request<void>(`/conversations/${conversationID}/members/${userID}`, token, { method: 'DELETE' }),
   sendMessage: (conversationID: string, content: string, token: string) => request<Message>(`/conversations/${conversationID}/messages`, token, { method: 'POST', body: JSON.stringify({ content, idempotency_key: crypto.randomUUID() }) }),
   startCall: (conversationID: string, token: string) => request<{ call: Call; join: CallJoin }>(`/conversations/${conversationID}/calls`, token, { method: 'POST' }),
   endCall: (callID: string, token: string) => request<void>(`/calls/${callID}/end`, token, { method: 'POST' }),
