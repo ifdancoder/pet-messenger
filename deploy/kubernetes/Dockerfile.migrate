@@ -8,4 +8,5 @@ RUN go build -o migrate ./cmd/migrate
 FROM alpine:3.20.1
 WORKDIR /app
 COPY --from=build /app/migrate /app/migrate
+COPY db/migrations /app/db/migrations
 ENTRYPOINT ["/app/migrate", "-direction", "up"]

@@ -3,6 +3,7 @@ kind: ConfigMap
 metadata:
   name: pet-messenger-config
 data:
+  PORT: "8080"
   BLUEPRINT_DB_HOST: postgres
   BLUEPRINT_DB_PORT: "5432"
   BLUEPRINT_DB_DATABASE: app
