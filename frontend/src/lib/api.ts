@@ -1,4 +1,4 @@
-import type { Conversation, Message, Session, User } from '../types'
+import type { Conversation, MemberProfile, Message, Session, User } from '../types'
 
 const apiURL = import.meta.env.VITE_API_URL ?? `http://localhost:${import.meta.env.VITE_PORT ?? '8080'}`
 
@@ -28,6 +28,8 @@ export const api = {
   userByUsername: (username: string, token: string) => request<User>(`/users/${encodeURIComponent(username)}`, token),
   createDirect: (userID: string, token: string) => request<Conversation>('/conversations/direct', token, { method: 'POST', body: JSON.stringify({ user_id: userID }) }),
   createGroup: (title: string, token: string) => request<Conversation>('/conversations/groups', token, { method: 'POST', body: JSON.stringify({ title }) }),
+  members: (conversationID: string, token: string) => request<{ members: MemberProfile[] }>(`/conversations/${conversationID}/members`, token),
+  addMember: (conversationID: string, userID: string, token: string) => request<void>(`/conversations/${conversationID}/members`, token, { method: 'POST', body: JSON.stringify({ user_id: userID }) }),
   sendMessage: (conversationID: string, content: string, token: string) => request<Message>(`/conversations/${conversationID}/messages`, token, { method: 'POST', body: JSON.stringify({ content, idempotency_key: crypto.randomUUID() }) }),
   startCall: (conversationID: string, token: string) => request<{ call: Call; join: CallJoin }>(`/conversations/${conversationID}/calls`, token, { method: 'POST' }),
   endCall: (callID: string, token: string) => request<void>(`/calls/${callID}/end`, token, { method: 'POST' }),

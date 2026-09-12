@@ -16,3 +16,13 @@ export type Message = {
   content: string
   created_at: string
 }
+
+export type MemberProfile = {
+  user_id: string
+  username: string
+  display_name: string
+  avatar_url: string
+  role: string
+  admin_tier: string
+  is_creator: boolean
+}
