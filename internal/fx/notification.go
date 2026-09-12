@@ -61,7 +61,10 @@ func provideMultiPusher(cfg *config.Config) (push.Pusher, error) {
 func startNotifWorker(lc fx.Lifecycle, js natsgo.JetStreamContext, w *notify.Worker) {
 	var sub *natsgo.Subscription
 	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
+		OnStart: func(ctx context.Context) error {
+			if err := ensureNotifStream(ctx, js); err != nil {
+				return err
+			}
 			s, err := js.QueueSubscribe("notif.>", "notif-workers", w.HandleMsg,
 				natsgo.Durable("notif-worker"),
 				natsgo.ManualAck(),

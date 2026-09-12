@@ -19,6 +19,12 @@
   <button id="start">Start / Join</button>
   <button id="share">Share screen</button>
 </div>
+<div>
+  Participant <select id="participant"><option value="">Connect first</option></select>
+  <button id="mute">Mute</button>
+  <button id="unmute">Unmute</button>
+  <button id="kick">Kick</button>
+</div>
 <div id="videos"></div>
 <div id="log"></div>
 
@@ -27,6 +33,38 @@ const log = (...a) => { const el = document.getElementById('log'); el.textConten
 
 let pc, ws, callID;
 const remoteVideos = new Map(); // track id -> <video>
+
+// The URL fragment is never sent to the server. It makes two-tab local testing
+// less error-prone: /rtc-test.html#token=...&conv=... pre-fills the form.
+const testParams = new URLSearchParams(location.hash.slice(1));
+for (const [field, param] of [['api', 'api'], ['token', 'token'], ['conv', 'conv']]) {
+  const value = testParams.get(param);
+  if (value) document.getElementById(field).value = value;
+}
+
+function currentUserID() {
+  const token = document.getElementById('token').value;
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload)).sub || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function updateParticipants(peers) {
+  const select = document.getElementById('participant');
+  const previous = select.value;
+  const me = currentUserID();
+  select.replaceChildren();
+  for (const peer of peers.filter(peer => peer.user_id !== me)) {
+    const option = document.createElement('option');
+    option.value = peer.user_id;
+    option.textContent = `${peer.user_id} (${peer.role}${peer.muted ? ', muted' : ''})`;
+    select.appendChild(option);
+  }
+  select.value = previous;
+}
 
 async function api(method, path, token) {
   const res = await fetch(document.getElementById('api').value + path, {
@@ -76,12 +114,14 @@ async function connect(join) {
     v.srcObject = stream;
   };
 
-  const local = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+  const local = await localMedia();
   for (const track of local.getTracks()) pc.addTrack(track, local);
-  const localVideo = document.createElement('video');
-  localVideo.autoplay = true; localVideo.muted = true; localVideo.playsInline = true;
-  localVideo.srcObject = local;
-  document.getElementById('videos').prepend(localVideo);
+  if (local.getVideoTracks().length) {
+    const localVideo = document.createElement('video');
+    localVideo.autoplay = true; localVideo.muted = true; localVideo.playsInline = true;
+    localVideo.srcObject = local;
+    document.getElementById('videos').prepend(localVideo);
+  }
 
   ws = new WebSocket(join.media_ws_url + '?ticket=' + encodeURIComponent(join.ticket));
   ws.onopen = () => {
@@ -110,6 +150,7 @@ async function connect(join) {
         break;
       case 'peers':
         log('peers', JSON.stringify(frame.peers));
+        updateParticipants(frame.peers);
         break;
       case 'unmuted':
         log('unmuted by', frame.by);
@@ -129,6 +170,27 @@ async function connect(join) {
       for (const candidate of pendingCandidates.splice(0)) await pc.addIceCandidate(candidate);
     }
   });
+}
+
+// A machine without a camera or microphone can still join the signaling room
+// and test screen sharing. Inspect the available hardware first so a missing
+// camera does not produce a misleading failed getUserMedia attempt.
+async function localMedia() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audio = devices.some(d => d.kind === 'audioinput');
+  const video = devices.some(d => d.kind === 'videoinput');
+  if (!audio && !video) {
+    log('no camera or microphone detected; Share screen remains available');
+    return new MediaStream();
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio, video });
+    log('using', audio && video ? 'camera and microphone' : audio ? 'microphone' : 'camera');
+    return stream;
+  } catch (e) {
+    log('media permission or device error:', e.name);
+    return new MediaStream();
+  }
 }
 
 // The client sends the initial offer and offers again when adding screen media.
@@ -153,8 +215,23 @@ async function shareScreen() {
   document.getElementById('videos').appendChild(v);
 }
 
+async function moderate(action) {
+  const target = document.getElementById('participant').value;
+  const token = document.getElementById('token').value;
+  if (!callID || !target) throw new Error('Connect first, then select a participant');
+  if (action === 'kick') {
+    await api('DELETE', `/calls/${callID}/participants/${target}`, token);
+  } else {
+    await api('POST', `/calls/${callID}/participants/${target}/${action}`, token);
+  }
+  log(action, 'requested for', target);
+}
+
 document.getElementById('start').onclick = () => startOrJoin().catch(e => log('ERROR', e.message));
 document.getElementById('share').onclick = () => shareScreen().catch(e => log('ERROR', e.message));
+document.getElementById('mute').onclick = () => moderate('mute').catch(e => log('ERROR', e.message));
+document.getElementById('unmute').onclick = () => moderate('unmute').catch(e => log('ERROR', e.message));
+document.getElementById('kick').onclick = () => moderate('kick').catch(e => log('ERROR', e.message));
 </script>
 </body>
 </html>

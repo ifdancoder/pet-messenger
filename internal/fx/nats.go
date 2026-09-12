@@ -57,29 +57,26 @@ func newJetStream(nc *natsgo.Conn) (natsgo.JetStreamContext, error) {
 const notifStreamName = "NOTIF"
 
 // ensureNotifStream creates (or updates, idempotently) the NOTIF work-queue
-// stream on boot. Work-queue retention deletes a message as soon as a consumer
-// acks it, so a delivered notification intent leaves no residue; a 24h MaxAge
-// with DiscardOld bounds the backlog if the worker is down.
-func ensureNotifStream(lc fx.Lifecycle, js natsgo.JetStreamContext) {
-	lc.Append(fx.Hook{OnStart: func(context.Context) error {
-		cfg := &natsgo.StreamConfig{
-			Name:      notifStreamName,
-			Subjects:  []string{"notif.msg.*", "notif.member.*", "notif.call.*"},
-			Retention: natsgo.WorkQueuePolicy,
-			Storage:   natsgo.FileStorage,
-			MaxAge:    24 * time.Hour,
-			Discard:   natsgo.DiscardOld,
+// stream. It runs immediately before the worker subscription so Fx module
+// ordering cannot leave the consumer racing a first-time stream creation.
+func ensureNotifStream(ctx context.Context, js natsgo.JetStreamContext) error {
+	cfg := &natsgo.StreamConfig{
+		Name:      notifStreamName,
+		Subjects:  []string{"notif.msg.*", "notif.member.*", "notif.call.*"},
+		Retention: natsgo.WorkQueuePolicy,
+		Storage:   natsgo.FileStorage,
+		MaxAge:    24 * time.Hour,
+		Discard:   natsgo.DiscardOld,
+	}
+	if _, err := js.AddStream(cfg); err != nil {
+		if _, uerr := js.UpdateStream(cfg); uerr != nil {
+			return fmt.Errorf("ensure NOTIF stream: add=%v update=%v", err, uerr)
 		}
-		if _, err := js.AddStream(cfg); err != nil {
-			if _, uerr := js.UpdateStream(cfg); uerr != nil {
-				return fmt.Errorf("ensure NOTIF stream: add=%v update=%v", err, uerr)
-			}
-			log.Printf("nats: NOTIF stream updated")
-			return nil
-		}
-		log.Printf("nats: NOTIF stream ready")
+		log.Printf("nats: NOTIF stream updated")
 		return nil
-	}})
+	}
+	log.Printf("nats: NOTIF stream ready")
+	return nil
 }
 
 // startMessageSubscription opens the single per-pod msg.> subscription and feeds
@@ -158,7 +155,6 @@ var NATSModule = fx.Module("nats",
 		natsinfra.NewPublisher,
 		natsinfra.NewMemberEventPublisher,
 	),
-	fx.Invoke(ensureNotifStream),
 	fx.Invoke(startMessageSubscription),
 	fx.Invoke(startMemberRevocationSubscription),
 )

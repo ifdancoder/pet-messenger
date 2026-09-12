@@ -36,6 +36,24 @@ func (*callEvents) ParticipantJoined(uuid.UUID, uuid.UUID, string) {}
 func (*callEvents) ParticipantLeft(uuid.UUID, uuid.UUID)           {}
 func (e *callEvents) Ended(id uuid.UUID)                           { e.ended <- id }
 
+func waitForClosed(t *testing.T, pc *webrtc.PeerConnection) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(20 * time.Second)
+	defer timeout.Stop()
+	for {
+		if pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-timeout.C:
+			t.Fatal("removed peer connection did not close")
+		}
+	}
+}
+
 type rtcPeer struct {
 	pc      *webrtc.PeerConnection
 	ws      *websocket.Conn
@@ -401,9 +419,7 @@ checking:
 	if f := b.frame(t, func(f sfu.Frame) bool { return f.Type == sfu.FrameRemoved }); f.By != "server" {
 		t.Fatalf("removed by %q", f.By)
 	}
-	if b.pc.ConnectionState() != webrtc.PeerConnectionStateClosed {
-		t.Fatal("removed peer connection still open")
-	}
+	waitForClosed(t, b.pc)
 	st, err := control.RoomStats(ctx, &mediav1.RoomStatsRequest{CallId: callID.String()})
 	if err != nil {
 		t.Fatal(err)

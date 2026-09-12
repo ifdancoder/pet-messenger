@@ -1,4 +1,11 @@
 name: pet-messenger-media
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
 services:
   redis:
     image: redis:7
@@ -32,7 +39,8 @@ services:
       JWT_ED25519_SEED_BASE64: ${JWT_ED25519_SEED_BASE64}
       MEDIA_NODE_ID: media-1
       MEDIA_GRPC_ADDR: media:9090
-      MEDIA_WS_ADDR: media:8081
+      # Advertised to the browser; the service itself binds only to this port.
+      MEDIA_WS_ADDR: localhost:8081
       MEDIA_RPC_TOKEN: devtoken
       PORT: "0"
     depends_on: [redis, nats]

@@ -33,16 +33,62 @@ docker compose -f deploy/media/docker-compose.yml up --build
 
 ## 4. Create two users and a group chat
 
-Use the existing auth/conversation REST endpoints (`POST /auth/register`,
-`POST /auth/login`, `POST /conversations`) to register two users and put them
-both in a `group_chat`. Keep both access tokens and the conversation id.
+Open a second terminal in the repository root. The commands below need `curl`
+and `python3`; they register two users, create a group as the first user, and
+add the second user to it. They leave the two access tokens and the conversation
+id in shell variables for the next step.
+
+```bash
+API=http://localhost:8080
+json_field() {
+  python3 -c 'import json, sys; v = json.load(sys.stdin)
+for key in sys.argv[1].split("."): v = v[key]
+print(v)' "$1"
+}
+
+ALICE=$(curl -fsS -X POST "$API/auth/register" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice_demo","password":"password123","display_name":"Alice"}')
+BOB=$(curl -fsS -X POST "$API/auth/register" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"bob_demo","password":"password123","display_name":"Bob"}')
+
+ALICE_TOKEN=$(printf %s "$ALICE" | json_field access_token)
+BOB_TOKEN=$(printf %s "$BOB" | json_field access_token)
+BOB_ID=$(printf %s "$BOB" | json_field user.id)
+
+GROUP=$(curl -fsS -X POST "$API/conversations/groups" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Call test"}')
+CONVERSATION_ID=$(printf %s "$GROUP" | json_field id)
+
+curl -fsS -X POST "$API/conversations/$CONVERSATION_ID/members" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"user_id\":\"$BOB_ID\"}"
+
+printf 'Conversation: %s\nAlice token: %s\nBob token: %s\n' \
+  "$CONVERSATION_ID" "$ALICE_TOKEN" "$BOB_TOKEN"
+```
+
+If you rerun this exact block, choose new usernames or log in instead:
+`POST /auth/login` takes `{"username":"…","password":"…"}` and returns
+the same token shape.
 
 ## 5. Run the manual test page
 
-Open `deploy/media/rtc-test.html` in two browser tabs (a `file://` URL is
-fine — it only talks to `http://localhost:8080` and `ws://localhost:8081`).
-In each tab: paste the API base, that tab's access token, and the shared
-conversation id, then click **Start / Join**.
+Run a small local web server in a third terminal:
+
+```bash
+python3 -m http.server 5173 --directory deploy/media
+```
+
+Open `http://localhost:5173/rtc-test.html` in two browser tabs. In both tabs
+leave API base as `http://localhost:8080`, paste the shared conversation id,
+and paste Alice's token in the first tab and Bob's token in the second. Click
+**Start / Join** in the first tab, allow camera and microphone access, then do
+the same in the second tab.
 
 Verify:
 - Two-way audio + video appears in both tabs within a few seconds.
