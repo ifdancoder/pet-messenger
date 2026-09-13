@@ -1,19 +1,26 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CallPeer, RemoteStream } from '../hooks/useCall'
 import { Button, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream'>
-function VideoTile({ stream, muted, label }: { stream: MediaStream; muted?: boolean; label: string }) {
+type TileProps = { stream: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void }
+function FocusIcon({ focused }: { focused: boolean }) {
+  return focused
+    ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M3 15h6v6M21 15h-6v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+function VideoTile({ stream, muted, label, focused, onFocus }: TileProps) {
   const video = useRef<HTMLVideoElement>(null)
   useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
-  return <figure className="call-video"><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption></figure>
+  return <figure className="call-video"><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
-function ParticipantSection({ title, streams, muted }: { title: string; streams: StreamEntry[]; muted?: boolean }) {
-  return <article className="call-participant"><header><span>{title}</span><small>{streams.length > 1 ? 'видео и демонстрация' : 'медиа'}</small></header><div className="call-participant__media">{streams.map((entry, index) => <VideoTile key={entry.id} stream={entry.stream} muted={muted} label={index === 0 ? 'Камера' : 'Демонстрация экрана'} />)}</div></article>
+function ParticipantSection({ title, streams, muted, focusedID, onFocus }: { title: string; streams: StreamEntry[]; muted?: boolean; focusedID: string | null; onFocus: (id: string) => void }) {
+  return <article className="call-participant"><header><span>{title}</span><small>{streams.length > 1 ? 'видео и демонстрация' : 'медиа'}</small></header><div className="call-participant__media">{streams.map((entry, index) => <VideoTile key={entry.id} stream={entry.stream} muted={muted} label={index === 0 ? 'Камера' : 'Демонстрация экрана'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} />)}</div></article>
 }
 
 type Props = { localStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; onShare: () => Promise<void>; onToggleMute: () => void; onToggleCamera: () => void; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
 export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, onShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+  const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const otherPeers = peers.filter(peer => peer.user_id !== currentUserID)
   const title = isConnected ? 'Соединение установлено' : isConnecting ? 'Подключаемся…' : 'Соединение потеряно'
   const local = localStream ? [{ id: 'local', stream: localStream }] : []
@@ -24,5 +31,10 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
     const key = owner ?? `unknown:${stream.id}`
     sections.set(key, [...(sections.get(key) ?? []), stream])
   }
-  return <section className="call-overlay" aria-label="Звонок"><header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></header>{error ? <Notice>{error}</Notice> : null}<div className="call-grid">{local.length ? <ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} muted /> : null}{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && remoteStreams.length === 0 ? <div className="call-waiting">{otherPeers.length ? 'Собеседник подключён — ждём медиа' : 'Ожидаем собеседника'}</div> : null}</div><footer><Button variant="secondary" onClick={onToggleMute}>{isMuted ? 'Включить микрофон' : 'Выключить микрофон'}</Button><Button variant="secondary" onClick={onToggleCamera}>{isCameraOff ? 'Включить камеру' : 'Выключить камеру'}</Button><Button variant="secondary" onClick={() => void onShare()}>Показать экран</Button>{canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}</footer></section>
+  const allStreams = [...local, ...[...sections.values()].flat()]
+  const focused = focusedStreamID ? allStreams.find(stream => stream.id === focusedStreamID) : undefined
+  const toggleFocus = (id: string) => setFocusedStreamID(current => current === id ? null : id)
+  const labelFor = (id: string) => id === 'local' ? 'Вы' : [...sections.entries()].find(([, streams]) => streams.some(stream => stream.id === id))?.[0] ? nameFor([...sections.entries()].find(([, streams]) => streams.some(stream => stream.id === id))![0], 'Собеседник') : 'Собеседник'
+  const isLocal = (id: string) => id === 'local'
+  return <section className="call-overlay" aria-label="Звонок"><header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></header>{error ? <Notice>{error}</Notice> : null}{focused ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={labelFor(focused.id)} focused onFocus={() => toggleFocus(focused.id)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={labelFor(stream.id)} focused={false} onFocus={() => toggleFocus(stream.id)} />)}</div></div> : <div className="call-grid">{local.length ? <ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} muted focusedID={focusedStreamID} onFocus={toggleFocus} /> : null}{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} focusedID={focusedStreamID} onFocus={toggleFocus} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && remoteStreams.length === 0 ? <div className="call-waiting">{otherPeers.length ? 'Собеседник подключён — ждём медиа' : 'Ожидаем собеседника'}</div> : null}</div>}<footer><Button variant="secondary" onClick={onToggleMute}>{isMuted ? 'Включить микрофон' : 'Выключить микрофон'}</Button><Button variant="secondary" onClick={onToggleCamera}>{isCameraOff ? 'Включить камеру' : 'Выключить камеру'}</Button><Button variant="secondary" onClick={() => void onShare()}>Показать экран</Button>{canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}</footer></section>
 }
