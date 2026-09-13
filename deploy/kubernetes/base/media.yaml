@@ -21,7 +21,11 @@ spec:
         - name: media
           image: 130.17.20.23:5000/pet-messenger-media:7d63ee0
           imagePullPolicy: Always
-          env: [{name: PORT, value: "8081"}]
+          env:
+            - {name: PORT, value: "8081"}
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - {name: MEDIA_GRPC_ADDR, value: "$(POD_IP):9090"}
           envFrom: [{configMapRef: {name: pet-messenger-config}}, {secretRef: {name: pet-messenger-secrets}}]
           ports: [{name: ws, containerPort: 8081}, {name: grpc, containerPort: 9090}]
           readinessProbe: {tcpSocket: {port: grpc}, initialDelaySeconds: 3}

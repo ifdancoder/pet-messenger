@@ -11,8 +11,8 @@ data:
   BLUEPRINT_DB_SCHEMA: public
   REDIS_URL: redis://redis:6379
   NATS_URL: nats://nats:4222
-  MEDIA_GRPC_ADDR: media:9090
-  MEDIA_WS_ADDR: localhost:8081
+  MEDIA_GRPC_ADDR: media.pet-messenger.svc.cluster.local:9090
+  MEDIA_WS_ADDR: localhost:8082
   MEDIA_NODE_ID: media-1
   MEDIA_RPC_TOKEN: devtoken
   TURN_URL: turn:127.0.0.1:3478
