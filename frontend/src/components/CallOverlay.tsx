@@ -27,7 +27,7 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
   const nameFor = (userID: string, fallback: string) => participantNames[userID] ?? fallback
   const sections = new Map<string, StreamEntry[]>()
   for (const stream of remoteStreams) {
-    const owner = otherPeers.find(peer => peer.tracks?.some(track => stream.trackIDs.includes(track.track_id)))?.user_id
+    const owner = stream.ownerID ?? otherPeers.find(peer => peer.tracks?.some(track => stream.trackIDs.includes(track.track_id)))?.user_id
     const key = owner ?? `unknown:${stream.id}`
     sections.set(key, [...(sections.get(key) ?? []), stream])
   }

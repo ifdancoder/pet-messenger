@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
-export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[] }
+export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; ownerID?: string }
 export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; kind: string; label: string }[] }
 
 async function localMedia() {
@@ -12,6 +12,11 @@ async function localMedia() {
   const video = devices.some(device => device.kind === 'videoinput')
   if (!audio && !video) return new MediaStream()
   try { return await navigator.mediaDevices.getUserMedia({ audio, video }) } catch { return new MediaStream() }
+}
+
+function ownerIDFromForwardedStream(streamID: string) {
+  const match = /^pm-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})-/i.exec(streamID)
+  return match?.[1]
 }
 
 export function useCall(session: Session) {
@@ -75,7 +80,7 @@ export function useCall(session: Session) {
         if (event.streams.length === 0 && !stream.getTracks().some(track => track.id === event.track.id)) stream.addTrack(event.track)
         setRemoteStreams(previous => {
           const known = previous.find(item => item.id === stream.id)
-          if (!known) return [...previous, { id: stream.id, stream, trackIDs: [event.track.id] }]
+          if (!known) return [...previous, { id: stream.id, stream, trackIDs: [event.track.id], ownerID: ownerIDFromForwardedStream(stream.id) }]
           if (known.trackIDs.includes(event.track.id)) return previous
           return previous.map(item => item.id === stream.id ? { ...item, trackIDs: [...item.trackIDs, event.track.id] } : item)
         })

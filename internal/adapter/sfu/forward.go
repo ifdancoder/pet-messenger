@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 
+	"github.com/google/uuid"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
@@ -12,6 +13,15 @@ import (
 // rtpBufferSize is the read buffer for one forwarded RTP packet. 1500 covers
 // an Ethernet MTU, which is the ceiling Pion's SRTP session enforces anyway.
 const rtpBufferSize = 1500
+
+// forwardedStreamID keeps the publisher identity on every forwarded stream.
+// Browsers may assign a fresh remote track ID during renegotiation, so the
+// track ID alone is not a stable UI ownership key. The stream ID survives the
+// SFU forwarding path and lets clients put camera and screen share into the
+// same participant section.
+func forwardedStreamID(userID uuid.UUID, sourceStreamID string) string {
+	return "pm-" + userID.String() + "-" + sourceStreamID
+}
 
 // onPublish turns a newly arrived remote track into exactly one local track
 // and fans that local out to every other participant. A single copy loop feeds
@@ -25,7 +35,7 @@ func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
 		return // the publisher left (or reconnected) before the track landed
 	}
 
-	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, remote.ID(), remote.StreamID())
+	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, remote.ID(), forwardedStreamID(pub.userID, remote.StreamID()))
 	if err != nil {
 		log.Printf("sfu: room %s: new local track for %s: %v", r.callID, pub.userID, err)
 		return
