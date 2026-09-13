@@ -24,7 +24,6 @@ export function useCall(session: Session) {
   const signal = useRef<WebSocket | null>(null)
   const local = useRef<MediaStream | null>(null)
   const screen = useRef<MediaStream | null>(null)
-  const fallbackRemote = useRef<MediaStream | null>(null)
   const callID = useRef<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([])
@@ -41,7 +40,6 @@ export function useCall(session: Session) {
     peer.current?.close(); peer.current = null
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
-    fallbackRemote.current = null
     setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(false)
     callID.current = null
     if (end && id) await api.endCall(id, session.access_token).catch(() => undefined)
@@ -54,7 +52,6 @@ export function useCall(session: Session) {
       callID.current = call.id
       const connection = new RTCPeerConnection({ iceServers: join.ice_servers })
       peer.current = connection
-      fallbackRemote.current = new MediaStream()
       const pendingCandidates: RTCIceCandidateInit[] = []
       let operations = Promise.resolve()
       const enqueue = (task: () => Promise<void>) => { operations = operations.then(task).catch(error => setError(error instanceof Error ? error.message : 'Ошибка соединения')) }
@@ -77,14 +74,12 @@ export function useCall(session: Session) {
       }
       connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
       connection.ontrack = event => {
-        const stream = event.streams[0] ?? fallbackRemote.current
-        if (!stream) return
-        if (event.streams.length === 0 && !stream.getTracks().some(track => track.id === event.track.id)) stream.addTrack(event.track)
+        // A browser may put camera and screen tracks into one remote MediaStream.
+        // Keep a stream per track so each tile retains its own SFU label.
+        const stream = new MediaStream([event.track])
         setRemoteStreams(previous => {
-          const known = previous.find(item => item.id === stream.id)
-          if (!known) return [...previous, { id: stream.id, stream, trackIDs: [event.track.id], ownerID: ownerIDFromForwardedStream(stream.id) }]
-          if (known.trackIDs.includes(event.track.id)) return previous
-          return previous.map(item => item.id === stream.id ? { ...item, trackIDs: [...item.trackIDs, event.track.id] } : item)
+          if (previous.some(item => item.id === event.track.id)) return previous
+          return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], ownerID: ownerIDFromForwardedStream(event.streams[0]?.id ?? '') }]
         })
       }
       const stream = await localMedia()
