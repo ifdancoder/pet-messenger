@@ -11,6 +11,7 @@ import { useCall } from './hooks/useCall'
 import { useLiveCalls } from './hooks/useLiveCall'
 import { clearSession, readSession, saveSession } from './lib/session'
 import { playTone } from './lib/sounds'
+import { api } from './lib/api'
 import type { Conversation, Session } from './types'
 import './App.css'
 
@@ -19,6 +20,7 @@ function Messenger({ session, onLogout }: { session: Session; onLogout: () => vo
   const { start, close, shareScreen, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error: callError, isConnecting, isOpen, isMuted, isCameraOff } = useCall(session)
   const [callConversation, setCallConversation] = useState<Conversation | null>(null)
   const [membersConversation, setMembersConversation] = useState<Conversation | null>(null)
+  const [callParticipantNames, setCallParticipantNames] = useState<Record<string, string>>({})
   const liveCalls = useLiveCalls(session, messenger.conversations)
   const ringingCallID = useRef<string | null>(null)
   const [dismissedCallID, setDismissedCallID] = useState<string | null>(null)
@@ -30,8 +32,17 @@ function Messenger({ session, onLogout }: { session: Session; onLogout: () => vo
     playTone('call')
   }, [callConversation, incomingCall])
   useEffect(() => { if (callConversation) void Promise.resolve().then(() => start(callConversation)) }, [callConversation, start])
+  useEffect(() => {
+    if (!callConversation) { setCallParticipantNames({}); return }
+    let current = true
+    void api.members(callConversation.id, session.access_token)
+      .then(({ members }) => { if (current) setCallParticipantNames(Object.fromEntries(members.map(member => [member.user_id, `@${member.username} · ${member.display_name || member.username}`]))) })
+      .catch(() => { if (current) setCallParticipantNames({}) })
+    return () => { current = false }
+  }, [callConversation, session.access_token])
   const endCall = useCallback(async () => { await close(true); setCallConversation(null) }, [close])
-  return <main className="messenger-app"><ConversationSidebar session={session} conversations={messenger.conversations} unreadByConversation={messenger.unreadByConversation} activeConversation={messenger.activeConversation} isLoading={messenger.isLoadingConversations} onSelect={messenger.selectConversation} onCreate={messenger.createConversation} onLogout={onLogout} /><div className="workspace">{messenger.error ? <Notice>{messenger.error}</Notice> : null}<ChatPanel session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} onStartCall={setCallConversation} onShowMembers={setMembersConversation} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => setCallConversation(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallOverlay localStream={localStream} remoteStreams={remoteStreams} peers={peers} currentUserID={session.user.id} canModerate={callConversation.kind !== 'direct'} error={callError} isConnecting={isConnecting} isConnected={isOpen} isMuted={isMuted} isCameraOff={isCameraOff} onShare={shareScreen} onToggleMute={toggleMute} onToggleCamera={toggleCamera} onModerate={moderate} onEnd={endCall} /> : null}</div></main>
+  const ownCallName = `@${session.user.username} · ${session.user.display_name || session.user.username}`
+  return <main className="messenger-app"><ConversationSidebar session={session} conversations={messenger.conversations} unreadByConversation={messenger.unreadByConversation} activeConversation={messenger.activeConversation} isLoading={messenger.isLoadingConversations} onSelect={messenger.selectConversation} onCreate={messenger.createConversation} onLogout={onLogout} /><div className="workspace">{messenger.error ? <Notice>{messenger.error}</Notice> : null}<ChatPanel session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} onStartCall={setCallConversation} onShowMembers={setMembersConversation} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => setCallConversation(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallOverlay localStream={localStream} remoteStreams={remoteStreams} peers={peers} currentUserID={session.user.id} participantNames={{ ...callParticipantNames, [session.user.id]: ownCallName }} canModerate={callConversation.kind !== 'direct'} error={callError} isConnecting={isConnecting} isConnected={isOpen} isMuted={isMuted} isCameraOff={isCameraOff} onShare={shareScreen} onToggleMute={toggleMute} onToggleCamera={toggleCamera} onModerate={moderate} onEnd={endCall} /> : null}</div></main>
 }
 
 export default function App() {
