@@ -49,6 +49,23 @@ export function useCall(session: Session) {
       const pendingCandidates: RTCIceCandidateInit[] = []
       let operations = Promise.resolve()
       const enqueue = (task: () => Promise<void>) => { operations = operations.then(task).catch(error => setError(error instanceof Error ? error.message : 'Ошибка соединения')) }
+      connection.onconnectionstatechange = () => {
+        switch (connection.connectionState) {
+          case 'connected':
+            setIsConnecting(false)
+            setIsOpen(true)
+            break
+          case 'failed':
+            setIsConnecting(false)
+            setIsOpen(false)
+            setError('Не удалось установить медиа-соединение')
+            break
+          case 'closed':
+            setIsConnecting(false)
+            setIsOpen(false)
+            break
+        }
+      }
       connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
       connection.ontrack = event => {
         const stream = event.streams[0] ?? fallbackRemote.current
@@ -65,7 +82,6 @@ export function useCall(session: Session) {
         const offer = await connection.createOffer()
         await connection.setLocalDescription(offer)
         socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }))
-        setIsConnecting(false); setIsOpen(true)
       })
       socket.onmessage = event => enqueue(async () => {
         const frame = JSON.parse(String(event.data)) as Signal
@@ -81,7 +97,12 @@ export function useCall(session: Session) {
         else if (frame.type === 'error') setError(frame.message ?? 'Ошибка звонка')
         if (connection.remoteDescription) for (const candidate of pendingCandidates.splice(0)) await connection.addIceCandidate(candidate)
       })
-      socket.onclose = () => { if (signal.current === socket) { setIsOpen(false); setIsConnecting(false) } }
+      socket.onclose = event => {
+        if (signal.current !== socket) return
+        setIsOpen(false)
+        setIsConnecting(false)
+        if (event.code !== 1000) setError(`Сигнальное соединение закрыто (${event.code})`)
+      }
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось начать звонок'); await close(false) }
   }, [close, session.access_token])
 
