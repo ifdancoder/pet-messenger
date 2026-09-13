@@ -15,7 +15,8 @@ type Props = {
   onLogout: () => void
 }
 
-function conversationTitle(conversation: Conversation) { return conversation.title || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
+function conversationTitle(conversation: Conversation) { return conversation.title || conversation.direct_display_name || conversation.direct_username || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
+function conversationSubtitle(conversation: Conversation) { return conversation.kind === 'direct' && conversation.direct_username ? `@${conversation.direct_username}` : conversation.kind === 'direct' ? 'личный разговор' : 'группа' }
 
 export function ConversationSidebar({ session, conversations, unreadByConversation, activeConversation, isLoading, onSelect, onCreate, onLogout }: Props) {
   const [isComposerOpen, setIsComposerOpen] = useState(false)
@@ -32,7 +33,7 @@ export function ConversationSidebar({ session, conversations, unreadByConversati
     <nav className="conversation-list" aria-label="Диалоги">
       {isLoading ? <div className="sidebar-loading"><Spinner /></div> : null}
       {!isLoading && conversations.length === 0 ? <p className="sidebar-empty">Начните разговор, создав личный диалог или группу.</p> : null}
-      {conversations.map(conversation => <button className={conversation.id === activeConversation?.id ? 'conversation-item conversation-item--active' : 'conversation-item'} key={conversation.id} onClick={() => onSelect(conversation)}><span className="conversation-item__avatar">{conversationTitle(conversation).slice(0, 1).toUpperCase()}</span><span><b>{conversationTitle(conversation)}</b><small>{conversation.kind === 'direct' ? 'личный разговор' : 'группа'}</small></span>{unreadByConversation[conversation.id] ? <span className="conversation-item__unread">{unreadByConversation[conversation.id]}</span> : null}</button>)}
+      {conversations.map(conversation => <button className={conversation.id === activeConversation?.id ? 'conversation-item conversation-item--active' : 'conversation-item'} key={conversation.id} onClick={() => onSelect(conversation)}><span className="conversation-item__avatar">{conversationTitle(conversation).slice(0, 1).toUpperCase()}</span><span><b>{conversationTitle(conversation)}</b><small>{conversationSubtitle(conversation)}</small></span>{unreadByConversation[conversation.id] ? <span className="conversation-item__unread">{unreadByConversation[conversation.id]}</span> : null}</button>)}
     </nav>
   </aside>
 }

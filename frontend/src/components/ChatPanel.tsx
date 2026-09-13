@@ -4,7 +4,7 @@ import { Button, Spinner, TextField } from './ui'
 import type { Conversation, Message, Session } from '../types'
 
 type Props = { session: Session; conversation: Conversation | null; messages: Message[]; isLoading: boolean; isRealtimeConnected: boolean; hasLiveCall: boolean; onStartCall: (conversation: Conversation) => void; onShowMembers: (conversation: Conversation) => void; onSend: (content: string) => Promise<boolean> }
-function title(conversation: Conversation) { return conversation.title || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
+function title(conversation: Conversation) { return conversation.title || conversation.direct_display_name || conversation.direct_username || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
 
 function EmptyChat() { return <div className="chat-empty"><div className="chat-empty__mark">✦</div><h1>Разговоры без лишнего шума</h1><p>Выберите существующий диалог или создайте новый в левой панели.</p></div> }
 

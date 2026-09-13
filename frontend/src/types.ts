@@ -7,6 +7,8 @@ export type Conversation = {
   kind: string
   title: string
   last_message_at: string
+  direct_username?: string
+  direct_display_name?: string
 }
 
 export type Notification = { id: string; kind: string; payload: { conversation_id?: string }; created_at: string; read_at: string | null }

@@ -135,14 +135,16 @@ func toMemberProfileResponse(mp *domainconv.MemberProfile) memberProfileResponse
 }
 
 type conversationResponse struct {
-	ID            string     `json:"id"`
-	Kind          string     `json:"kind"`
-	Title         string     `json:"title"`
-	AvatarURL     string     `json:"avatar_url"`
-	Public        bool       `json:"public"`
-	CreatedAt     time.Time  `json:"created_at"`
-	LastMessageAt time.Time  `json:"last_message_at"`
-	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
+	ID                string     `json:"id"`
+	Kind              string     `json:"kind"`
+	Title             string     `json:"title"`
+	AvatarURL         string     `json:"avatar_url"`
+	Public            bool       `json:"public"`
+	CreatedAt         time.Time  `json:"created_at"`
+	LastMessageAt     time.Time  `json:"last_message_at"`
+	ArchivedAt        *time.Time `json:"archived_at,omitempty"`
+	DirectUsername    string     `json:"direct_username,omitempty"`
+	DirectDisplayName string     `json:"direct_display_name,omitempty"`
 }
 
 type conversationListResponse struct {
@@ -157,14 +159,16 @@ type channelListResponse struct {
 
 func toConversationResponse(c *domainconv.Conversation) conversationResponse {
 	return conversationResponse{
-		ID:            c.ID.String(),
-		Kind:          string(c.Kind),
-		Title:         c.Title,
-		AvatarURL:     c.AvatarURL,
-		Public:        c.Public,
-		CreatedAt:     c.CreatedAt,
-		LastMessageAt: c.LastMessageAt,
-		ArchivedAt:    c.ArchivedAt,
+		ID:                c.ID.String(),
+		Kind:              string(c.Kind),
+		Title:             c.Title,
+		AvatarURL:         c.AvatarURL,
+		Public:            c.Public,
+		CreatedAt:         c.CreatedAt,
+		LastMessageAt:     c.LastMessageAt,
+		ArchivedAt:        c.ArchivedAt,
+		DirectUsername:    c.DirectUsername,
+		DirectDisplayName: c.DirectDisplayName,
 	}
 }
 

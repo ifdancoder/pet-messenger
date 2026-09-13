@@ -152,6 +152,10 @@ type Conversation struct {
 	// conversation lists. It equals CreatedAt for a conversation with no
 	// messages and is advanced by the message repository as messages are sent.
 	LastMessageAt time.Time
+	// DirectUsername and DirectDisplayName identify the other participant when
+	// this conversation is listed for one member of a direct chat.
+	DirectUsername    string
+	DirectDisplayName string
 }
 
 // Member is a user's membership in a conversation. MutedUntil and
