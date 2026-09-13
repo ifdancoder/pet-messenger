@@ -18,6 +18,7 @@ export function useCall(session: Session) {
   const peer = useRef<RTCPeerConnection | null>(null)
   const signal = useRef<WebSocket | null>(null)
   const local = useRef<MediaStream | null>(null)
+  const fallbackRemote = useRef<MediaStream | null>(null)
   const callID = useRef<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<StreamEntry[]>([])
@@ -31,6 +32,7 @@ export function useCall(session: Session) {
     signal.current?.close(); signal.current = null
     peer.current?.close(); peer.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
+    fallbackRemote.current = null
     setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false)
     callID.current = null
     if (end && id) await api.endCall(id, session.access_token).catch(() => undefined)
@@ -43,13 +45,16 @@ export function useCall(session: Session) {
       callID.current = call.id
       const connection = new RTCPeerConnection({ iceServers: join.ice_servers })
       peer.current = connection
+      fallbackRemote.current = new MediaStream()
       const pendingCandidates: RTCIceCandidateInit[] = []
       let operations = Promise.resolve()
       const enqueue = (task: () => Promise<void>) => { operations = operations.then(task).catch(error => setError(error instanceof Error ? error.message : 'Ошибка соединения')) }
       connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
       connection.ontrack = event => {
-        const stream = event.streams[0]
-        if (stream) setRemoteStreams(previous => previous.some(item => item.id === stream.id) ? previous : [...previous, { id: stream.id, stream }])
+        const stream = event.streams[0] ?? fallbackRemote.current
+        if (!stream) return
+        if (event.streams.length === 0 && !stream.getTracks().some(track => track.id === event.track.id)) stream.addTrack(event.track)
+        setRemoteStreams(previous => previous.some(item => item.id === stream.id) ? previous : [...previous, { id: stream.id, stream }])
       }
       const stream = await localMedia()
       local.current = stream; setLocalStream(stream)
