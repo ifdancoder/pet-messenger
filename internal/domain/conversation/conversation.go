@@ -291,6 +291,10 @@ type Repository interface {
 	// SetMemberTier sets (or, with TierNone, clears) the target member's
 	// admin_tier. It does not touch Role. ErrNotMember if there is no such row.
 	SetMemberTier(ctx context.Context, conversationID, userID uuid.UUID, tier AdminTier) error
+	// SetLastReadMessage advances the member's read cursor to messageID. The
+	// message must belong to conversationID; older cursors never replace newer
+	// ones.
+	SetLastReadMessage(ctx context.Context, conversationID, userID, messageID uuid.UUID) error
 	// ListPublicChannels returns public channel_group / channel_broadcast
 	// conversations ordered by (LastMessageAt, ID) descending — newest activity
 	// first. A non-empty query filters by a case-insensitive title substring. A

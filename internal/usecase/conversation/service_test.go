@@ -126,6 +126,9 @@ func (f *fakeConvRepo) SetMemberTier(_ context.Context, conversationID, userID u
 	f.tierSet = append(f.tierSet, tierSetCall{conversationID, userID, tier})
 	return nil
 }
+func (f *fakeConvRepo) SetLastReadMessage(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 func (f *fakeConvRepo) SetArchived(_ context.Context, conversationID uuid.UUID, archived bool) error {
 	if f.archivedErr != nil {
 		return f.archivedErr

@@ -106,6 +106,9 @@ func (stubConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error {
 func (stubConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, conversation.AdminTier) error {
 	return nil
 }
+func (stubConvRepo) SetLastReadMessage(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 func (stubConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*conversation.Conversation, error) {
 	return nil, nil
 }

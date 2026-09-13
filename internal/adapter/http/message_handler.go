@@ -22,6 +22,7 @@ type messageService interface {
 	EditMessage(ctx context.Context, actor, convID, messageID uuid.UUID, newContent string) (*domainmsg.Message, error)
 	DeleteMessage(ctx context.Context, actor, convID, messageID uuid.UUID) (*domainmsg.Message, error)
 	ListMessages(ctx context.Context, actor, convID uuid.UUID, afterSeq, beforeSeq *int64, limit int) ([]*domainmsg.Message, error)
+	MarkRead(ctx context.Context, actor, convID, messageID uuid.UUID) error
 }
 
 type MessageHandler struct {
@@ -40,6 +41,7 @@ func (h *MessageHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/:id/messages", h.List)
 	rg.PATCH("/:id/messages/:mid", h.Edit)
 	rg.DELETE("/:id/messages/:mid", h.Delete)
+	rg.POST("/:id/read", h.MarkRead)
 }
 
 type sendMessageRequest struct {
@@ -65,6 +67,8 @@ type messageResponse struct {
 	EditedAt       *time.Time `json:"edited_at"`
 	DeletedAt      *time.Time `json:"deleted_at"`
 	CreatedAt      time.Time  `json:"created_at"`
+	ReadBy         int        `json:"read_by"`
+	RecipientCount int        `json:"recipient_count"`
 }
 
 type messageListResponse struct {
@@ -83,6 +87,8 @@ func toMessageResponse(m *domainmsg.Message) messageResponse {
 		EditedAt:       m.EditedAt,
 		DeletedAt:      m.DeletedAt,
 		CreatedAt:      m.CreatedAt,
+		ReadBy:         m.ReadBy,
+		RecipientCount: m.RecipientCount,
 	}
 	if m.SenderID != nil {
 		s := m.SenderID.String()
@@ -101,6 +107,41 @@ func toMessageResponse(m *domainmsg.Message) messageResponse {
 		r.SystemTargetID = &s
 	}
 	return r
+}
+
+type markConversationReadRequest struct {
+	MessageID string `json:"message_id" binding:"required"`
+}
+
+// MarkRead persists the last message currently visible to the authenticated
+// user. The client sends one cursor per newly loaded page, not one request per
+// individual message.
+func (h *MessageHandler) MarkRead(c *gin.Context) {
+	actor, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	convID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversation id"})
+		return
+	}
+	var req markConversationReadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	messageID, err := uuid.Parse(req.MessageID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid message_id"})
+		return
+	}
+	if err := h.svc.MarkRead(c.Request.Context(), actor, convID, messageID); err != nil {
+		writeMessageError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func writeMessageError(c *gin.Context, err error) {

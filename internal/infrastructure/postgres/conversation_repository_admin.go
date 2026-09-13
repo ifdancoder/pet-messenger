@@ -22,6 +22,26 @@ const rankExpr = `CASE admin_tier
 	WHEN 'content_admin' THEN 1
 	ELSE 0 END`
 
+// SetLastReadMessage advances a member's cursor atomically. Comparing the
+// per-conversation sequence prevents an out-of-order browser request from
+// moving a cursor backwards.
+func (r *ConversationRepository) SetLastReadMessage(ctx context.Context, conversationID, userID, messageID uuid.UUID) error {
+	const q = `
+		UPDATE conversation_members cm
+		SET last_read_message_id = m.id
+		FROM messages m
+		WHERE cm.conversation_id = $1
+		  AND cm.user_id = $2
+		  AND m.id = $3
+		  AND m.conversation_id = $1
+		  AND (cm.last_read_message_id IS NULL OR
+		       (SELECT seq FROM messages WHERE id = cm.last_read_message_id) <= m.seq)`
+	if _, err := r.db.ExecContext(ctx, q, conversationID, userID, messageID); err != nil {
+		return fmt.Errorf("update read cursor: %w", err)
+	}
+	return nil
+}
+
 func (r *ConversationRepository) SetArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
 	var ts any // nil -> SQL NULL (unarchive)
 	if archived {

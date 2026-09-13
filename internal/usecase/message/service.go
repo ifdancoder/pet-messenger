@@ -239,12 +239,69 @@ func (s *Service) ListMessages(ctx context.Context, actor, convID uuid.UUID, aft
 		return nil, ErrConflictingCursors
 	}
 	n := PageLimit(limit)
+	var messages []*domainmsg.Message
+	var err error
 	if afterSeq != nil {
-		return s.messages.ListByConversation(ctx, convID, *afterSeq, n)
+		messages, err = s.messages.ListByConversation(ctx, convID, *afterSeq, n)
+	} else {
+		before := int64(0)
+		if beforeSeq != nil {
+			before = *beforeSeq
+		}
+		messages, err = s.messages.ListBeforeSeq(ctx, convID, before, n)
 	}
-	before := int64(0)
-	if beforeSeq != nil {
-		before = *beforeSeq
+	if err != nil {
+		return nil, err
 	}
-	return s.messages.ListBeforeSeq(ctx, convID, before, n)
+	s.annotateReadStatus(ctx, convID, messages)
+	return messages, nil
+}
+
+// MarkRead records that actor has displayed messageID and every earlier
+// message in the conversation. Membership and message ownership are checked
+// here rather than trusting a client-supplied cursor.
+func (s *Service) MarkRead(ctx context.Context, actor, convID, messageID uuid.UUID) error {
+	if _, err := s.conversations.GetMember(ctx, convID, actor); err != nil {
+		return err
+	}
+	m, err := s.messages.GetByID(ctx, messageID)
+	if err != nil {
+		return err
+	}
+	if m.ConversationID != convID {
+		return domainmsg.ErrNotFound
+	}
+	return s.conversations.SetLastReadMessage(ctx, convID, actor, messageID)
+}
+
+func (s *Service) annotateReadStatus(ctx context.Context, convID uuid.UUID, messages []*domainmsg.Message) {
+	members, err := s.conversations.ListMembers(ctx, convID, false, time.Time{}, uuid.Nil, 200)
+	if err != nil {
+		log.Printf("message: list members for read status %s: %v", convID, err)
+		return
+	}
+	readSeq := make(map[uuid.UUID]int64, len(members))
+	for _, member := range members {
+		if member.LastReadMessageID == nil {
+			continue
+		}
+		read, err := s.messages.GetByID(ctx, *member.LastReadMessageID)
+		if err == nil && read.ConversationID == convID {
+			readSeq[member.UserID] = read.Seq
+		}
+	}
+	for _, message := range messages {
+		if message.SenderID == nil {
+			continue
+		}
+		for _, member := range members {
+			if member.UserID == *message.SenderID {
+				continue
+			}
+			message.RecipientCount++
+			if readSeq[member.UserID] >= message.Seq {
+				message.ReadBy++
+			}
+		}
+	}
 }

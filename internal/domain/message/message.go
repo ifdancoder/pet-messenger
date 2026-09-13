@@ -123,6 +123,10 @@ type Message struct {
 	EditedAt       *time.Time
 	DeletedAt      *time.Time
 	CreatedAt      time.Time
+	// ReadBy and RecipientCount are populated for history responses. They are
+	// derived from member read cursors and are never persisted with the message.
+	ReadBy         int
+	RecipientCount int
 }
 
 // validateContent trims surrounding whitespace and enforces the 1..4096-rune

@@ -23,6 +23,7 @@ type fakeMessageService struct {
 	edit func(actor, convID, msgID uuid.UUID, content string) (*domainmsg.Message, error)
 	del  func(actor, convID, msgID uuid.UUID) (*domainmsg.Message, error)
 	list func(actor, convID uuid.UUID, after, before *int64, limit int) ([]*domainmsg.Message, error)
+	read func(actor, convID, messageID uuid.UUID) error
 }
 
 func (f *fakeMessageService) SendMessage(_ context.Context, actor, convID uuid.UUID, content string, replyTo *uuid.UUID, idem string) (*domainmsg.Message, error) {
@@ -36,6 +37,12 @@ func (f *fakeMessageService) DeleteMessage(_ context.Context, actor, convID, msg
 }
 func (f *fakeMessageService) ListMessages(_ context.Context, actor, convID uuid.UUID, after, before *int64, limit int) ([]*domainmsg.Message, error) {
 	return f.list(actor, convID, after, before, limit)
+}
+func (f *fakeMessageService) MarkRead(_ context.Context, actor, convID, messageID uuid.UUID) error {
+	if f.read == nil {
+		return nil
+	}
+	return f.read(actor, convID, messageID)
 }
 
 func msgRouter(h *MessageHandler, convH *ConversationHandler, actor *uuid.UUID) *gin.Engine {
@@ -414,4 +421,18 @@ func TestMessageHandler_Delete(t *testing.T) {
 			t.Fatalf("status = %d, want 403", w.Code)
 		}
 	})
+}
+
+func TestMessageHandler_MarkRead(t *testing.T) {
+	actor, convID, messageID := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	called := false
+	h := &MessageHandler{svc: &fakeMessageService{read: func(gotActor, gotConversation, gotMessage uuid.UUID) error {
+		called = gotActor == actor && gotConversation == convID && gotMessage == messageID
+		return nil
+	}}}
+	r := msgRouter(h, nil, &actor)
+	w := doMsg(t, r, http.MethodPost, "/conversations/"+convID.String()+"/read", `{"message_id":"`+messageID.String()+`"}`)
+	if w.Code != http.StatusNoContent || !called {
+		t.Fatalf("POST read status=%d called=%t, want 204 and service call", w.Code, called)
+	}
 }

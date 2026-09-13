@@ -151,6 +151,9 @@ func (f *fakeConvRepo) RemoveMember(context.Context, uuid.UUID, uuid.UUID) error
 func (f *fakeConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, conversation.AdminTier) error {
 	return nil
 }
+func (f *fakeConvRepo) SetLastReadMessage(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 func (f *fakeConvRepo) ListPublicChannels(context.Context, string, time.Time, uuid.UUID, int) ([]*conversation.Conversation, error) {
 	return nil, nil
 }

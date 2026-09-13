@@ -21,6 +21,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
   const [unreadByConversation, setUnreadByConversation] = useState<Record<string, number>>({})
   const messageRequestID = useRef(0)
   const knownNotifications = useRef<Set<string> | null>(null)
+  const markedRead = useRef<Record<string, string>>({})
 
   const handleError = useCallback((error: unknown) => {
     if (error instanceof APIError && error.status === 401) {
@@ -58,7 +59,15 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     setIsLoadingMessages(true)
     try {
       const result = await api.messages(conversation.id, session.access_token)
-      if (requestID === messageRequestID.current) setMessages(chronological(result.messages))
+      if (requestID === messageRequestID.current) {
+        const ordered = chronological(result.messages)
+        setMessages(ordered)
+        const latest = ordered.at(-1)
+        if (latest && markedRead.current[conversation.id] !== latest.id) {
+          markedRead.current[conversation.id] = latest.id
+          void api.markRead(conversation.id, latest.id, session.access_token).catch(handleError)
+        }
+      }
     }
     catch (error) { handleError(error) }
     finally { if (requestID === messageRequestID.current) setIsLoadingMessages(false) }
@@ -79,7 +88,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
   const createConversation = useCallback(async (kind: 'direct' | 'group', value: string) => {
     try {
       const conversation = kind === 'direct'
-        ? await api.userByUsername(value, session.access_token).then(user => api.createDirect(user.id, session.access_token))
+        ? await api.userByUsername(value, session.access_token).then(async user => ({ ...(await api.createDirect(user.id, session.access_token)), direct_username: user.username, direct_display_name: user.display_name }))
         : await api.createGroup(value, session.access_token)
       setConversations(previous => [conversation, ...previous.filter(item => item.id !== conversation.id)])
       setActiveConversation(conversation); setMessages([]); setError('')

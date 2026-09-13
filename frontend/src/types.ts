@@ -20,6 +20,8 @@ export type Message = {
   type?: string
   content: string
   created_at: string
+  read_by?: number
+  recipient_count?: number
 }
 
 export type MemberProfile = {

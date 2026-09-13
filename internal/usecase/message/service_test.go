@@ -67,10 +67,11 @@ func (f *fakeMsgRepo) Update(_ context.Context, m *domainmsg.Message) error {
 }
 
 type fakeConvRepo struct {
-	conv      *domainconv.Conversation
-	convErr   error
-	member    *domainconv.Member
-	memberErr error
+	conv       *domainconv.Conversation
+	convErr    error
+	member     *domainconv.Member
+	memberErr  error
+	readCursor [3]uuid.UUID
 }
 
 func (f *fakeConvRepo) Create(context.Context, *domainconv.Conversation, []*domainconv.Member) error {
@@ -98,6 +99,10 @@ func (f *fakeConvRepo) ListPublicChannels(context.Context, string, time.Time, uu
 	return nil, nil
 }
 func (f *fakeConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, domainconv.AdminTier) error {
+	return nil
+}
+func (f *fakeConvRepo) SetLastReadMessage(_ context.Context, conversationID, userID, messageID uuid.UUID) error {
+	f.readCursor = [3]uuid.UUID{conversationID, userID, messageID}
 	return nil
 }
 func (f *fakeConvRepo) SetArchived(context.Context, uuid.UUID, bool) error { return nil }
@@ -738,5 +743,25 @@ func TestDeleteMessage_PublishesDeleted(t *testing.T) {
 	}
 	if len(pub.deleted) != 1 || len(pub.created) != 0 || len(pub.updated) != 0 {
 		t.Fatalf("publish calls: created=%d updated=%d deleted=%d", len(pub.created), len(pub.updated), len(pub.deleted))
+	}
+}
+
+func TestMarkRead_StoresCursorOnlyForMessageInConversation(t *testing.T) {
+	actor := uuid.Must(uuid.NewV7())
+	convs := groupChatWithMember()
+	m := ownText(t, actor, convs.conv.ID)
+	msgs := &fakeMsgRepo{byID: map[uuid.UUID]*domainmsg.Message{m.ID: m}}
+	s, _ := newSvc(msgs, convs)
+
+	if err := s.MarkRead(context.Background(), actor, convs.conv.ID, m.ID); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	if got := convs.readCursor; got != [3]uuid.UUID{convs.conv.ID, actor, m.ID} {
+		t.Fatalf("read cursor = %v, want conversation, actor, message", got)
+	}
+
+	m.ConversationID = uuid.Must(uuid.NewV7())
+	if err := s.MarkRead(context.Background(), actor, convs.conv.ID, m.ID); !errors.Is(err, domainmsg.ErrNotFound) {
+		t.Fatalf("cross-conversation cursor error = %v, want not found", err)
 	}
 }

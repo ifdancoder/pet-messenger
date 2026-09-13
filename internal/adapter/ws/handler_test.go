@@ -52,6 +52,9 @@ func (s stubConvRepo) ListPublicChannels(context.Context, string, time.Time, uui
 func (s stubConvRepo) SetMemberTier(context.Context, uuid.UUID, uuid.UUID, conversation.AdminTier) error {
 	return nil
 }
+func (s stubConvRepo) SetLastReadMessage(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 func (s stubConvRepo) SetArchived(context.Context, uuid.UUID, bool) error { return nil }
 func (s stubConvRepo) RemoveMemberWithSuccession(context.Context, uuid.UUID, uuid.UUID) (*conversation.Member, error) {
 	return nil, nil
