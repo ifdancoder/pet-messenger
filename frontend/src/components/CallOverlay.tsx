@@ -13,16 +13,14 @@ function FocusIcon({ focused }: { focused: boolean }) {
     ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M3 15h6v6M21 15h-6v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
-function CameraOffIcon() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm12 4 5-3v10l-5-3M3 3l18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-}
 function VideoTile({ stream, muted, label, focused, onFocus }: TileProps) {
   const video = useRef<HTMLVideoElement>(null)
   useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
   return <figure className="call-video"><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
 function EmptyVideoTile({ label }: { label: string }) {
-  return <figure className="call-video call-video--placeholder"><div className="call-video__placeholder"><CameraOffIcon /></div><figcaption>{label}</figcaption></figure>
+  const name = label.split(' · ').at(-1) || label
+  return <figure className="call-video call-video--placeholder"><div className="call-video__profile"><span className="call-video__avatar" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span><figcaption>{label}</figcaption></div></figure>
 }
 function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; focusedID: string | null; onFocus: (id: string) => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
