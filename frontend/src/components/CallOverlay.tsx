@@ -4,6 +4,7 @@ import { Button, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream'>
 type TileProps = { stream: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void }
+function isScreenShare(stream: MediaStream) { return stream.id.toLowerCase().includes('screen') }
 function FocusIcon({ focused }: { focused: boolean }) {
   return focused
     ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M3 15h6v6M21 15h-6v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -21,9 +22,9 @@ function EmptyVideoTile({ label }: { label: string }) {
   return <figure className="call-video call-video--placeholder"><div className="call-video__placeholder"><CameraOffIcon /></div><figcaption>{label}</figcaption></figure>
 }
 function ParticipantSection({ title, streams, muted, focusedID, onFocus }: { title: string; streams: StreamEntry[]; muted?: boolean; focusedID: string | null; onFocus: (id: string) => void }) {
-  const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0)
+  const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left.stream)) - Number(isScreenShare(right.stream)))
   const mediaStatus = videoStreams.length > 1 ? 'видео и демонстрация' : videoStreams.length === 1 ? 'медиа' : 'камера выключена'
-  return <article className="call-participant"><header><span>{title}</span><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map((entry, index) => <VideoTile key={entry.id} stream={entry.stream} muted={muted} label={index === 0 ? 'Камера' : 'Демонстрация экрана'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} />) : <EmptyVideoTile label={title} />}</div></article>
+  return <article className="call-participant"><header><span>{title}</span><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => <VideoTile key={entry.id} stream={entry.stream} muted={muted} label={isScreenShare(entry.stream) ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} />) : <EmptyVideoTile label={title} />}</div></article>
 }
 
 type Props = { localStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; onShare: () => Promise<void>; onToggleMute: () => void; onToggleCamera: () => void; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }

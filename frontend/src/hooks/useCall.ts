@@ -23,6 +23,7 @@ export function useCall(session: Session) {
   const peer = useRef<RTCPeerConnection | null>(null)
   const signal = useRef<WebSocket | null>(null)
   const local = useRef<MediaStream | null>(null)
+  const screen = useRef<MediaStream | null>(null)
   const fallbackRemote = useRef<MediaStream | null>(null)
   const callID = useRef<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
@@ -38,6 +39,7 @@ export function useCall(session: Session) {
     const id = callID.current
     signal.current?.close(); signal.current = null
     peer.current?.close(); peer.current = null
+    screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
     fallbackRemote.current = null
     setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(false)
@@ -124,11 +126,18 @@ export function useCall(session: Session) {
       const display = await navigator.mediaDevices.getDisplayMedia({ video: true })
       const track = display.getVideoTracks()[0]
       if (!track) return
+      screen.current?.getTracks().forEach(previous => previous.stop())
+      screen.current = display
       const stream = new MediaStream([track]); Object.defineProperty(stream, 'id', { value: `screen-${crypto.randomUUID()}` })
       peer.current.addTrack(track, stream)
       const offer = await peer.current.createOffer(); await peer.current.setLocalDescription(offer)
       signal.current?.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }))
       setLocalStream(stream)
+      track.onended = () => {
+        if (screen.current !== display) return
+        screen.current = null
+        setLocalStream(local.current)
+      }
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [])
 
