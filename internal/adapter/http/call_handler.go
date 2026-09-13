@@ -185,7 +185,7 @@ func (h *CallHandler) targeted(c *gin.Context, fn func(ctx context.Context, acto
 
 func writeCallError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, usecasecall.ErrCallNotSupported), errors.Is(err, conversation.ErrConversationArchived), errors.Is(err, usecasecall.ErrCannotTargetSelf):
+	case errors.Is(err, usecasecall.ErrCallNotSupported), errors.Is(err, usecasecall.ErrModerationNotSupported), errors.Is(err, conversation.ErrConversationArchived), errors.Is(err, usecasecall.ErrCannotTargetSelf):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, usecasecall.ErrForbidden), errors.Is(err, conversation.ErrNotMember):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})

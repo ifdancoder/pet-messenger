@@ -191,7 +191,15 @@ func (s *Service) EndCall(ctx context.Context, actorID, callID uuid.UUID) error 
 	if !c.IsLive() {
 		return domaincall.ErrAlreadyEnded
 	}
-	if err := s.authorizeModeration(ctx, c, actorID); err != nil {
+	conv, err := s.convs.GetByID(ctx, c.ConversationID)
+	if err != nil {
+		return err
+	}
+	if conv.Kind == conversation.KindDirect {
+		if _, err := s.convs.GetMember(ctx, c.ConversationID, actorID); err != nil {
+			return ErrForbidden
+		}
+	} else if err := s.authorizeModeration(ctx, c, actorID); err != nil {
 		return err
 	}
 	if node, gerr := s.nodes.Get(ctx, c.MediaNodeID); gerr == nil {
@@ -270,6 +278,13 @@ func (s *Service) moderateParticipant(ctx context.Context, actorID, callID, targ
 	}
 	if !c.IsLive() {
 		return domaincall.ErrCallNotLive
+	}
+	conv, err := s.convs.GetByID(ctx, c.ConversationID)
+	if err != nil {
+		return err
+	}
+	if conv.Kind == conversation.KindDirect {
+		return ErrModerationNotSupported
 	}
 	if targetID == actorID {
 		return ErrCannotTargetSelf

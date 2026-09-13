@@ -16,12 +16,13 @@ import (
 )
 
 var (
-	ErrCallNotSupported = errors.New("call: this conversation kind cannot host a call")
-	ErrForbidden        = errors.New("call: not allowed")
-	ErrCannotTargetSelf = errors.New("call: cannot target yourself")
-	ErrMediaUnavailable = errors.New("call: no media capacity right now")
-	ErrMediaNodeGone    = errors.New("call: the media node for this call is gone")
-	ErrNoMediaNodes     = errors.New("call: no media nodes registered")
+	ErrCallNotSupported       = errors.New("call: this conversation kind cannot host a call")
+	ErrModerationNotSupported = errors.New("call: moderation is unavailable in a direct call")
+	ErrForbidden              = errors.New("call: not allowed")
+	ErrCannotTargetSelf       = errors.New("call: cannot target yourself")
+	ErrMediaUnavailable       = errors.New("call: no media capacity right now")
+	ErrMediaNodeGone          = errors.New("call: the media node for this call is gone")
+	ErrNoMediaNodes           = errors.New("call: no media nodes registered")
 )
 
 type Node struct {

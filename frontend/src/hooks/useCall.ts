@@ -26,6 +26,8 @@ export function useCall(session: Session) {
   const [error, setError] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isCameraOff, setIsCameraOff] = useState(false)
 
   const close = useCallback(async (end = false) => {
     const id = callID.current
@@ -33,7 +35,7 @@ export function useCall(session: Session) {
     peer.current?.close(); peer.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
     fallbackRemote.current = null
-    setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false)
+    setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(false)
     callID.current = null
     if (end && id) await api.endCall(id, session.access_token).catch(() => undefined)
   }, [session.access_token])
@@ -120,6 +122,22 @@ export function useCall(session: Session) {
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [])
 
+  const toggleMute = useCallback(() => {
+    const tracks = local.current?.getAudioTracks() ?? []
+    if (!tracks.length) return
+    const muted = tracks.some(track => track.enabled)
+    tracks.forEach(track => { track.enabled = !muted })
+    setIsMuted(muted)
+  }, [])
+
+  const toggleCamera = useCallback(() => {
+    const tracks = local.current?.getVideoTracks() ?? []
+    if (!tracks.length) return
+    const cameraOff = tracks.some(track => track.enabled)
+    tracks.forEach(track => { track.enabled = !cameraOff })
+    setIsCameraOff(cameraOff)
+  }, [])
+
   const moderate = useCallback(async (userID: string, action: 'mute' | 'unmute' | 'remove') => {
     if (!callID.current) return
     try {
@@ -129,5 +147,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [session.access_token])
 
-  return { start, close, shareScreen, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen }
+  return { start, close, shareScreen, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff }
 }
