@@ -8,7 +8,7 @@ export class APIError extends Error {
 }
 
 export type CallJoin = { ticket: string; media_ws_url: string; ice_servers: RTCIceServer[] }
-export type Call = { id: string; conversation_id: string; status: string }
+export type Call = { id: string; conversation_id: string; initiator_id: string; status: string }
 
 async function request<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiURL + path, {
