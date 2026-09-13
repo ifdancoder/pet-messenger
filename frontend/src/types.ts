@@ -9,10 +9,13 @@ export type Conversation = {
   last_message_at: string
 }
 
+export type Notification = { id: string; kind: string; payload: { conversation_id?: string }; created_at: string; read_at: string | null }
+
 export type Message = {
   id: string
   seq?: number
   sender_id?: string
+  type?: string
   content: string
   created_at: string
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { APIError, api } from '../lib/api'
 import { clearSession } from '../lib/session'
+import { playTone } from '../lib/sounds'
 import type { Conversation, Message, Session } from '../types'
 import { useRealtimeChat } from './useRealtimeChat'
 
@@ -13,7 +14,9 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
   const [error, setError] = useState('')
   const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [unreadByConversation, setUnreadByConversation] = useState<Record<string, number>>({})
   const messageRequestID = useRef(0)
+  const knownNotifications = useRef<Set<string> | null>(null)
 
   const handleError = useCallback((error: unknown) => {
     if (error instanceof APIError && error.status === 401) {
@@ -28,6 +31,24 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     finally { setIsLoadingConversations(false) }
   }, [handleError, session.access_token])
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      const result = await api.notifications(session.access_token)
+      const unread: Record<string, number> = {}
+      for (const notification of result.notifications) {
+        const conversationID = notification.payload?.conversation_id
+        if (!conversationID || notification.read_at || conversationID === activeConversation?.id) continue
+        unread[conversationID] = (unread[conversationID] ?? 0) + 1
+      }
+      const previous = knownNotifications.current
+      if (previous) for (const notification of result.notifications) {
+        if (!previous.has(notification.id) && !notification.read_at) playTone(notification.kind === 'call_started' ? 'call' : 'message')
+      }
+      knownNotifications.current = new Set(result.notifications.map(notification => notification.id))
+      setUnreadByConversation(unread)
+    } catch (error) { handleError(error) }
+  }, [activeConversation, handleError, session.access_token])
+
   const loadMessages = useCallback(async (conversation: Conversation) => {
     const requestID = ++messageRequestID.current
     setIsLoadingMessages(true)
@@ -39,17 +60,18 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     finally { if (requestID === messageRequestID.current) setIsLoadingMessages(false) }
   }, [handleError, session.access_token])
 
-  useEffect(() => { void Promise.resolve().then(loadConversations) }, [loadConversations])
+  useEffect(() => { void Promise.resolve().then(loadConversations); void Promise.resolve().then(loadNotifications) }, [loadConversations, loadNotifications])
   useEffect(() => { if (activeConversation) void Promise.resolve().then(() => loadMessages(activeConversation)) }, [activeConversation, loadMessages])
   useEffect(() => {
     const timer = window.setInterval(() => {
       void loadConversations()
+      void loadNotifications()
       if (activeConversation) void loadMessages(activeConversation)
     }, refreshInterval)
     return () => window.clearInterval(timer)
-  }, [activeConversation, loadConversations, loadMessages])
+  }, [activeConversation, loadConversations, loadMessages, loadNotifications])
 
-  const selectConversation = useCallback((conversation: Conversation) => { setError(''); setActiveConversation(conversation) }, [])
+  const selectConversation = useCallback((conversation: Conversation) => { setError(''); setUnreadByConversation(previous => ({ ...previous, [conversation.id]: 0 })); setActiveConversation(conversation) }, [])
   const createConversation = useCallback(async (kind: 'direct' | 'group', value: string) => {
     try {
       const conversation = kind === 'direct'
@@ -74,10 +96,11 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     if (frame.type === 'message.created' && frame.message) {
       const message = frame.message
       setMessages(previous => previous.some(item => item.id === message.id) ? previous : [...previous, message])
+      if (message.sender_id !== session.user.id) playTone(message.type === 'system' ? 'member' : 'message')
       void loadConversations()
     } else if (frame.type === 'message.updated' || frame.type === 'message.deleted') void loadMessages(activeConversation)
-  }, [activeConversation, loadConversations, loadMessages])
+  }, [activeConversation, loadConversations, loadMessages, session.user.id])
   const isRealtimeConnected = useRealtimeChat(session.access_token, activeConversation?.id, receiveRealtimeFrame)
 
-  return { conversations, activeConversation, messages, error, setError, isLoadingConversations, isLoadingMessages, isRealtimeConnected, selectConversation, createConversation, sendMessage }
+  return { conversations, activeConversation, messages, unreadByConversation, error, setError, isLoadingConversations, isLoadingMessages, isRealtimeConnected, selectConversation, createConversation, sendMessage }
 }

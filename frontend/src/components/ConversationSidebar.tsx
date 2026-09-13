@@ -7,6 +7,7 @@ import type { Conversation, Session } from '../types'
 type Props = {
   session: Session
   conversations: Conversation[]
+  unreadByConversation: Record<string, number>
   activeConversation: Conversation | null
   isLoading: boolean
   onSelect: (conversation: Conversation) => void
@@ -16,7 +17,7 @@ type Props = {
 
 function conversationTitle(conversation: Conversation) { return conversation.title || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
 
-export function ConversationSidebar({ session, conversations, activeConversation, isLoading, onSelect, onCreate, onLogout }: Props) {
+export function ConversationSidebar({ session, conversations, unreadByConversation, activeConversation, isLoading, onSelect, onCreate, onLogout }: Props) {
   const [isComposerOpen, setIsComposerOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   async function copyID() {
@@ -31,7 +32,7 @@ export function ConversationSidebar({ session, conversations, activeConversation
     <nav className="conversation-list" aria-label="Диалоги">
       {isLoading ? <div className="sidebar-loading"><Spinner /></div> : null}
       {!isLoading && conversations.length === 0 ? <p className="sidebar-empty">Начните разговор, создав личный диалог или группу.</p> : null}
-      {conversations.map(conversation => <button className={conversation.id === activeConversation?.id ? 'conversation-item conversation-item--active' : 'conversation-item'} key={conversation.id} onClick={() => onSelect(conversation)}><span className="conversation-item__avatar">{conversationTitle(conversation).slice(0, 1).toUpperCase()}</span><span><b>{conversationTitle(conversation)}</b><small>{conversation.kind === 'direct' ? 'личный разговор' : 'группа'}</small></span></button>)}
+      {conversations.map(conversation => <button className={conversation.id === activeConversation?.id ? 'conversation-item conversation-item--active' : 'conversation-item'} key={conversation.id} onClick={() => onSelect(conversation)}><span className="conversation-item__avatar">{conversationTitle(conversation).slice(0, 1).toUpperCase()}</span><span><b>{conversationTitle(conversation)}</b><small>{conversation.kind === 'direct' ? 'личный разговор' : 'группа'}</small></span>{unreadByConversation[conversation.id] ? <span className="conversation-item__unread">{unreadByConversation[conversation.id]}</span> : null}</button>)}
     </nav>
   </aside>
 }

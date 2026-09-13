@@ -1,4 +1,4 @@
-import type { Conversation, MemberProfile, Message, Session, User } from '../types'
+import type { Conversation, MemberProfile, Message, Notification, Session, User } from '../types'
 
 const apiURL = import.meta.env.VITE_API_URL ?? `http://localhost:${import.meta.env.VITE_PORT ?? '8080'}`
 
@@ -24,6 +24,7 @@ export const api = {
   login: (username: string, password: string) => request<Session>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ username, password, device_info: 'web' }) }),
   register: (displayName: string, username: string, password: string) => request<Session>('/auth/register', undefined, { method: 'POST', body: JSON.stringify({ display_name: displayName, username, password }) }),
   conversations: (token: string) => request<{ conversations: Conversation[] }>('/conversations', token),
+  notifications: (token: string) => request<{ notifications: Notification[]; unread_count: number }>('/notifications?limit=100', token),
   messages: (conversationID: string, token: string) => request<{ messages: Message[] }>(`/conversations/${conversationID}/messages`, token),
   userByUsername: (username: string, token: string) => request<User>(`/users/${encodeURIComponent(username)}`, token),
   createDirect: (userID: string, token: string) => request<Conversation>('/conversations/direct', token, { method: 'POST', body: JSON.stringify({ user_id: userID }) }),
