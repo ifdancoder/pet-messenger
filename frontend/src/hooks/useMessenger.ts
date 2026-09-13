@@ -7,6 +7,10 @@ import { useRealtimeChat } from './useRealtimeChat'
 
 const refreshInterval = 5_000
 
+function chronological(messages: Message[]) {
+  return [...new Map(messages.map(message => [message.id, message])).values()].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.created_at.localeCompare(b.created_at))
+}
+
 export function useMessenger(session: Session, onSessionExpired: () => void) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
@@ -54,7 +58,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     setIsLoadingMessages(true)
     try {
       const result = await api.messages(conversation.id, session.access_token)
-      if (requestID === messageRequestID.current) setMessages(result.messages)
+      if (requestID === messageRequestID.current) setMessages(chronological(result.messages))
     }
     catch (error) { handleError(error) }
     finally { if (requestID === messageRequestID.current) setIsLoadingMessages(false) }
@@ -86,7 +90,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     if (!activeConversation) return false
     try {
       const message = await api.sendMessage(activeConversation.id, content, session.access_token)
-      setMessages(previous => [...previous, message]); void loadConversations(); setError('')
+      setMessages(previous => chronological([...previous, message])); void loadConversations(); setError('')
       return true
     } catch (error) { handleError(error); return false }
   }, [activeConversation, handleError, loadConversations, session.access_token])
@@ -95,8 +99,10 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     if (!frame.conversation_id || frame.conversation_id !== activeConversation?.id) return
     if (frame.type === 'message.created' && frame.message) {
       const message = frame.message
-      setMessages(previous => previous.some(item => item.id === message.id) ? previous : [...previous, message])
-      if (message.sender_id !== session.user.id) playTone(message.type === 'system' ? 'member' : 'message')
+      if (message.sender_id !== session.user.id) {
+        setMessages(previous => chronological([...previous, message]))
+        playTone(message.type === 'system' ? 'member' : 'message')
+      }
       void loadConversations()
     } else if (frame.type === 'message.updated' || frame.type === 'message.deleted') void loadMessages(activeConversation)
   }, [activeConversation, loadConversations, loadMessages, session.user.id])
