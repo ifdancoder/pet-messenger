@@ -3,8 +3,8 @@ import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
-type StreamEntry = { id: string; stream: MediaStream }
-export type CallPeer = { user_id: string; role: string; muted: boolean }
+export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[] }
+export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; kind: string; label: string }[] }
 
 async function localMedia() {
   const devices = await navigator.mediaDevices.enumerateDevices()
@@ -21,7 +21,7 @@ export function useCall(session: Session) {
   const fallbackRemote = useRef<MediaStream | null>(null)
   const callID = useRef<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
-  const [remoteStreams, setRemoteStreams] = useState<StreamEntry[]>([])
+  const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([])
   const [peers, setPeers] = useState<CallPeer[]>([])
   const [error, setError] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
@@ -73,7 +73,12 @@ export function useCall(session: Session) {
         const stream = event.streams[0] ?? fallbackRemote.current
         if (!stream) return
         if (event.streams.length === 0 && !stream.getTracks().some(track => track.id === event.track.id)) stream.addTrack(event.track)
-        setRemoteStreams(previous => previous.some(item => item.id === stream.id) ? previous : [...previous, { id: stream.id, stream }])
+        setRemoteStreams(previous => {
+          const known = previous.find(item => item.id === stream.id)
+          if (!known) return [...previous, { id: stream.id, stream, trackIDs: [event.track.id] }]
+          if (known.trackIDs.includes(event.track.id)) return previous
+          return previous.map(item => item.id === stream.id ? { ...item, trackIDs: [...item.trackIDs, event.track.id] } : item)
+        })
       }
       const stream = await localMedia()
       local.current = stream; setLocalStream(stream)
