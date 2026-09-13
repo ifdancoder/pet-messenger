@@ -144,6 +144,7 @@ type conversationResponse struct {
 	LastMessageAt     time.Time  `json:"last_message_at"`
 	ArchivedAt        *time.Time `json:"archived_at,omitempty"`
 	DirectUsername    string     `json:"direct_username,omitempty"`
+	UnreadCount       int        `json:"unread_count"`
 	DirectDisplayName string     `json:"direct_display_name,omitempty"`
 }
 
@@ -168,6 +169,7 @@ func toConversationResponse(c *domainconv.Conversation) conversationResponse {
 		LastMessageAt:     c.LastMessageAt,
 		ArchivedAt:        c.ArchivedAt,
 		DirectUsername:    c.DirectUsername,
+		UnreadCount:       c.UnreadCount,
 		DirectDisplayName: c.DirectDisplayName,
 	}
 }

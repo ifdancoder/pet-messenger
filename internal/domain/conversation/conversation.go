@@ -156,6 +156,9 @@ type Conversation struct {
 	// this conversation is listed for one member of a direct chat.
 	DirectUsername    string
 	DirectDisplayName string
+	// UnreadCount is the number of text messages from other participants whose
+	// sequence is ahead of the listing member's read cursor.
+	UnreadCount int
 }
 
 // Member is a user's membership in a conversation. MutedUntil and

@@ -9,6 +9,7 @@ export type Conversation = {
   last_message_at: string
   direct_username?: string
   direct_display_name?: string
+  unread_count: number
 }
 
 export type Notification = { id: string; kind: string; payload: { conversation_id?: string }; created_at: string; read_at: string | null }

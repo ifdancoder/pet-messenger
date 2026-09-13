@@ -32,28 +32,25 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
   }, [onSessionExpired])
 
   const loadConversations = useCallback(async () => {
-    try { setConversations((await api.conversations(session.access_token)).conversations) }
+    try {
+      const result = await api.conversations(session.access_token)
+      setConversations(result.conversations)
+      setUnreadByConversation(Object.fromEntries(result.conversations.filter(conversation => conversation.id !== activeConversation?.id && conversation.unread_count > 0).map(conversation => [conversation.id, conversation.unread_count])))
+    }
     catch (error) { handleError(error) }
     finally { setIsLoadingConversations(false) }
-  }, [handleError, session.access_token])
+  }, [activeConversation?.id, handleError, session.access_token])
 
   const loadNotifications = useCallback(async () => {
     try {
       const result = await api.notifications(session.access_token)
-      const unread: Record<string, number> = {}
-      for (const notification of result.notifications) {
-        const conversationID = notification.payload?.conversation_id
-        if (!conversationID || notification.read_at || conversationID === activeConversation?.id) continue
-        unread[conversationID] = (unread[conversationID] ?? 0) + 1
-      }
       const previous = knownNotifications.current
       if (previous) for (const notification of result.notifications) {
         if (!previous.has(notification.id) && !notification.read_at) playTone(notification.kind === 'call_started' ? 'call' : 'message')
       }
       knownNotifications.current = new Set(result.notifications.map(notification => notification.id))
-      setUnreadByConversation(unread)
     } catch (error) { handleError(error) }
-  }, [activeConversation, handleError, session.access_token])
+  }, [handleError, session.access_token])
 
   const loadMessages = useCallback(async (conversation: Conversation, showLoading = true) => {
     const requestID = ++messageRequestID.current

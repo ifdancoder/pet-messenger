@@ -200,7 +200,7 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 
 	const q = `
 		SELECT c.id, c.kind, c.title, c.avatar_url, c.public, c.archived_at, c.created_at, c.last_message_at,
-		       peer.username, peer.display_name
+		       peer.username, peer.display_name, COALESCE(unread.count, 0)
 		FROM conversations c
 		JOIN conversation_members m ON m.conversation_id = c.id
 		LEFT JOIN LATERAL (
@@ -210,6 +210,15 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 			WHERE other.conversation_id = c.id AND other.user_id <> $1
 			LIMIT 1
 		) peer ON c.kind = 'direct'
+		LEFT JOIN LATERAL (
+			SELECT count(*)::int AS count
+			FROM messages msg
+			LEFT JOIN messages read_cursor ON read_cursor.id = m.last_read_message_id
+			WHERE msg.conversation_id = c.id
+			  AND msg.type = 'text'
+			  AND msg.sender_id IS DISTINCT FROM $1
+			  AND msg.seq > COALESCE(read_cursor.seq, 0)
+		) unread ON true
 		WHERE m.user_id = $1
 		  AND c.archived_at IS NULL
 		  AND ($2::timestamptz IS NULL OR (c.last_message_at, c.id) < ($2, $3))
@@ -229,11 +238,13 @@ func (r *ConversationRepository) ListForUser(ctx context.Context, userID uuid.UU
 			archivedAt sql.NullTime
 			username   sql.NullString
 			display    sql.NullString
+			unread     int
 		)
-		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &archivedAt, &c.CreatedAt, &c.LastMessageAt, &username, &display); err != nil {
+		if err := rows.Scan(&c.ID, &kind, &c.Title, &c.AvatarURL, &c.Public, &archivedAt, &c.CreatedAt, &c.LastMessageAt, &username, &display, &unread); err != nil {
 			return nil, fmt.Errorf("scan conversation row: %w", err)
 		}
 		c.Kind = conversation.Kind(kind)
+		c.UnreadCount = unread
 		if username.Valid {
 			c.DirectUsername = username.String
 		}
