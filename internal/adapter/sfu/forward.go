@@ -23,18 +23,46 @@ func forwardedStreamID(userID uuid.UUID, sourceStreamID string) string {
 	return "pm-" + userID.String() + "-" + sourceStreamID
 }
 
-// forwardedTrackID carries publisher and media type in the browser-visible
-// track ID. Unlike a MediaStream ID, it is not merged or replaced by browsers
-// during renegotiation, so clients can always distinguish camera from screen.
-func forwardedTrackID(userID uuid.UUID, kind webrtc.RTPCodecType, sourceTrackID, sourceStreamID string) string {
-	return "pm-" + userID.String() + "-" + trackLabel(kind, sourceStreamID) + "-" + sourceTrackID
+// forwardedTrackID carries publisher and resolved media kind in the
+// browser-visible track ID, as a fallback signal for clients: unlike a
+// MediaStream ID, a track ID is not merged or replaced by browsers during
+// renegotiation, and callers here already know the real kind (see
+// resolveKind) rather than guessing it from a stream id.
+func forwardedTrackID(userID uuid.UUID, kind, sourceTrackID string) string {
+	return "pm-" + userID.String() + "-" + kind + "-" + sourceTrackID
+}
+
+// resolveKind decides a newly published track's mic/camera/screen label. The
+// publisher's own offer is authoritative when it declared one for this mid
+// (see Frame.TrackKinds) — that is the only reliable signal for "screen",
+// since a MediaStream's id cannot be renamed in a way that reaches the SDP.
+// Absent a declaration (an older client, or this track's mid not resolved),
+// trackLabel's stream-id guess is the fallback, same as before this fix.
+func resolveKind(pub *participant, remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) string {
+	if mid := midForReceiver(pub.pc, receiver); mid != "" {
+		if kind, ok := pub.trackKinds[mid]; ok {
+			return kind
+		}
+	}
+	return trackLabel(remote.Kind(), remote.StreamID())
+}
+
+// midForReceiver finds the mid of the transceiver that owns receiver. OnTrack
+// hands us the TrackRemote and RTPReceiver but not the mid directly.
+func midForReceiver(pc *webrtc.PeerConnection, receiver *webrtc.RTPReceiver) string {
+	for _, tr := range pc.GetTransceivers() {
+		if tr.Receiver() == receiver {
+			return tr.Mid()
+		}
+	}
+	return ""
 }
 
 // onPublish turns a newly arrived remote track into exactly one local track
 // and fans that local out to every other participant. A single copy loop feeds
 // it, no matter how many subscribers there are — that is the whole point of an
 // SFU. Runs on the actor.
-func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
+func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	if r.closed || pub.role != "publisher" {
 		return
 	}
@@ -42,13 +70,15 @@ func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
 		return // the publisher left (or reconnected) before the track landed
 	}
 
-	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, forwardedTrackID(pub.userID, remote.Kind(), remote.ID(), remote.StreamID()), forwardedStreamID(pub.userID, remote.StreamID()))
+	kind := resolveKind(pub, remote, receiver)
+	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, forwardedTrackID(pub.userID, kind, remote.ID()), forwardedStreamID(pub.userID, remote.StreamID()))
 	if err != nil {
 		log.Printf("sfu: room %s: new local track for %s: %v", r.callID, pub.userID, err)
 		return
 	}
 	pub.published[remote.ID()] = local
 	pub.remoteSSRC[remote.ID()] = remote.SSRC()
+	pub.publishedKind[remote.ID()] = kind
 
 	for id, sub := range r.peers {
 		if id != pub.userID {
@@ -118,6 +148,7 @@ func (r *room) dropLocal(local *webrtc.TrackLocalStaticRTP) {
 			}
 			delete(p.published, sourceID)
 			delete(p.remoteSSRC, sourceID)
+			delete(p.publishedKind, sourceID)
 		}
 	}
 	r.unsubscribeAll(local)

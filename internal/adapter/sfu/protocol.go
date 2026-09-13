@@ -41,6 +41,13 @@ type Frame struct {
 	Peers     []PeerInfo      `json:"peers,omitempty"`
 	By        string          `json:"by,omitempty"`
 	Message   string          `json:"message,omitempty"`
+	// TrackKinds accompanies a client offer: mid -> one of LabelMic/
+	// LabelCamera/LabelScreen, for every send transceiver the client knows the
+	// kind of. The client is the only party that actually knows why a track
+	// exists (getUserMedia vs. getDisplayMedia) — a MediaStream's id cannot be
+	// renamed in a way that survives into the SDP the browser generates, so the
+	// SFU cannot infer this from the stream id and must be told.
+	TrackKinds map[string]string `json:"track_kinds,omitempty"`
 }
 
 // PeerInfo describes one participant in a peers frame.
@@ -100,9 +107,11 @@ func marshalFrame(f Frame) []byte {
 	return b
 }
 
-// trackLabel derives the UI label of a track from its kind and the stream id
-// the publishing client chose. The convention is that a screen-share stream id
-// contains "screen".
+// trackLabel is the fallback guess used only when the client did not declare
+// a kind for this track's mid (an older client, or a race before its offer's
+// track_kinds map was recorded). It cannot actually detect a screen share —
+// see the TrackKinds doc comment — so it only ever resolves mic vs. camera
+// correctly; a screen share falls through to "camera" here, same as before.
 func trackLabel(kind webrtc.RTPCodecType, streamID string) string {
 	if strings.Contains(strings.ToLower(streamID), LabelScreen) {
 		return LabelScreen
@@ -111,4 +120,10 @@ func trackLabel(kind webrtc.RTPCodecType, streamID string) string {
 		return LabelMic
 	}
 	return LabelCamera
+}
+
+// isKnownLabel reports whether s is one of the three labels the client is
+// allowed to declare in TrackKinds.
+func isKnownLabel(s string) bool {
+	return s == LabelMic || s == LabelCamera || s == LabelScreen
 }

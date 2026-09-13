@@ -123,10 +123,15 @@ export function useCall(session: Session) {
       if (!track) return
       screen.current?.getTracks().forEach(previous => previous.stop())
       screen.current = display
-      const stream = new MediaStream([track]); Object.defineProperty(stream, 'id', { value: `screen-${crypto.randomUUID()}` })
+      const stream = new MediaStream([track])
       peer.current.addTrack(track, stream)
       const offer = await peer.current.createOffer(); await peer.current.setLocalDescription(offer)
-      signal.current?.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }))
+      // A MediaStream's id can't be renamed in a way that reaches the SDP the
+      // browser generates, so the SFU can't infer "screen" from it (that used
+      // to be attempted here and never actually worked). Declare the kind
+      // explicitly by mid instead — the one signal that is actually reliable.
+      const mid = peer.current.getTransceivers().find(candidate => candidate.sender.track === track)?.mid
+      signal.current?.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: mid ? { [mid]: 'screen' } : undefined }))
       setLocalStream(stream)
       track.onended = () => {
         if (screen.current !== display) return

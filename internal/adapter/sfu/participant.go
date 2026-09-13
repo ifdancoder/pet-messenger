@@ -35,6 +35,15 @@ type participant struct {
 	// remoteSSRC remembers each published track's inbound SSRC so the room can
 	// address a PLI at it.
 	remoteSSRC map[string]webrtc.SSRC
+	// publishedKind remembers the resolved mic/camera/screen label for each
+	// published track (same keys as published), so info() reports exactly what
+	// onPublish decided instead of re-guessing from the stream id.
+	publishedKind map[string]string
+
+	// trackKinds is this participant's own claim, from its most recent offer,
+	// of which mid carries which kind of media (see Frame.TrackKinds). Read by
+	// onPublish when a track for that mid arrives.
+	trackKinds map[string]string
 
 	// negotiated turns true once the client's initial offer has been answered.
 	// The client is the initial offerer, so the server must not jump in with a
@@ -55,12 +64,14 @@ type participant struct {
 
 func newParticipant(userID uuid.UUID, role string, sig Signaller, pc *webrtc.PeerConnection) *participant {
 	return &participant{
-		userID:     userID,
-		role:       role,
-		sig:        sig,
-		pc:         pc,
-		published:  map[string]*webrtc.TrackLocalStaticRTP{},
-		remoteSSRC: map[string]webrtc.SSRC{},
+		userID:        userID,
+		role:          role,
+		sig:           sig,
+		pc:            pc,
+		published:     map[string]*webrtc.TrackLocalStaticRTP{},
+		remoteSSRC:    map[string]webrtc.SSRC{},
+		publishedKind: map[string]string{},
+		trackKinds:    map[string]string{},
 	}
 }
 
@@ -99,14 +110,31 @@ func (p *participant) flushCandidates() {
 	}
 }
 
+// declareTrackKinds records this participant's claim of what each of its
+// mids carries, from the track_kinds field of its latest offer. Merged, never
+// replaced: a mid's kind is stable for the life of its transceiver, and a
+// later offer that omits a mid (the client only resends what changed) must
+// not erase what an earlier one already declared.
+func (p *participant) declareTrackKinds(kinds map[string]string) {
+	for mid, kind := range kinds {
+		if isKnownLabel(kind) {
+			p.trackKinds[mid] = kind
+		}
+	}
+}
+
 // info renders this participant for a peers frame.
 func (p *participant) info() PeerInfo {
 	out := PeerInfo{UserID: p.userID.String(), Role: p.role, Muted: p.muted}
 	for id, local := range p.published {
+		label := p.publishedKind[id]
+		if label == "" {
+			label = trackLabel(local.Kind(), local.StreamID())
+		}
 		out.Tracks = append(out.Tracks, TrackInfo{
 			Kind:    local.Kind().String(),
-			TrackID: id,
-			Label:   trackLabel(local.Kind(), local.StreamID()),
+			TrackID: local.ID(),
+			Label:   label,
 		})
 	}
 	sort.Slice(out.Tracks, func(i, j int) bool { return out.Tracks[i].TrackID < out.Tracks[j].TrackID })

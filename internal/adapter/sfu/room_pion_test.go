@@ -174,6 +174,15 @@ func (c *client) handle(ctx context.Context, fr Frame) {
 // to completion so the offer carries its own candidates and the test does not
 // have to trickle in both directions.
 func (c *client) offer(ctx context.Context) {
+	c.offerWithKinds(ctx, nil)
+}
+
+// offerWithKinds is offer plus a client_kinds declaration, exactly as the
+// real browser client will send one alongside a screen-share offer: kinds
+// maps a local track to what it is, and the mid each track landed on is
+// resolved here (mid is unknown until the offer is created), the same way a
+// real client resolves it from RTCRtpTransceiver.mid after createOffer.
+func (c *client) offerWithKinds(ctx context.Context, kinds map[webrtc.TrackLocal]string) {
 	c.t.Helper()
 	offer, err := c.pc.CreateOffer(nil)
 	if err != nil {
@@ -183,7 +192,24 @@ func (c *client) offer(ctx context.Context) {
 		c.t.Fatalf("client %s: SetLocalDescription: %v", c.userID, err)
 	}
 	c.awaitGathering(ctx)
-	c.mgr.ClientFrame(c.callID, c.userID, offerFrame(*c.pc.LocalDescription()))
+	var trackKinds map[string]string
+	if len(kinds) > 0 {
+		trackKinds = map[string]string{}
+		for _, tr := range c.pc.GetTransceivers() {
+			sender := tr.Sender()
+			if sender == nil || tr.Mid() == "" {
+				continue
+			}
+			if kind, ok := kinds[sender.Track()]; ok {
+				trackKinds[tr.Mid()] = kind
+			}
+		}
+	}
+	frame, err := json.Marshal(Frame{Type: FrameOffer, SDP: c.pc.LocalDescription().SDP, TrackKinds: trackKinds})
+	if err != nil {
+		c.t.Fatalf("client %s: marshal offer: %v", c.userID, err)
+	}
+	c.mgr.ClientFrame(c.callID, c.userID, frame)
 }
 
 func (c *client) awaitGathering(ctx context.Context) {
@@ -378,5 +404,100 @@ func TestRoomForwardsRTPBetweenPionPeers(t *testing.T) {
 	}
 	if st := mgr.Stats(callID); st.Exists {
 		t.Fatalf("Stats after CloseRoom = %+v, want a zero value", st)
+	}
+}
+
+// TestRoomLabelsTrackFromClientDeclaredKind is the regression test for a bug
+// reported in production: every viewer saw a screen share captioned "Камера"
+// (camera). Root cause — a client cannot rename a MediaStream's id in a way
+// that reaches the SDP a real browser generates (Object.defineProperty only
+// shadows the JS-visible property; the browser's own SDP generation reads its
+// internal id, never that shadow), so trackLabel's "does the stream id say
+// screen" heuristic can never actually see "screen" for a real screen share.
+// This test's publisher uses a plain camera-shaped stream id — what a real
+// browser always sends — and relies entirely on the offer's track_kinds
+// declaration to end up labeled "screen" for every viewer.
+func TestRoomLabelsTrackFromClientDeclaredKind(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping Pion forwarding test in short mode (needs ICE + DTLS)")
+	}
+
+	api, err := newWebRTCAPI()
+	if err != nil {
+		t.Fatalf("newWebRTCAPI: %v", err)
+	}
+	events := &fakeEvents{}
+	mgr, err := NewManager(pionTestConfig(), events)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	callID := uuid.Must(uuid.NewV7())
+	if err := mgr.CreateRoom(callID); err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	userA := uuid.Must(uuid.NewV7())
+	clientA := newClient(t, api, mgr, callID, userA)
+	video, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
+		"video-a", "camera-a", // deliberately camera-shaped: no "screen" anywhere
+	)
+	if err != nil {
+		t.Fatalf("NewTrackLocalStaticSample: %v", err)
+	}
+	senderA, err := clientA.pc.AddTrack(video)
+	if err != nil {
+		t.Fatalf("A AddTrack: %v", err)
+	}
+	go drainRTCP(senderA)
+	go clientA.run(ctx)
+
+	if err := mgr.Join(callID, userA, "publisher", clientA.sig); err != nil {
+		t.Fatalf("Join A: %v", err)
+	}
+	clientA.offerWithKinds(ctx, map[webrtc.TrackLocal]string{video: LabelScreen})
+	clientA.waitConnected()
+	// The SFU's OnTrack fires on the first received RTP packet, not on
+	// negotiation — without this, onPublish never runs and B never sees the
+	// track at all, screen-labeled or not.
+	go writeSilence(ctx, video)
+
+	userB := uuid.Must(uuid.NewV7())
+	clientB := newClient(t, api, mgr, callID, userB)
+	if _, err := clientB.pc.AddTransceiverFromKind(
+		webrtc.RTPCodecTypeVideo,
+		webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly},
+	); err != nil {
+		t.Fatalf("B AddTransceiverFromKind: %v", err)
+	}
+	go clientB.run(ctx)
+	if err := mgr.Join(callID, userB, "viewer", clientB.sig); err != nil {
+		t.Fatalf("Join B: %v", err)
+	}
+	clientB.offer(ctx)
+	clientB.waitConnected()
+
+	deadline := time.After(mediaTimeout)
+	for {
+		select {
+		case fr := <-clientB.peers:
+			for _, peer := range fr.Peers {
+				if peer.UserID != userA.String() {
+					continue
+				}
+				for _, tr := range peer.Tracks {
+					if tr.Label == LabelCamera {
+						t.Fatalf("A's screen share was labeled %q for B — the bug this test guards against", tr.Label)
+					}
+					if tr.Label == LabelScreen {
+						return
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatal("never saw A's track labeled \"screen\" in a peers frame reaching B")
+		}
 	}
 }

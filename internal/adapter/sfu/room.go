@@ -184,7 +184,7 @@ func (r *room) handleClientFrame(userID uuid.UUID, frame []byte) {
 func (r *room) dispatchClientFrame(userID uuid.UUID, f Frame) {
 	switch f.Type {
 	case FrameOffer:
-		r.handleOffer(userID, f.SDP)
+		r.handleOffer(userID, f.SDP, f.TrackKinds)
 	case FrameAnswer:
 		r.handleAnswer(userID, f.SDP)
 	case FrameCandidate:
@@ -238,8 +238,8 @@ func (r *room) addParticipant(userID uuid.UUID, role string, sig Signaller) erro
 		default:
 		}
 	})
-	pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		r.do(func() { r.onPublish(p, remote) })
+	pc.OnTrack(func(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		r.do(func() { r.onPublish(p, remote, receiver) })
 	})
 
 	r.peers[userID] = p
@@ -376,11 +376,16 @@ func (r *room) flushRenegotiation() {
 	}
 }
 
-func (r *room) handleOffer(userID uuid.UUID, sdp string) {
+func (r *room) handleOffer(userID uuid.UUID, sdp string, trackKinds map[string]string) {
 	p, ok := r.peers[userID]
 	if !ok {
 		return
 	}
+	// Recorded before the glare check and before SetRemoteDescription: a
+	// parked offer is replayed later through this same function, and OnTrack
+	// can fire as soon as the remote description is set, so the declared kind
+	// must already be in place by then.
+	p.declareTrackKinds(trackKinds)
 	if p.signalingBusy {
 		// Glare: our own offer is still outstanding. Park the client's offer
 		// and replay it once the answer lands.
@@ -425,7 +430,9 @@ func (r *room) handleAnswer(userID uuid.UUID, sdp string) {
 
 	if parked := p.pendingOffer; parked != "" {
 		p.pendingOffer = ""
-		r.handleOffer(userID, parked)
+		// Its track_kinds were already merged in when the offer first arrived
+		// and got parked (see handleOffer) — nothing new to declare here.
+		r.handleOffer(userID, parked, nil)
 		return
 	}
 	r.flushRenegotiation()
