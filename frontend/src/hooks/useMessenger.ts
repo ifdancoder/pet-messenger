@@ -6,6 +6,7 @@ import type { Conversation, Message, Session } from '../types'
 import { useRealtimeChat } from './useRealtimeChat'
 
 const refreshInterval = 5_000
+const historyRefreshInterval = 30_000
 
 function chronological(messages: Message[]) {
   return [...new Map(messages.map(message => [message.id, message])).values()].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.created_at.localeCompare(b.created_at))
@@ -54,9 +55,9 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     } catch (error) { handleError(error) }
   }, [activeConversation, handleError, session.access_token])
 
-  const loadMessages = useCallback(async (conversation: Conversation) => {
+  const loadMessages = useCallback(async (conversation: Conversation, showLoading = true) => {
     const requestID = ++messageRequestID.current
-    setIsLoadingMessages(true)
+    if (showLoading) setIsLoadingMessages(true)
     try {
       const result = await api.messages(conversation.id, session.access_token)
       if (requestID === messageRequestID.current) {
@@ -70,7 +71,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
       }
     }
     catch (error) { handleError(error) }
-    finally { if (requestID === messageRequestID.current) setIsLoadingMessages(false) }
+    finally { if (showLoading && requestID === messageRequestID.current) setIsLoadingMessages(false) }
   }, [handleError, session.access_token])
 
   useEffect(() => { void Promise.resolve().then(loadConversations); void Promise.resolve().then(loadNotifications) }, [loadConversations, loadNotifications])
@@ -79,10 +80,14 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     const timer = window.setInterval(() => {
       void loadConversations()
       void loadNotifications()
-      if (activeConversation) void loadMessages(activeConversation)
     }, refreshInterval)
     return () => window.clearInterval(timer)
-  }, [activeConversation, loadConversations, loadMessages, loadNotifications])
+  }, [loadConversations, loadNotifications])
+  useEffect(() => {
+    if (!activeConversation) return
+    const timer = window.setInterval(() => { void loadMessages(activeConversation, false) }, historyRefreshInterval)
+    return () => window.clearInterval(timer)
+  }, [activeConversation, loadMessages])
 
   const selectConversation = useCallback((conversation: Conversation) => { setError(''); setUnreadByConversation(previous => ({ ...previous, [conversation.id]: 0 })); setActiveConversation(conversation) }, [])
   const createConversation = useCallback(async (kind: 'direct' | 'group', value: string) => {
@@ -111,10 +116,14 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
       if (message.sender_id !== session.user.id) {
         setMessages(previous => chronological([...previous, message]))
         playTone(message.type === 'system' ? 'member' : 'message')
+        if (markedRead.current[activeConversation.id] !== message.id) {
+          markedRead.current[activeConversation.id] = message.id
+          void api.markRead(activeConversation.id, message.id, session.access_token).catch(handleError)
+        }
       }
       void loadConversations()
-    } else if (frame.type === 'message.updated' || frame.type === 'message.deleted') void loadMessages(activeConversation)
-  }, [activeConversation, loadConversations, loadMessages, session.user.id])
+    } else if (frame.type === 'message.updated' || frame.type === 'message.deleted') void loadMessages(activeConversation, false)
+  }, [activeConversation, handleError, loadConversations, loadMessages, session.access_token, session.user.id])
   const isRealtimeConnected = useRealtimeChat(session.access_token, activeConversation?.id, receiveRealtimeFrame)
 
   return { conversations, activeConversation, messages, unreadByConversation, error, setError, isLoadingConversations, isLoadingMessages, isRealtimeConnected, selectConversation, createConversation, sendMessage }
