@@ -33,6 +33,7 @@ export function useCall(session: Session) {
   const [isOpen, setIsOpen] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isCameraOff, setIsCameraOff] = useState(false)
+  const [isSharingScreen, setIsSharingScreen] = useState(false)
 
   const close = useCallback(async (end = false) => {
     const id = callID.current
@@ -40,7 +41,7 @@ export function useCall(session: Session) {
     peer.current?.close(); peer.current = null
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
-    setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(false)
+    setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(false); setIsSharingScreen(false)
     callID.current = null
     if (end && id) await api.endCall(id, session.access_token).catch(() => undefined)
   }, [session.access_token])
@@ -133,10 +134,12 @@ export function useCall(session: Session) {
       const mid = peer.current.getTransceivers().find(candidate => candidate.sender.track === track)?.mid
       signal.current?.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: mid ? { [mid]: 'screen' } : undefined }))
       setLocalStream(stream)
+      setIsSharingScreen(true)
       track.onended = () => {
         if (screen.current !== display) return
         screen.current = null
         setLocalStream(local.current)
+        setIsSharingScreen(false)
       }
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [])
@@ -166,5 +169,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [session.access_token])
 
-  return { start, close, shareScreen, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff }
+  return { start, close, shareScreen, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen }
 }
