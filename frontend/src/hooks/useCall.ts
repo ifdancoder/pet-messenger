@@ -79,7 +79,7 @@ export function useCall(session: Session) {
         const stream = new MediaStream([event.track])
         setRemoteStreams(previous => {
           if (previous.some(item => item.id === event.track.id)) return previous
-          return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], ownerID: ownerIDFromForwardedStream(event.streams[0]?.id ?? '') }]
+          return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], ownerID: ownerIDFromForwardedStream(event.track.id) ?? ownerIDFromForwardedStream(event.streams[0]?.id ?? '') }]
         })
       }
       const stream = await localMedia()

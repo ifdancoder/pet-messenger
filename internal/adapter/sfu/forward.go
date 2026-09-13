@@ -23,6 +23,13 @@ func forwardedStreamID(userID uuid.UUID, sourceStreamID string) string {
 	return "pm-" + userID.String() + "-" + sourceStreamID
 }
 
+// forwardedTrackID carries publisher and media type in the browser-visible
+// track ID. Unlike a MediaStream ID, it is not merged or replaced by browsers
+// during renegotiation, so clients can always distinguish camera from screen.
+func forwardedTrackID(userID uuid.UUID, kind webrtc.RTPCodecType, sourceTrackID, sourceStreamID string) string {
+	return "pm-" + userID.String() + "-" + trackLabel(kind, sourceStreamID) + "-" + sourceTrackID
+}
+
 // onPublish turns a newly arrived remote track into exactly one local track
 // and fans that local out to every other participant. A single copy loop feeds
 // it, no matter how many subscribers there are — that is the whole point of an
@@ -35,7 +42,7 @@ func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote) {
 		return // the publisher left (or reconnected) before the track landed
 	}
 
-	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, remote.ID(), forwardedStreamID(pub.userID, remote.StreamID()))
+	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, forwardedTrackID(pub.userID, remote.Kind(), remote.ID(), remote.StreamID()), forwardedStreamID(pub.userID, remote.StreamID()))
 	if err != nil {
 		log.Printf("sfu: room %s: new local track for %s: %v", r.callID, pub.userID, err)
 		return
@@ -76,7 +83,7 @@ func (r *room) subscribe(sub, pub *participant, local *webrtc.TrackLocalStaticRT
 	// A new video subscriber joins mid-stream, so it needs a keyframe now
 	// rather than at the publisher's next natural one.
 	if local.Kind() == webrtc.RTPCodecTypeVideo {
-		r.requestKeyframe(pub, local.ID())
+		r.requestKeyframe(pub, local)
 	}
 }
 
@@ -105,9 +112,12 @@ func (r *room) dropLocal(local *webrtc.TrackLocalStaticRTP) {
 		return
 	}
 	for _, p := range r.peers {
-		if cur, ok := p.published[local.ID()]; ok && cur == local {
-			delete(p.published, local.ID())
-			delete(p.remoteSSRC, local.ID())
+		for sourceID, cur := range p.published {
+			if cur != local {
+				continue
+			}
+			delete(p.published, sourceID)
+			delete(p.remoteSSRC, sourceID)
 		}
 	}
 	r.unsubscribeAll(local)
@@ -143,9 +153,15 @@ func (r *room) pump(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRT
 
 // requestKeyframe asks a publisher for an immediate keyframe. Runs on the
 // actor; WriteRTCP does not block on the network.
-func (r *room) requestKeyframe(pub *participant, trackID string) {
-	ssrc, ok := pub.remoteSSRC[trackID]
-	if !ok {
+func (r *room) requestKeyframe(pub *participant, local *webrtc.TrackLocalStaticRTP) {
+	var ssrc webrtc.SSRC
+	for sourceID, published := range pub.published {
+		if published == local {
+			ssrc = pub.remoteSSRC[sourceID]
+			break
+		}
+	}
+	if ssrc == 0 {
 		return
 	}
 	pkt := &rtcp.PictureLossIndication{MediaSSRC: uint32(ssrc)}

@@ -6,7 +6,7 @@ type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'trackIDs'>
 type TileProps = { stream: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void }
 function isScreenShare(entry: StreamEntry, tracks?: CallPeer['tracks']) {
   const label = tracks?.find(track => entry.trackIDs.includes(track.track_id))?.label
-  return label ? label === 'screen' : entry.stream.id.toLowerCase().includes('screen')
+  return label ? label === 'screen' : entry.id.toLowerCase().includes('-screen-') || entry.stream.id.toLowerCase().includes('screen')
 }
 function FocusIcon({ focused }: { focused: boolean }) {
   return focused
