@@ -19,16 +19,23 @@ export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?:
 // already recovers on its own.
 const maxReconnectDelayMs = 15_000
 
-export type ScreenShareQuality = { label: string; width: number; height: number; frameRate: number }
+export type ScreenResolution = { label: string; width: number; height: number }
 
 // Presets, not a free-form input: getDisplayMedia constraints are only ever
 // "ideal" hints the browser and OS capture pipeline may ignore, so exposing
-// exact numbers would promise a precision this can't deliver.
-export const screenShareQualities: ScreenShareQuality[] = [
-  { label: 'Высокое · 1080p, 30 кадр/с', width: 1920, height: 1080, frameRate: 30 },
-  { label: 'Среднее · 720p, 24 кадр/с', width: 1280, height: 720, frameRate: 24 },
-  { label: 'Экономное · 480p, 15 кадр/с', width: 854, height: 480, frameRate: 15 },
+// exact numbers would promise a precision this can't deliver. Resolution and
+// frame rate are picked independently — either can be pushed for a slide
+// deck (4K, low motion) or a game (lower resolution, high fps) alike.
+export const screenResolutions: ScreenResolution[] = [
+  { label: '720p', width: 1280, height: 720 },
+  { label: '1080p', width: 1920, height: 1080 },
+  { label: '2K · 1440p', width: 2560, height: 1440 },
+  { label: '4K · 2160p', width: 3840, height: 2160 },
 ]
+export const screenFrameRates = [15, 24, 30, 60]
+
+export type ScreenShareOptions = { width: number; height: number; frameRate: number; audio: boolean }
+export const defaultScreenShareOptions: ScreenShareOptions = { width: 1920, height: 1080, frameRate: 30, audio: true }
 
 // Camera starts off: only the microphone is captured up front. toggleCamera
 // acquires and publishes a camera track on demand.
@@ -256,25 +263,31 @@ export function useCall(session: Session) {
   const stopScreenShare = useCallback(() => {
     const display = screen.current
     if (!display) return
-    const track = display.getVideoTracks()[0]
-    const sender = track && peer.current?.getSenders().find(candidate => candidate.track === track)
-    if (sender) peer.current!.removeTrack(sender)
-    track?.stop()
+    const tracks = display.getTracks()
+    for (const sender of peer.current?.getSenders() ?? []) {
+      if (sender.track && tracks.includes(sender.track)) peer.current!.removeTrack(sender)
+    }
+    tracks.forEach(track => track.stop())
     screen.current = null
     setLocalStream(local.current)
     setIsSharingScreen(false)
     void renegotiate()
   }, [renegotiate])
 
-  const shareScreen = useCallback(async (quality: ScreenShareQuality = screenShareQualities[0]) => {
+  const shareScreen = useCallback(async (options: ScreenShareOptions = defaultScreenShareOptions) => {
     if (!peer.current) return
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: quality.width }, height: { ideal: quality.height }, frameRate: { ideal: quality.frameRate } } })
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: options.width }, height: { ideal: options.height }, frameRate: { ideal: options.frameRate } },
+        audio: options.audio,
+      })
       const track = display.getVideoTracks()[0]
       if (!track) return
       screen.current?.getTracks().forEach(previous => previous.stop())
       screen.current = display
       peer.current.addTrack(track, display)
+      const audioTrack = display.getAudioTracks()[0]
+      if (audioTrack) peer.current.addTrack(audioTrack, display)
       setLocalStream(display)
       setIsSharingScreen(true)
       track.onended = () => { if (screen.current === display) stopScreenShare() }
@@ -282,7 +295,11 @@ export function useCall(session: Session) {
       // browser generates, so the SFU can't infer "screen" from it (that used
       // to be attempted here and never actually worked). Declare the kind
       // explicitly by mid instead — the one signal that is actually reliable.
-      await renegotiate(new Map([[track, 'screen']]))
+      // The tab/system audio track, when present, shares the screen's own
+      // stream id (same source MediaStream), so it gets the same label.
+      const kinds = new Map<MediaStreamTrack, string>([[track, 'screen']])
+      if (audioTrack) kinds.set(audioTrack, 'screen')
+      await renegotiate(kinds)
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [renegotiate, stopScreenShare])
 
