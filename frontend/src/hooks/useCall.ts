@@ -19,6 +19,17 @@ export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?:
 // already recovers on its own.
 const maxReconnectDelayMs = 15_000
 
+export type ScreenShareQuality = { label: string; width: number; height: number; frameRate: number }
+
+// Presets, not a free-form input: getDisplayMedia constraints are only ever
+// "ideal" hints the browser and OS capture pipeline may ignore, so exposing
+// exact numbers would promise a precision this can't deliver.
+export const screenShareQualities: ScreenShareQuality[] = [
+  { label: 'Высокое · 1080p, 30 кадр/с', width: 1920, height: 1080, frameRate: 30 },
+  { label: 'Среднее · 720p, 24 кадр/с', width: 1280, height: 720, frameRate: 24 },
+  { label: 'Экономное · 480p, 15 кадр/с', width: 854, height: 480, frameRate: 15 },
+]
+
 // Camera starts off: only the microphone is captured up front. toggleCamera
 // acquires and publishes a camera track on demand.
 async function localAudio() {
@@ -255,10 +266,10 @@ export function useCall(session: Session) {
     void renegotiate()
   }, [renegotiate])
 
-  const shareScreen = useCallback(async () => {
+  const shareScreen = useCallback(async (quality: ScreenShareQuality = screenShareQualities[0]) => {
     if (!peer.current) return
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia({ video: true })
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: { width: { ideal: quality.width }, height: { ideal: quality.height }, frameRate: { ideal: quality.frameRate } } })
       const track = display.getVideoTracks()[0]
       if (!track) return
       screen.current?.getTracks().forEach(previous => previous.stop())
