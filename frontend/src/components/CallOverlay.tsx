@@ -5,7 +5,7 @@ import { screenFrameRates, screenResolutions } from '../hooks/useCall'
 import { Button, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'ownerID'>
-type TileProps = { stream: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
+type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
 // Matches on the MediaStream id the track arrived on, never on the track id:
 // a browser mints MediaStreamTrack.id fresh on receipt, so it never equals
 // whatever id the SFU put in the SDP — only the stream id survives the trip.
@@ -17,12 +17,7 @@ function FocusIcon({ focused }: { focused: boolean }) {
     ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M3 15h6v6M21 15h-6v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
-function VideoTile({ stream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
-  const video = useRef<HTMLVideoElement>(null)
-  useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
-  return <figure className="call-video" onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
-}
-// sharedAudioContext is reused by every ring: browsers cap how many
+// sharedAudioContext is reused everywhere: browsers cap how many
 // AudioContexts a page may create, but one context happily hosts any number
 // of analyser nodes.
 let sharedAudioContext: AudioContext | null = null
@@ -33,9 +28,13 @@ function getAudioContext() {
 }
 // Drives a CSS custom property straight through a ref, never React state:
 // this ticks every animation frame, and running that through useState would
-// re-render the whole tile 60 times a second for a purely cosmetic glow.
-function AudioLevelRing({ stream }: { stream?: MediaStream }) {
-  const ring = useRef<HTMLSpanElement>(null)
+// re-render the whole tile 60 times a second for a purely cosmetic effect.
+// The ref attaches directly to whatever element should carry the reactive
+// outline — the avatar's own mark, or a video tile's whole frame — so the
+// same hook drives both the mic indicator and a screen share's independent
+// one without a separate overlay element for either.
+function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
+  const target = useRef<T>(null)
   useEffect(() => {
     if (!stream?.getAudioTracks().length) return
     let analyser: AnalyserNode
@@ -57,23 +56,50 @@ function AudioLevelRing({ stream }: { stream?: MediaStream }) {
       let sum = 0
       for (const value of data) sum += value
       const level = Math.min(1, (sum / data.length / 255) * 2.5)
-      ring.current?.style.setProperty('--level', level.toFixed(3))
+      target.current?.style.setProperty('--level', level.toFixed(3))
       raf = requestAnimationFrame(tick)
     }
     tick()
     return () => { cancelAnimationFrame(raf); source.disconnect(); analyser.disconnect() }
   }, [stream])
-  return <span className="call-video__avatar-ring" ref={ring} aria-hidden="true" />
+  return target
+}
+function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
+  const video = useRef<HTMLVideoElement>(null)
+  useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
+  // audioStream is only ever this specific tile's own audio (a screen
+  // share's tab/system sound) — a camera tile gets none, so its outline
+  // just never lights up, no separate code path needed.
+  const frame = useAudioLevelRef<HTMLElement>(audioStream)
+  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
+}
+// size drives the CSS var the mark reads its dimensions from — one avatar
+// implementation for both the full placeholder tile and the small identity
+// chip that stays put once a video tile takes the placeholder's place.
+function Avatar({ label, stream, size, onContextMenu }: { label: string; stream?: MediaStream; size: 'lg' | 'sm'; onContextMenu?: MouseEventHandler }) {
+  const name = label.split(' · ').at(-1) || label
+  const mark = useAudioLevelRef<HTMLSpanElement>(stream)
+  return <span className={`call-avatar call-avatar--${size}`} onContextMenu={onContextMenu}><span className="call-avatar__mark" ref={mark} aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span></span>
 }
 function EmptyVideoTile({ label, stream, onContextMenu }: { label: string; stream?: MediaStream; onContextMenu?: MouseEventHandler }) {
-  const name = label.split(' · ').at(-1) || label
-  return <figure className="call-video call-video--placeholder" onContextMenu={onContextMenu}><div className="call-video__profile"><span className="call-video__avatar-wrap"><AudioLevelRing stream={stream} /><span className="call-video__avatar" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span></span><figcaption>{label}</figcaption></div></figure>
+  return <figure className="call-video call-video--placeholder"><div className="call-video__profile"><Avatar label={label} stream={stream} size="lg" onContextMenu={onContextMenu} /><figcaption>{label}</figcaption></div></figure>
 }
 function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus, onVolumeMenu }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
-  const audioStream = streams.find(entry => entry.stream.getAudioTracks().length > 0)?.stream
+  // Two distinct audio sources can coexist for one participant — their mic,
+  // and their screen's own tab/system audio — so "the audio entry" is never
+  // unambiguous; each one drives its own outline independently.
+  const micStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && !isScreenShare(entry, tracks))?.stream
+  const screenAudioStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && isScreenShare(entry, tracks))?.stream
   const mediaStatus = videoStreams.length > 1 ? 'видео и демонстрация' : videoStreams.length === 1 ? 'медиа' : 'камера выключена'
-  return <article className="call-participant"><header><span>{title}</span><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} /> }) : <EmptyVideoTile label={title} stream={audioStream} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, 'mic'))} />}</div></article>
+  const micMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'mic'))
+  // The identity chip lives in the header, not in the media area, precisely
+  // so it survives whatever the media area is showing: a placeholder is
+  // never mounted alongside a video tile (only one or the other), but the
+  // mic it controls keeps playing through AudioSink regardless — without a
+  // permanent spot for it, starting a screen share (or the camera) took the
+  // only place that offered it clean off the page.
+  return <article className="call-participant"><header><span className="call-participant__identity"><Avatar label={title} stream={micStream} size="sm" onContextMenu={micMenu} /><span>{title}</span></span><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} /> }) : <EmptyVideoTile label={title} stream={micStream} onContextMenu={micMenu} />}</div></article>
 }
 // A remote participant's mic (and a shared screen's own tab/system audio)
 // arrives as its own audio-only MediaStream, never bundled into a video
@@ -115,8 +141,8 @@ function VolumeMenu({ menu, value, onChange, onClose }: { menu: VolumeMenuState;
   </div>
 }
 
-type Props = { localStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
-export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+type Props = { localStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
   // Keyed "<userID>:mic" / "<userID>:screen", not by stream id: a stream id
@@ -130,7 +156,7 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
     setVolumeMenu({ x: event.clientX, y: event.clientY, key, label })
   }
   const otherPeers = peers.filter(peer => peer.user_id !== currentUserID)
-  const title = isConnected ? 'Соединение установлено' : isConnecting ? 'Подключаемся…' : 'Соединение потеряно'
+  const title = isConnected ? 'Соединение установлено' : isConnecting ? 'Подключаемся…' : reconnectExhausted ? 'Не удалось переподключиться' : 'Соединение потеряно'
   // The local tile's own kind is known outright (isSharingScreen), never guessed
   // — unlike a remote peer, there is no SFU roster entry for our own stream to
   // read a label from.
@@ -175,7 +201,9 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
       const key = entry.ownerID ? `${entry.ownerID}:${isScreenShare(entry, tracks) ? 'screen' : 'mic'}` : entry.id
       return <AudioSink key={entry.id} stream={entry.stream} volume={volumes[key] ?? 1} />
     })}
-    {focused
+    {reconnectExhausted
+      ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
+      : focused
       ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={labelFor(focused.id)} focused onFocus={() => toggleFocus(focused.id)} onContextMenu={contextMenuFor(focused)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id && stream.stream.getVideoTracks().length > 0).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={labelFor(stream.id)} focused={false} onFocus={() => toggleFocus(stream.id)} onContextMenu={contextMenuFor(stream)} />)}</div></div>
       : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Микрофон'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
     <footer>

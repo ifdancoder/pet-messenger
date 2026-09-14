@@ -18,6 +18,14 @@ export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?:
 // useRealtimeChat's message socket — the one place a dropped connection here
 // already recovers on its own.
 const maxReconnectDelayMs = 15_000
+// reconnectTimeoutMs bounds how long automatic retries keep going after a
+// drop: retrying forever left a call silently unrecoverable if whatever
+// caused the drop wasn't transient (a peer with only one other participant
+// leaving mid-blip, say) — the other side moves on with a working call while
+// this one is stuck redialling a room that may not even exist any more.
+// Past this, the app stops trying on its own and hands the decision back —
+// a manual retry starts a fresh attempt window rather than resuming this one.
+const reconnectTimeoutMs = 4 * 60_000
 
 export type ScreenResolution = { label: string; width: number; height: number }
 
@@ -61,6 +69,10 @@ export function useCall(session: Session) {
   const closedByClient = useRef(true)
   const reconnectAttempt = useRef(0)
   const reconnectTimer = useRef<number | undefined>(undefined)
+  // Set on the first attempt of a drop, cleared on success (or a manual
+  // retry) — scheduleReconnect gives up once Date.now() passes this, rather
+  // than tracking a countdown that has to survive tab-throttling drift.
+  const reconnectDeadline = useRef<number | null>(null)
   // scheduleReconnectRef breaks the mutual useCallback dependency between
   // connectSignaling (whose onclose handler needs to schedule a reconnect)
   // and scheduleReconnect (which needs to call connectSignaling again) —
@@ -93,10 +105,13 @@ export function useCall(session: Session) {
   const [isMuted, setIsMuted] = useState(false)
   const [isCameraOff, setIsCameraOff] = useState(true)
   const [isSharingScreen, setIsSharingScreen] = useState(false)
+  const [reconnectExhausted, setReconnectExhausted] = useState(false)
 
   const close = useCallback(async (end = false) => {
     closedByClient.current = true
     if (reconnectTimer.current) { window.clearTimeout(reconnectTimer.current); reconnectTimer.current = undefined }
+    reconnectDeadline.current = null
+    setReconnectExhausted(false)
     const id = callID.current
     signal.current?.close(); signal.current = null
     peer.current?.close(); peer.current = null
@@ -135,6 +150,8 @@ export function useCall(session: Session) {
       switch (connection.connectionState) {
         case 'connected':
           reconnectAttempt.current = 0
+          reconnectDeadline.current = null
+          setReconnectExhausted(false)
           setIsConnecting(false)
           setIsOpen(true)
           break
@@ -221,12 +238,20 @@ export function useCall(session: Session) {
   // scheduleReconnect mints a fresh join ticket (the old one may have
   // expired, and api.joinCall transparently refreshes the access token if
   // that's what actually expired) and renegotiates from scratch. Retries
-  // indefinitely with capped backoff, same policy as the message socket —
-  // the alternative is a call that silently stays dead after any blip
-  // (a background tab throttling timers, a brief network drop) with no way
-  // back short of hanging up and redialling.
+  // with capped backoff for up to reconnectTimeoutMs total — long enough to
+  // ride out a background tab throttling timers or a brief network drop,
+  // but not forever: past that, whatever's wrong is unlikely to be
+  // transient (the room itself may be gone), and a silent retry loop the
+  // user has no visibility into is worse than telling them and letting them
+  // retry on their own terms.
   const scheduleReconnect = useCallback(() => {
     if (closedByClient.current || !callID.current) return
+    if (reconnectDeadline.current === null) reconnectDeadline.current = Date.now() + reconnectTimeoutMs
+    if (Date.now() >= reconnectDeadline.current) {
+      setIsConnecting(false)
+      setReconnectExhausted(true)
+      return
+    }
     const delay = Math.min(1_000 * 2 ** reconnectAttempt.current, maxReconnectDelayMs)
     reconnectAttempt.current += 1
     reconnectTimer.current = window.setTimeout(async () => {
@@ -243,9 +268,35 @@ export function useCall(session: Session) {
   }, [connectSignaling])
   useEffect(() => { scheduleReconnectRef.current = scheduleReconnect }, [scheduleReconnect])
 
+  // reconnectNow is the user's own escape hatch once automatic retries gave
+  // up: same join+renegotiate path scheduleReconnect uses, just fired
+  // immediately and starting a fresh reconnectTimeoutMs window rather than
+  // resuming the exhausted one.
+  const reconnectNow = useCallback(() => {
+    if (!callID.current) return
+    if (reconnectTimer.current) { window.clearTimeout(reconnectTimer.current); reconnectTimer.current = undefined }
+    reconnectAttempt.current = 0
+    reconnectDeadline.current = null
+    setReconnectExhausted(false)
+    setError('')
+    setIsConnecting(true)
+    void (async () => {
+      try {
+        const { join } = await api.joinCall(callID.current!, sessionRef.current.access_token)
+        if (closedByClient.current) return
+        connectSignaling(join)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Не удалось переподключиться')
+        scheduleReconnectRef.current()
+      }
+    })()
+  }, [connectSignaling])
+
   const start = useCallback(async (conversation: Conversation) => {
     closedByClient.current = false
     reconnectAttempt.current = 0
+    reconnectDeadline.current = null
+    setReconnectExhausted(false)
     setError(''); setIsConnecting(true)
     try {
       const { call, join } = await api.startCall(conversation.id, sessionRef.current.access_token)
@@ -377,5 +428,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [])
 
-  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen }
+  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, reconnectNow, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
 }
