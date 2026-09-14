@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
-export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; ownerID?: string; firstSeenAt: number }
+export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; kind?: string; ownerID?: string; firstSeenAt: number }
 
 // staleStreamGraceMs guards against a benign race: the peers roster and the
 // RTP that fires ontrack travel over separate transports (WS vs DTLS-SRTP)
@@ -113,7 +113,7 @@ export function useCall(session: Session) {
       const sourceStreamID = event.streams[0]?.id
       setRemoteStreams(previous => {
         if (previous.some(item => item.id === event.track.id)) return previous
-        return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? ''), firstSeenAt: Date.now() }]
+        return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, kind: event.track.kind, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? ''), firstSeenAt: Date.now() }]
       })
     }
 
@@ -151,10 +151,14 @@ export function useCall(session: Session) {
         // removed track's last-known state (including its label) stays
         // stuck on screen forever, all the way down to being relabeled
         // "Камера" once its own roster entry is gone.
-        const liveStreamIDs = new Set(frame.peers.flatMap(peer => peer.tracks?.map(track => track.stream_id) ?? []))
+        // Keyed by stream_id *and* kind: a camera video track and its mic
+        // audio track publish on the same MediaStream (same stream_id), so
+        // stream_id alone can't tell a dropped video track from a mic that
+        // is still very much live on that same id.
+        const liveTrackKeys = new Set(frame.peers.flatMap(peer => peer.tracks?.map(track => `${track.stream_id}:${track.kind}`) ?? []))
         const now = Date.now()
         setRemoteStreams(previous => previous.filter(entry =>
-          !entry.sourceStreamID || liveStreamIDs.has(entry.sourceStreamID) || now - entry.firstSeenAt < staleStreamGraceMs))
+          !entry.sourceStreamID || liveTrackKeys.has(`${entry.sourceStreamID}:${entry.kind}`) || now - entry.firstSeenAt < staleStreamGraceMs))
       }
       else if (frame.type === 'removed') await close(false)
       else if (frame.type === 'error') setError(frame.message ?? 'Ошибка звонка')
@@ -207,6 +211,50 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось начать звонок'); await close(false) }
   }, [close, connectSignaling])
 
+  // renegotiate sends a fresh offer reflecting whatever the caller already
+  // did to peer.current's senders (addTrack/removeTrack) — shareScreen,
+  // stopScreenShare and toggleCamera all end with this instead of repeating
+  // the offer/mid/track_kinds dance. newKinds declares the kind of any track
+  // added in THIS round (mid isn't known until after the offer is created,
+  // so it's resolved here, the same way the initial screen-share declaration
+  // always worked).
+  const renegotiate = useCallback(async (newKinds?: Map<MediaStreamTrack, string>) => {
+    const connection = peer.current
+    const socket = signal.current
+    if (!connection || !socket || socket.readyState !== WebSocket.OPEN) return
+    const offer = await connection.createOffer()
+    await connection.setLocalDescription(offer)
+    let trackKinds: Record<string, string> | undefined
+    if (newKinds?.size) {
+      trackKinds = {}
+      for (const transceiver of connection.getTransceivers()) {
+        const track = transceiver.sender.track
+        const kind = track && newKinds.get(track)
+        if (kind && transceiver.mid) trackKinds[transceiver.mid] = kind
+      }
+    }
+    socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: trackKinds }))
+  }, [])
+
+  // stopScreenShare tears down publishing, not just the local preview: a
+  // disabled-but-still-attached sender would keep sending nothing to a
+  // frozen last frame, which never falls back to the "no video" placeholder
+  // for anyone else — only an actual removeTrack + renegotiation does.
+  // Callable from the stop button and from the browser's own native "Stop
+  // sharing" bar (track.onended) alike.
+  const stopScreenShare = useCallback(() => {
+    const display = screen.current
+    if (!display) return
+    const track = display.getVideoTracks()[0]
+    const sender = track && peer.current?.getSenders().find(candidate => candidate.track === track)
+    if (sender) peer.current!.removeTrack(sender)
+    track?.stop()
+    screen.current = null
+    setLocalStream(local.current)
+    setIsSharingScreen(false)
+    void renegotiate()
+  }, [renegotiate])
+
   const shareScreen = useCallback(async () => {
     if (!peer.current) return
     try {
@@ -215,25 +263,17 @@ export function useCall(session: Session) {
       if (!track) return
       screen.current?.getTracks().forEach(previous => previous.stop())
       screen.current = display
-      const stream = new MediaStream([track])
-      peer.current.addTrack(track, stream)
-      const offer = await peer.current.createOffer(); await peer.current.setLocalDescription(offer)
+      peer.current.addTrack(track, display)
+      setLocalStream(display)
+      setIsSharingScreen(true)
+      track.onended = () => { if (screen.current === display) stopScreenShare() }
       // A MediaStream's id can't be renamed in a way that reaches the SDP the
       // browser generates, so the SFU can't infer "screen" from it (that used
       // to be attempted here and never actually worked). Declare the kind
       // explicitly by mid instead — the one signal that is actually reliable.
-      const mid = peer.current.getTransceivers().find(candidate => candidate.sender.track === track)?.mid
-      signal.current?.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: mid ? { [mid]: 'screen' } : undefined }))
-      setLocalStream(stream)
-      setIsSharingScreen(true)
-      track.onended = () => {
-        if (screen.current !== display) return
-        screen.current = null
-        setLocalStream(local.current)
-        setIsSharingScreen(false)
-      }
+      await renegotiate(new Map([[track, 'screen']]))
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
-  }, [])
+  }, [renegotiate, stopScreenShare])
 
   const toggleMute = useCallback(() => {
     const tracks = local.current?.getAudioTracks() ?? []
@@ -243,13 +283,35 @@ export function useCall(session: Session) {
     setIsMuted(muted)
   }, [])
 
-  const toggleCamera = useCallback(() => {
-    const tracks = local.current?.getVideoTracks() ?? []
-    if (!tracks.length) return
-    const cameraOff = tracks.some(track => track.enabled)
-    tracks.forEach(track => { track.enabled = !cameraOff })
-    setIsCameraOff(cameraOff)
-  }, [])
+  // Camera starts off (see localAudio) and is published/unpublished on
+  // demand, the same as screen share — not merely enabled/disabled, so a
+  // remote viewer's tile actually appears and disappears rather than
+  // freezing on whatever frame was last sent.
+  const toggleCamera = useCallback(async () => {
+    if (!peer.current) return
+    if (isCameraOff) {
+      try {
+        const media = await navigator.mediaDevices.getUserMedia({ video: true })
+        const track = media.getVideoTracks()[0]
+        if (!track) return
+        local.current?.addTrack(track)
+        peer.current.addTrack(track, local.current ?? media)
+        setIsCameraOff(false)
+        setLocalStream(local.current)
+        await renegotiate()
+      } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
+    } else {
+      const track = local.current?.getVideoTracks()[0]
+      if (!track) return
+      const sender = peer.current.getSenders().find(candidate => candidate.track === track)
+      if (sender) peer.current.removeTrack(sender)
+      track.stop()
+      local.current?.removeTrack(track)
+      setIsCameraOff(true)
+      setLocalStream(local.current)
+      await renegotiate()
+    }
+  }, [isCameraOff, renegotiate])
 
   const moderate = useCallback(async (userID: string, action: 'mute' | 'unmute' | 'remove') => {
     if (!callID.current) return
@@ -260,5 +322,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [])
 
-  return { start, close, shareScreen, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen }
+  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen }
 }
