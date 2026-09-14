@@ -67,6 +67,22 @@ export function useCall(session: Session) {
   // always call scheduleReconnectRef.current(), never scheduleReconnect
   // directly, from inside connectSignaling.
   const scheduleReconnectRef = useRef<() => void>(() => {})
+  // negotiationQueue serializes every SDP operation on peer.current: the
+  // incoming offer/answer/candidate/peers handling AND every client-initiated
+  // renegotiate() call (shareScreen, stopScreenShare, toggleCamera) alike.
+  // createOffer/setLocalDescription on one RTCPeerConnection do not queue
+  // themselves — two overlapping calls (e.g. turning the camera on right
+  // before sharing the screen) can interleave, and a renegotiate() whose
+  // track_kinds got built against a superseded offer sends a mid the server
+  // never actually adopts. The video then falls back to the sfu's stream-id
+  // guess, which can never actually detect "screen" — exactly the
+  // mislabel-as-camera bug this queue exists to rule out.
+  const negotiationQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const enqueueNegotiation = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const result = negotiationQueue.current.then(task, task)
+    negotiationQueue.current = result.then(() => undefined, () => undefined)
+    return result
+  }, [])
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([])
@@ -101,8 +117,9 @@ export function useCall(session: Session) {
     const connection = new RTCPeerConnection({ iceServers: join.ice_servers })
     peer.current = connection
     const pendingCandidates: RTCIceCandidateInit[] = []
-    let operations = Promise.resolve()
-    const enqueue = (task: () => Promise<void>) => { operations = operations.then(task).catch(error => setError(error instanceof Error ? error.message : 'Ошибка соединения')) }
+    const enqueue = (task: () => Promise<void>) => {
+      void enqueueNegotiation(task).catch(error => setError(error instanceof Error ? error.message : 'Ошибка соединения'))
+    }
 
     connection.onconnectionstatechange = () => {
       switch (connection.connectionState) {
@@ -189,7 +206,7 @@ export function useCall(session: Session) {
       if (closedByClient.current || event.code === 1000) return
       scheduleReconnectRef.current()
     }
-  }, [close])
+  }, [close, enqueueNegotiation])
 
   // scheduleReconnect mints a fresh join ticket (the old one may have
   // expired, and api.joinCall transparently refreshes the access token if
@@ -236,7 +253,7 @@ export function useCall(session: Session) {
   // added in THIS round (mid isn't known until after the offer is created,
   // so it's resolved here, the same way the initial screen-share declaration
   // always worked).
-  const renegotiate = useCallback(async (newKinds?: Map<MediaStreamTrack, string>) => {
+  const renegotiate = useCallback((newKinds?: Map<MediaStreamTrack, string>) => enqueueNegotiation(async () => {
     const connection = peer.current
     const socket = signal.current
     if (!connection || !socket || socket.readyState !== WebSocket.OPEN) return
@@ -252,7 +269,7 @@ export function useCall(session: Session) {
       }
     }
     socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: trackKinds }))
-  }, [])
+  }), [enqueueNegotiation])
 
   // stopScreenShare tears down publishing, not just the local preview: a
   // disabled-but-still-attached sender would keep sending nothing to a
