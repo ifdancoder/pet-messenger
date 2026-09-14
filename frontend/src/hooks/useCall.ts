@@ -125,7 +125,17 @@ export function useCall(session: Session) {
   // always was, with nothing new to declare.
   const knownKinds = useRef<Map<MediaStreamTrack, string>>(new Map())
 
+  // Two independent slots, not one shared "whichever ran last" stream: camera
+  // (localStream, always local.current — mic+camera, present the whole call)
+  // and screen (localScreenStream, only while sharing) are published and
+  // toggled by entirely separate actions. A single shared slot meant turning
+  // the camera on or off *while already sharing the screen* clobbered
+  // whichever the self-view was currently showing — the label (driven by
+  // isSharingScreen) and the actual displayed content silently fell out of
+  // sync, and stopping the camera while sharing collapsed the self-view to
+  // an empty "camera off" placeholder even though the share was still live.
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([])
   const [peers, setPeers] = useState<CallPeer[]>([])
   const [error, setError] = useState('')
@@ -147,7 +157,7 @@ export function useCall(session: Session) {
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
     knownKinds.current.clear()
-    setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(true); setIsSharingScreen(false)
+    setLocalStream(null); setLocalScreenStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(true); setIsSharingScreen(false)
     callID.current = null
     if (end && id) await api.endCall(id, sessionRef.current.access_token).catch(() => undefined)
   }, [])
@@ -373,7 +383,7 @@ export function useCall(session: Session) {
     }
     tracks.forEach(track => { track.stop(); knownKinds.current.delete(track) })
     screen.current = null
-    setLocalStream(local.current)
+    setLocalScreenStream(null)
     setIsSharingScreen(false)
     void renegotiate()
   }, [renegotiate])
@@ -401,7 +411,7 @@ export function useCall(session: Session) {
         // stream id (same source MediaStream), so it gets the same label.
         knownKinds.current.set(audioTrack, 'screen')
       }
-      setLocalStream(display)
+      setLocalScreenStream(display)
       setIsSharingScreen(true)
       track.onended = () => { if (screen.current === display) stopScreenShare() }
       await renegotiate()
@@ -457,5 +467,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [])
 
-  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, reconnectNow, localStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
+  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
 }

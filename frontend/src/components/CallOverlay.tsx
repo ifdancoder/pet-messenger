@@ -141,8 +141,8 @@ function VolumeMenu({ menu, value, onChange, onClose }: { menu: VolumeMenuState;
   </div>
 }
 
-type Props = { localStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
-export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
   // Keyed "<userID>:mic" / "<userID>:screen", not by stream id: a stream id
@@ -157,11 +157,20 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
   }
   const otherPeers = peers.filter(peer => peer.user_id !== currentUserID)
   const title = isConnected ? 'Соединение установлено' : isConnecting ? 'Подключаемся…' : reconnectExhausted ? 'Не удалось переподключиться' : 'Соединение потеряно'
-  // The local tile's own kind is known outright (isSharingScreen), never guessed
-  // — unlike a remote peer, there is no SFU roster entry for our own stream to
-  // read a label from.
-  const local: StreamEntry[] = localStream ? [{ id: 'local', stream: localStream, sourceStreamID: isSharingScreen ? 'local-screen' : undefined, ownerID: undefined }] : []
-  const localTracks = isSharingScreen ? [{ track_id: 'local-screen', stream_id: 'local-screen', kind: 'video', label: 'screen' }] : undefined
+  // Camera and screen are two independent slots here, exactly like a remote
+  // participant's own separate published tracks — never one shared "current
+  // local stream" toggled by whichever of shareScreen/toggleCamera last ran.
+  // That used to let turning the camera on or off while already sharing the
+  // screen silently swap out what the self-view was displaying without
+  // updating what it was labeled, or collapse it to an empty placeholder.
+  // The local tile's own kind is known outright, never guessed — unlike a
+  // remote peer, there is no SFU roster entry for our own streams to read a
+  // label from, so localTracks declares "screen" unconditionally and only
+  // the local-screen entry's sourceStreamID ever actually matches it.
+  const local: StreamEntry[] = []
+  if (localStream) local.push({ id: 'local-camera', stream: localStream, sourceStreamID: undefined, ownerID: undefined })
+  if (localScreenStream) local.push({ id: 'local-screen', stream: localScreenStream, sourceStreamID: 'local-screen', ownerID: undefined })
+  const localTracks = [{ track_id: 'local-screen', stream_id: 'local-screen', kind: 'video', label: 'screen' }]
   const nameFor = (userID: string, fallback: string) => participantNames[userID] ?? fallback
   const sections = new Map<string, StreamEntry[]>()
   for (const stream of remoteStreams) {
@@ -176,11 +185,11 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
   const focused = focusedStreamID ? allStreams.find(stream => stream.id === focusedStreamID) : undefined
   const toggleFocus = (id: string) => setFocusedStreamID(current => current === id ? null : id)
   const labelFor = (id: string) => {
-    if (id === 'local') return nameFor(currentUserID, 'Вы')
+    if (isLocal(id)) return nameFor(currentUserID, 'Вы')
     const owner = [...sections.entries()].find(([, streams]) => streams.some(stream => stream.id === id))?.[0]
     return owner ? nameFor(owner, 'Собеседник') : 'Собеседник'
   }
-  const isLocal = (id: string) => id === 'local'
+  const isLocal = (id: string) => id === 'local-camera' || id === 'local-screen'
   // Shared by the focused main tile and its filmstrip: a remote entry's
   // owner and kind (mic vs. this specific participant's screen audio) are
   // resolved the same way ParticipantSection resolves them for the grid.
