@@ -11,7 +11,7 @@ import { useCall } from './hooks/useCall'
 import { useLiveCalls } from './hooks/useLiveCall'
 import { clearSession, readSession, saveSession } from './lib/session'
 import { playTone } from './lib/sounds'
-import { api } from './lib/api'
+import { api, setSessionRefreshHandler } from './lib/api'
 import type { Conversation, Session } from './types'
 import './App.css'
 
@@ -49,6 +49,18 @@ function Messenger({ session, onLogout }: { session: Session; onLogout: () => vo
 export default function App() {
   const [session, setSession] = useState<Session | null>(readSession)
   const authenticate = useCallback((session: Session) => { saveSession(session); setSession(session) }, [])
-  const logout = useCallback(() => { clearSession(); setSession(null) }, [])
+  const logout = useCallback(() => {
+    const refreshToken = readSession()?.refresh_token
+    clearSession(); setSession(null)
+    if (refreshToken) void api.logout(refreshToken).catch(() => undefined)
+  }, [])
+  // A 401 anywhere silently refreshes the token; this keeps the in-memory
+  // session (and everything derived from it, like useCall's WS reconnects)
+  // in sync with what api.ts just wrote to storage — or logs out if the
+  // refresh token itself was rejected.
+  useEffect(() => {
+    setSessionRefreshHandler(refreshed => refreshed ? setSession(refreshed) : setSession(null))
+    return () => setSessionRefreshHandler(null)
+  }, [])
   return session ? <Messenger session={session} onLogout={logout} /> : <AuthScreen onAuthenticated={authenticate} />
 }
