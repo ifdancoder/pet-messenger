@@ -17,7 +17,7 @@ spec:
       imagePullSecrets: [{name: registry-credentials}]
       containers:
         - name: frontend
-          image: 130.17.20.23:5000/pet-messenger-frontend:7ce4761
+          image: 130.17.20.23:5000/pet-messenger-frontend:0355119
           imagePullPolicy: Always
           ports: [{containerPort: 80}]
           readinessProbe: {httpGet: {path: /, port: 80}, initialDelaySeconds: 3}
