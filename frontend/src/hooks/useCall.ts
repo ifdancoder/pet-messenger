@@ -58,6 +58,29 @@ function ownerIDFromForwardedStream(streamID: string) {
   return match?.[1]
 }
 
+// buildTrackKinds declares every currently-known track's kind for every
+// transceiver the connection currently has — not just whichever ones the
+// caller who triggered this particular offer happens to know about. Two
+// operations that each add a track close together (turning the camera on
+// right before sharing the screen, say) both mutate senders synchronously,
+// outside the negotiation queue, so by the time either's queued offer
+// actually goes out it may already carry a transceiver a *different* call
+// added. Recomputing from the persistent knownKinds map on every single
+// offer — instead of from only the kinds passed into this one call — means
+// whichever offer wins the race still declares every mid correctly; the
+// alternative silently let the first-out offer leave someone else's new
+// track undeclared, which falls back to the SFU's stream-id guess and can
+// never actually resolve to "screen".
+function buildTrackKinds(connection: RTCPeerConnection, knownKinds: Map<MediaStreamTrack, string>): Record<string, string> | undefined {
+  const trackKinds: Record<string, string> = {}
+  for (const transceiver of connection.getTransceivers()) {
+    const track = transceiver.sender.track
+    const kind = track && knownKinds.get(track)
+    if (kind && transceiver.mid) trackKinds[transceiver.mid] = kind
+  }
+  return Object.keys(trackKinds).length ? trackKinds : undefined
+}
+
 export function useCall(session: Session) {
   const peer = useRef<RTCPeerConnection | null>(null)
   const signal = useRef<WebSocket | null>(null)
@@ -95,6 +118,12 @@ export function useCall(session: Session) {
     negotiationQueue.current = result.then(() => undefined, () => undefined)
     return result
   }, [])
+  // knownKinds is a track's kind as a standing fact, not a one-off argument
+  // to whichever renegotiate() call happened to publish it — see
+  // buildTrackKinds. Persists across reconnects on purpose: a screen share
+  // or camera track re-attached after a drop is still the same kind it
+  // always was, with nothing new to declare.
+  const knownKinds = useRef<Map<MediaStreamTrack, string>>(new Map())
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([])
@@ -117,6 +146,7 @@ export function useCall(session: Session) {
     peer.current?.close(); peer.current = null
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
+    knownKinds.current.clear()
     setLocalStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(true); setIsSharingScreen(false)
     callID.current = null
     if (end && id) await api.endCall(id, sessionRef.current.access_token).catch(() => undefined)
@@ -181,8 +211,11 @@ export function useCall(session: Session) {
 
     if (local.current) local.current.getTracks().forEach(track => connection.addTrack(track, local.current!))
     if (screen.current) {
-      const track = screen.current.getVideoTracks()[0]
-      if (track) connection.addTrack(track, screen.current)
+      // Both tracks, not just video: a screen share's own tab/system audio
+      // needs republishing after a reconnect exactly as much as its video
+      // does — this used to only re-attach the video half, silently
+      // dropping the audio half on every reconnect during an active share.
+      screen.current.getTracks().forEach(track => connection.addTrack(track, screen.current!))
     }
 
     const socket = new WebSocket(`${join.media_ws_url}?ticket=${encodeURIComponent(join.ticket)}`)
@@ -190,9 +223,7 @@ export function useCall(session: Session) {
     socket.onopen = () => enqueue(async () => {
       const offer = await connection.createOffer()
       await connection.setLocalDescription(offer)
-      const screenTrack = screen.current?.getVideoTracks()[0]
-      const screenMid = screenTrack && connection.getTransceivers().find(candidate => candidate.sender.track === screenTrack)?.mid
-      socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: screenMid ? { [screenMid]: 'screen' } : undefined }))
+      socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: buildTrackKinds(connection, knownKinds.current) }))
     })
     socket.onmessage = event => enqueue(async () => {
       const frame = JSON.parse(String(event.data)) as Signal
@@ -302,6 +333,7 @@ export function useCall(session: Session) {
       const { call, join } = await api.startCall(conversation.id, sessionRef.current.access_token)
       callID.current = call.id
       const stream = await localAudio()
+      stream.getAudioTracks().forEach(track => knownKinds.current.set(track, 'mic'))
       local.current = stream; setLocalStream(stream)
       connectSignaling(join)
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось начать звонок'); await close(false) }
@@ -310,26 +342,20 @@ export function useCall(session: Session) {
   // renegotiate sends a fresh offer reflecting whatever the caller already
   // did to peer.current's senders (addTrack/removeTrack) — shareScreen,
   // stopScreenShare and toggleCamera all end with this instead of repeating
-  // the offer/mid/track_kinds dance. newKinds declares the kind of any track
-  // added in THIS round (mid isn't known until after the offer is created,
-  // so it's resolved here, the same way the initial screen-share declaration
-  // always worked).
-  const renegotiate = useCallback((newKinds?: Map<MediaStreamTrack, string>) => enqueueNegotiation(async () => {
+  // the offer/mid dance. It takes no kind arguments: a caller that just
+  // published a track records its kind into knownKinds itself, synchronously,
+  // in the same tick as the addTrack call that published it (see shareScreen,
+  // toggleCamera) — recording it here instead, inside this queued task, would
+  // reopen the exact race buildTrackKinds exists to close, since this task
+  // might not actually run until well after some other caller's own addTrack
+  // already put an undeclared transceiver on the connection.
+  const renegotiate = useCallback(() => enqueueNegotiation(async () => {
     const connection = peer.current
     const socket = signal.current
     if (!connection || !socket || socket.readyState !== WebSocket.OPEN) return
     const offer = await connection.createOffer()
     await connection.setLocalDescription(offer)
-    let trackKinds: Record<string, string> | undefined
-    if (newKinds?.size) {
-      trackKinds = {}
-      for (const transceiver of connection.getTransceivers()) {
-        const track = transceiver.sender.track
-        const kind = track && newKinds.get(track)
-        if (kind && transceiver.mid) trackKinds[transceiver.mid] = kind
-      }
-    }
-    socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: trackKinds }))
+    socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: buildTrackKinds(connection, knownKinds.current) }))
   }), [enqueueNegotiation])
 
   // stopScreenShare tears down publishing, not just the local preview: a
@@ -345,7 +371,7 @@ export function useCall(session: Session) {
     for (const sender of peer.current?.getSenders() ?? []) {
       if (sender.track && tracks.includes(sender.track)) peer.current!.removeTrack(sender)
     }
-    tracks.forEach(track => track.stop())
+    tracks.forEach(track => { track.stop(); knownKinds.current.delete(track) })
     screen.current = null
     setLocalStream(local.current)
     setIsSharingScreen(false)
@@ -364,20 +390,21 @@ export function useCall(session: Session) {
       screen.current?.getTracks().forEach(previous => previous.stop())
       screen.current = display
       peer.current.addTrack(track, display)
+      // Recorded in the same tick as addTrack, never inside the queued
+      // renegotiate task that follows — see renegotiate's own comment for
+      // why that ordering specifically is what keeps this race-free.
+      knownKinds.current.set(track, 'screen')
       const audioTrack = display.getAudioTracks()[0]
-      if (audioTrack) peer.current.addTrack(audioTrack, display)
+      if (audioTrack) {
+        peer.current.addTrack(audioTrack, display)
+        // The tab/system audio track, when present, shares the screen's own
+        // stream id (same source MediaStream), so it gets the same label.
+        knownKinds.current.set(audioTrack, 'screen')
+      }
       setLocalStream(display)
       setIsSharingScreen(true)
       track.onended = () => { if (screen.current === display) stopScreenShare() }
-      // A MediaStream's id can't be renamed in a way that reaches the SDP the
-      // browser generates, so the SFU can't infer "screen" from it (that used
-      // to be attempted here and never actually worked). Declare the kind
-      // explicitly by mid instead — the one signal that is actually reliable.
-      // The tab/system audio track, when present, shares the screen's own
-      // stream id (same source MediaStream), so it gets the same label.
-      const kinds = new Map<MediaStreamTrack, string>([[track, 'screen']])
-      if (audioTrack) kinds.set(audioTrack, 'screen')
-      await renegotiate(kinds)
+      await renegotiate()
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [renegotiate, stopScreenShare])
 
@@ -402,6 +429,7 @@ export function useCall(session: Session) {
         if (!track) return
         local.current?.addTrack(track)
         peer.current.addTrack(track, local.current ?? media)
+        knownKinds.current.set(track, 'camera')
         setIsCameraOff(false)
         setLocalStream(local.current)
         await renegotiate()
@@ -413,6 +441,7 @@ export function useCall(session: Session) {
       if (sender) peer.current.removeTrack(sender)
       track.stop()
       local.current?.removeTrack(track)
+      knownKinds.current.delete(track)
       setIsCameraOff(true)
       setLocalStream(local.current)
       await renegotiate()
