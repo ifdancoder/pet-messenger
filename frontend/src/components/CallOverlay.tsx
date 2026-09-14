@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { CallPeer, RemoteStream } from '../hooks/useCall'
 import { Button, Notice, Spinner } from './ui'
 
-type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'trackIDs'>
+type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID'>
 type TileProps = { stream: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void }
+// Matches on the MediaStream id the track arrived on, never on the track id:
+// a browser mints MediaStreamTrack.id fresh on receipt, so it never equals
+// whatever id the SFU put in the SDP — only the stream id survives the trip.
 function isScreenShare(entry: StreamEntry, tracks?: CallPeer['tracks']) {
-  const label = tracks?.find(track => entry.trackIDs.includes(track.track_id))?.label
-  return label ? label === 'screen' : entry.id.toLowerCase().includes('-screen-') || entry.stream.id.toLowerCase().includes('screen')
+  return tracks?.find(track => track.stream_id === entry.sourceStreamID)?.label === 'screen'
 }
 function FocusIcon({ focused }: { focused: boolean }) {
   return focused
@@ -36,12 +38,12 @@ export function CallOverlay({ localStream, remoteStreams, peers, currentUserID, 
   // The local tile's own kind is known outright (isSharingScreen), never guessed
   // — unlike a remote peer, there is no SFU roster entry for our own stream to
   // read a label from.
-  const local = localStream ? [{ id: 'local', stream: localStream, trackIDs: isSharingScreen ? ['local-screen'] : [] }] : []
-  const localTracks = isSharingScreen ? [{ track_id: 'local-screen', kind: 'video', label: 'screen' }] : undefined
+  const local = localStream ? [{ id: 'local', stream: localStream, sourceStreamID: isSharingScreen ? 'local-screen' : undefined }] : []
+  const localTracks = isSharingScreen ? [{ track_id: 'local-screen', stream_id: 'local-screen', kind: 'video', label: 'screen' }] : undefined
   const nameFor = (userID: string, fallback: string) => participantNames[userID] ?? fallback
   const sections = new Map<string, StreamEntry[]>()
   for (const stream of remoteStreams) {
-    const owner = stream.ownerID ?? otherPeers.find(peer => peer.tracks?.some(track => stream.trackIDs.includes(track.track_id)))?.user_id
+    const owner = stream.ownerID ?? otherPeers.find(peer => peer.tracks?.some(track => track.stream_id === stream.sourceStreamID))?.user_id
     const key = owner ?? `unknown:${stream.id}`
     sections.set(key, [...(sections.get(key) ?? []), stream])
   }

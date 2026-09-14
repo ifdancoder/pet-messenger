@@ -132,9 +132,10 @@ func (p *participant) info() PeerInfo {
 			label = trackLabel(local.Kind(), local.StreamID())
 		}
 		out.Tracks = append(out.Tracks, TrackInfo{
-			Kind:    local.Kind().String(),
-			TrackID: local.ID(),
-			Label:   label,
+			Kind:     local.Kind().String(),
+			TrackID:  local.ID(),
+			StreamID: local.StreamID(),
+			Label:    label,
 		})
 	}
 	sort.Slice(out.Tracks, func(i, j int) bool { return out.Tracks[i].TrackID < out.Tracks[j].TrackID })

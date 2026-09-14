@@ -58,11 +58,17 @@ type PeerInfo struct {
 	Tracks []TrackInfo `json:"tracks,omitempty"`
 }
 
-// TrackInfo describes one forwarded track of a participant.
+// TrackInfo describes one forwarded track of a participant. StreamID, not
+// TrackID, is what a receiving client can actually match against its own
+// RTCTrackEvent: a browser assigns MediaStreamTrack.id a fresh random GUID on
+// receipt, unrelated to whatever id the sender/SFU put in the SDP, but it
+// does carry the sender-specified id through for the MediaStream (event.
+// streams[0].id) a track arrives on. TrackID is kept only for logging/display.
 type TrackInfo struct {
-	Kind    string `json:"kind"`
-	TrackID string `json:"track_id"`
-	Label   string `json:"label"`
+	Kind     string `json:"kind"`
+	TrackID  string `json:"track_id"`
+	StreamID string `json:"stream_id"`
+	Label    string `json:"label"`
 }
 
 func offerFrame(desc webrtc.SessionDescription) []byte {

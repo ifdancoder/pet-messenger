@@ -3,8 +3,8 @@ import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
-export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; ownerID?: string }
-export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; kind: string; label: string }[] }
+export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; ownerID?: string }
+export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; stream_id: string; kind: string; label: string }[] }
 
 async function localMedia() {
   const devices = await navigator.mediaDevices.enumerateDevices()
@@ -78,9 +78,15 @@ export function useCall(session: Session) {
         // A browser may put camera and screen tracks into one remote MediaStream.
         // Keep a stream per track so each tile retains its own SFU label.
         const stream = new MediaStream([event.track])
+        // event.track.id is a fresh id the browser mints on receipt — it never
+        // matches whatever id the SFU put in the SDP, so it can't be used to
+        // look up this track's kind. event.streams[0].id (the MediaStream the
+        // track arrived on) does carry the SFU's id through; that's the only
+        // thing worth matching camera/screen labels against.
+        const sourceStreamID = event.streams[0]?.id
         setRemoteStreams(previous => {
           if (previous.some(item => item.id === event.track.id)) return previous
-          return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], ownerID: ownerIDFromForwardedStream(event.track.id) ?? ownerIDFromForwardedStream(event.streams[0]?.id ?? '') }]
+          return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? '') }]
         })
       }
       const stream = await localMedia()
