@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/pion/rtcp"
@@ -14,13 +15,39 @@ import (
 // an Ethernet MTU, which is the ceiling Pion's SRTP session enforces anyway.
 const rtpBufferSize = 1500
 
+// sdpTokenSafe strips anything outside what an SDP token (the grammar
+// msid — RFC 8830 — and track/stream ids are built from) actually allows.
+// sourceStreamID and sourceTrackID come straight from a publisher's own
+// browser/OS (MediaStream.id / MediaStreamTrack.id) — usually a clean UUID,
+// but not guaranteed: a Windows-sourced device id can carry brace-wrapped
+// COM GUID formatting, for one. Forwarding that raw string embeds it in the
+// msid line of every outgoing SDP the SFU builds for every OTHER
+// participant, and nothing says every receiving browser's own SDP parser
+// round-trips an unusual character identically — one quietly normalizing it
+// differently than another desyncs event.streams[0].id (what a viewer
+// receives) from the roster's stream_id (what the SFU actually sent),
+// which is exactly the kind of mismatch that makes isScreenShare's lookup
+// find nothing and fall back to "camera" with no way to tell why. Sanitizing
+// before it ever reaches an outgoing SDP removes the ambiguity outright,
+// regardless of which browser disagrees with which about the original.
+func sdpTokenSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			return r
+		default:
+			return -1
+		}
+	}, s)
+}
+
 // forwardedStreamID keeps the publisher identity on every forwarded stream.
 // Browsers may assign a fresh remote track ID during renegotiation, so the
 // track ID alone is not a stable UI ownership key. The stream ID survives the
 // SFU forwarding path and lets clients put camera and screen share into the
 // same participant section.
 func forwardedStreamID(userID uuid.UUID, sourceStreamID string) string {
-	return "pm-" + userID.String() + "-" + sourceStreamID
+	return "pm-" + userID.String() + "-" + sdpTokenSafe(sourceStreamID)
 }
 
 // forwardedTrackID carries publisher and resolved media kind in the
@@ -29,7 +56,7 @@ func forwardedStreamID(userID uuid.UUID, sourceStreamID string) string {
 // renegotiation, and callers here already know the real kind (see
 // resolveKind) rather than guessing it from a stream id.
 func forwardedTrackID(userID uuid.UUID, kind, sourceTrackID string) string {
-	return "pm-" + userID.String() + "-" + kind + "-" + sourceTrackID
+	return "pm-" + userID.String() + "-" + kind + "-" + sdpTokenSafe(sourceTrackID)
 }
 
 // resolveKind decides a newly published track's mic/camera/screen label. The
@@ -39,7 +66,8 @@ func forwardedTrackID(userID uuid.UUID, kind, sourceTrackID string) string {
 // Absent a declaration (an older client, or this track's mid not resolved),
 // trackLabel's stream-id guess is the fallback, same as before this fix.
 func resolveKind(pub *participant, remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) string {
-	if mid := midForReceiver(pub.pc, receiver); mid != "" {
+	mid := midForReceiver(pub.pc, receiver)
+	if mid != "" {
 		if kind, ok := pub.trackKinds[mid]; ok {
 			return kind
 		}
@@ -52,6 +80,19 @@ func resolveKind(pub *participant, remote *webrtc.TrackRemote, receiver *webrtc.
 func midForReceiver(pc *webrtc.PeerConnection, receiver *webrtc.RTPReceiver) string {
 	for _, tr := range pc.GetTransceivers() {
 		if tr.Receiver() == receiver {
+			return tr.Mid()
+		}
+	}
+	return ""
+}
+
+// midOnConnection is midForReceiver's counterpart for the sending side: the
+// mid of pc's transceiver currently sending local, if any. Used to tell one
+// specific viewer which of ITS OWN transceivers a forwarded track landed on
+// — see participant.info.
+func midOnConnection(pc *webrtc.PeerConnection, local *webrtc.TrackLocalStaticRTP) string {
+	for _, tr := range pc.GetTransceivers() {
+		if sender := tr.Sender(); sender != nil && sender.Track() == local {
 			return tr.Mid()
 		}
 	}

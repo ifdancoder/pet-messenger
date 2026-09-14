@@ -144,20 +144,30 @@ func (p *participant) declareTrackKinds(kinds map[string]string) bool {
 	return corrected
 }
 
-// info renders this participant for a peers frame.
-func (p *participant) info() PeerInfo {
+// info renders this participant for a peers frame, personalized for one
+// specific viewer: each track's Mid is that viewer's own
+// RTCRtpTransceiver.mid for it, found by searching the viewer's own
+// PeerConnection — see TrackInfo for why this, rather than the shared
+// StreamID, is the correlation key clients should actually rely on. Never
+// meaningful for a participant's own entry in their own roster (nobody
+// subscribes to their own tracks), so it's left empty there.
+func (p *participant) info(viewer *participant) PeerInfo {
 	out := PeerInfo{UserID: p.userID.String(), Role: p.role, Muted: p.muted}
 	for id, local := range p.published {
 		label := p.publishedKind[id]
 		if label == "" {
 			label = trackLabel(local.Kind(), local.StreamID())
 		}
-		out.Tracks = append(out.Tracks, TrackInfo{
+		track := TrackInfo{
 			Kind:     local.Kind().String(),
 			TrackID:  local.ID(),
 			StreamID: local.StreamID(),
 			Label:    label,
-		})
+		}
+		if viewer != p {
+			track.Mid = midOnConnection(viewer.pc, local)
+		}
+		out.Tracks = append(out.Tracks, track)
 	}
 	sort.Slice(out.Tracks, func(i, j int) bool { return out.Tracks[i].TrackID < out.Tracks[j].TrackID })
 	return out

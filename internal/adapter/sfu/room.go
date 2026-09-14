@@ -354,6 +354,7 @@ func (r *room) detachParticipant(p *participant) {
 // server offer and a stable signalling state. Anything skipped keeps its dirty
 // flag and is picked up by the next flush.
 func (r *room) flushRenegotiation() {
+	sentAny := false
 	for _, p := range r.peers {
 		if !p.negotiated || !p.renegoNeeded || p.signalingBusy {
 			continue
@@ -373,6 +374,19 @@ func (r *room) flushRenegotiation() {
 		p.send(offerFrame(offer))
 		p.signalingBusy = true
 		p.renegoNeeded = false
+		sentAny = true
+	}
+	// A brand-new subscription's transceiver gets its mid only once
+	// CreateOffer runs above — every caller broadcasts the roster BEFORE
+	// calling this (onPublish and friends), so that first broadcast can only
+	// ever report this track's mid as empty. Re-broadcasting now, with mids
+	// finalized, is what actually gets a correct one to every viewer at all;
+	// without it, TrackInfo.Mid stays permanently blank for that track,
+	// forcing every client back onto the stream_id fallback for its whole
+	// life — exactly the fallback a receiver that doesn't populate
+	// RTCTrackEvent.streams the way another one does can never resolve.
+	if sentAny {
+		r.broadcastPeers()
 	}
 }
 
@@ -455,17 +469,19 @@ func (r *room) handleCandidate(userID uuid.UUID, raw json.RawMessage) {
 	p.addCandidate(cand)
 }
 
-// broadcastPeers pushes the full roster at everyone. Cheap enough at call
-// sizes, and it keeps clients from having to reconcile deltas.
+// broadcastPeers pushes the full roster at everyone — personalized per
+// recipient, since a track's Mid (see TrackInfo) only means anything
+// relative to the specific PeerConnection it was resolved against. Cheap
+// enough at call sizes, and it keeps clients from having to reconcile
+// deltas.
 func (r *room) broadcastPeers() {
-	roster := make([]PeerInfo, 0, len(r.peers))
-	for _, p := range r.peers {
-		roster = append(roster, p.info())
-	}
-	sort.Slice(roster, func(i, j int) bool { return roster[i].UserID < roster[j].UserID })
-	frame := peersFrame(roster)
-	for _, p := range r.peers {
-		p.send(frame)
+	for _, viewer := range r.peers {
+		roster := make([]PeerInfo, 0, len(r.peers))
+		for _, p := range r.peers {
+			roster = append(roster, p.info(viewer))
+		}
+		sort.Slice(roster, func(i, j int) bool { return roster[i].UserID < roster[j].UserID })
+		viewer.send(peersFrame(roster))
 	}
 }
 

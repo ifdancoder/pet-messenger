@@ -3,7 +3,14 @@ import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
-export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; kind?: string; ownerID?: string; firstSeenAt: number }
+// mid is this connection's own RTCRtpTransceiver.mid for the track — the
+// primary way to find this entry's kind/label in a peers frame. sourceStreamID
+// (event.streams[0]?.id) is kept only as a fallback for a receiver that
+// doesn't populate RTCTrackEvent.mid: mid is universally central to WebRTC's
+// own offer/answer negotiation, but streams[0] is a legacy convenience some
+// implementations may not populate the same way another one does — a
+// mismatch there silently breaks a match that never had to depend on it.
+export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; mid?: string; kind?: string; ownerID?: string; firstSeenAt: number }
 
 // staleStreamGraceMs guards against a benign race: the peers roster and the
 // RTP that fires ontrack travel over separate transports (WS vs DTLS-SRTP)
@@ -12,7 +19,7 @@ export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]
 // was created. Only prune an entry the roster no longer mentions once it has
 // existed longer than this.
 const staleStreamGraceMs = 1_500
-export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; stream_id: string; kind: string; label: string }[] }
+export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; stream_id: string; kind: string; label: string; mid?: string }[] }
 
 // maxReconnectDelayMs caps the signalling socket's reconnect backoff, mirroring
 // useRealtimeChat's message socket — the one place a dropped connection here
@@ -56,6 +63,19 @@ async function localAudio() {
 function ownerIDFromForwardedStream(streamID: string) {
   const match = /^pm-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})-/i.exec(streamID)
   return match?.[1]
+}
+
+// entryMatchesTrack decides whether a roster track entry describes the same
+// forwarded track as this stream entry. mid is checked first and, when both
+// sides have one, decides it outright: mid is central to WebRTC's own
+// offer/answer negotiation on every conformant implementation, so it can't
+// suffer the same mismatch stream_id can if a receiver doesn't populate
+// RTCTrackEvent.streams the same way another one does. stream_id remains the
+// fallback for whichever side lacks a mid (older data, or a receiver that
+// genuinely never resolves one).
+export function entryMatchesTrack(entry: { mid?: string; sourceStreamID?: string }, track: { mid?: string; stream_id: string }): boolean {
+  if (entry.mid && track.mid) return entry.mid === track.mid
+  return Boolean(entry.sourceStreamID) && entry.sourceStreamID === track.stream_id
 }
 
 // buildTrackKinds declares every currently-known track's kind for every
@@ -209,13 +229,19 @@ export function useCall(session: Session) {
       const stream = new MediaStream([event.track])
       // event.track.id is a fresh id the browser mints on receipt — it never
       // matches whatever id the SFU put in the SDP, so it can't be used to
-      // look up this track's kind. event.streams[0].id (the MediaStream the
-      // track arrived on) does carry the SFU's id through; that's the only
-      // thing worth matching camera/screen labels against.
+      // look up this track's kind. mid — this connection's own
+      // RTCRtpTransceiver.mid — is the primary correlation key against the
+      // peers roster's per-viewer TrackInfo.mid (see CallPeer): unlike the
+      // MediaStream a track arrives on, mid is fundamental to every
+      // conformant WebRTC implementation's own offer/answer negotiation, so
+      // it can't go missing the way event.streams[0] can on a receiver that
+      // doesn't populate it the way another one does. sourceStreamID is kept
+      // only as that fallback.
+      const mid = event.transceiver?.mid ?? undefined
       const sourceStreamID = event.streams[0]?.id
       setRemoteStreams(previous => {
         if (previous.some(item => item.id === event.track.id)) return previous
-        return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, kind: event.track.kind, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? ''), firstSeenAt: Date.now() }]
+        return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, mid, kind: event.track.kind, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? ''), firstSeenAt: Date.now() }]
       })
     }
 
@@ -254,14 +280,18 @@ export function useCall(session: Session) {
         // removed track's last-known state (including its label) stays
         // stuck on screen forever, all the way down to being relabeled
         // "Камера" once its own roster entry is gone.
-        // Keyed by stream_id *and* kind: a camera video track and its mic
-        // audio track publish on the same MediaStream (same stream_id), so
-        // stream_id alone can't tell a dropped video track from a mic that
-        // is still very much live on that same id.
-        const liveTrackKeys = new Set(frame.peers.flatMap(peer => peer.tracks?.map(track => `${track.stream_id}:${track.kind}`) ?? []))
+        // entryMatchesTrack keys this on mid first, stream_id as its own
+        // fallback — either way paired with kind: a camera video track and
+        // its mic audio track can publish on the same MediaStream (same
+        // stream_id) or, in principle, land back-to-back on a reused mid, so
+        // neither alone can tell a dropped video track from a mic that is
+        // still very much live on that same id/mid.
         const now = Date.now()
-        setRemoteStreams(previous => previous.filter(entry =>
-          !entry.sourceStreamID || liveTrackKeys.has(`${entry.sourceStreamID}:${entry.kind}`) || now - entry.firstSeenAt < staleStreamGraceMs))
+        setRemoteStreams(previous => previous.filter(entry => {
+          if (!entry.mid && !entry.sourceStreamID) return true
+          if (now - entry.firstSeenAt < staleStreamGraceMs) return true
+          return frame.peers!.some(peer => peer.tracks?.some(track => track.kind === entry.kind && entryMatchesTrack(entry, track)))
+        }))
       }
       else if (frame.type === 'removed') await close(false)
       else if (frame.type === 'error') setError(frame.message ?? 'Ошибка звонка')

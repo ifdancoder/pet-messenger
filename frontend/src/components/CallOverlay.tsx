@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent, MouseEventHandler } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
-import { screenFrameRates, screenResolutions } from '../hooks/useCall'
+import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
 import { Button, Notice, Spinner } from './ui'
 
-type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'ownerID'>
+type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'mid' | 'ownerID'>
 type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
-// Matches on the MediaStream id the track arrived on, never on the track id:
-// a browser mints MediaStreamTrack.id fresh on receipt, so it never equals
-// whatever id the SFU put in the SDP — only the stream id survives the trip.
+// entryMatchesTrack checks mid first (this connection's own
+// RTCRtpTransceiver.mid, matched against the roster's per-viewer
+// TrackInfo.mid) and only falls back to the MediaStream id the track arrived
+// on when one side lacks a mid — see entryMatchesTrack's own doc comment.
 function isScreenShare(entry: StreamEntry, tracks?: CallPeer['tracks']) {
-  return tracks?.find(track => track.stream_id === entry.sourceStreamID)?.label === 'screen'
+  return tracks?.find(track => entryMatchesTrack(entry, track))?.label === 'screen'
 }
 function FocusIcon({ focused }: { focused: boolean }) {
   return focused
@@ -172,9 +173,16 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   if (localScreenStream) local.push({ id: 'local-screen', stream: localScreenStream, sourceStreamID: 'local-screen', ownerID: undefined })
   const localTracks = [{ track_id: 'local-screen', stream_id: 'local-screen', kind: 'video', label: 'screen' }]
   const nameFor = (userID: string, fallback: string) => participantNames[userID] ?? fallback
+  // ownerOf falls back to a roster lookup (by the same mid/stream_id
+  // entryMatchesTrack uses) whenever a stream's owner couldn't be parsed
+  // straight out of its forwarded stream id at ontrack time — the only way
+  // that ever happens is a receiver that never resolves sourceStreamID at
+  // all, exactly the gap mid-based matching exists to cover.
+  const ownerOf = (entry: Pick<RemoteStream, 'ownerID' | 'mid' | 'sourceStreamID'>) =>
+    entry.ownerID ?? otherPeers.find(peer => peer.tracks?.some(track => entryMatchesTrack(entry, track)))?.user_id
   const sections = new Map<string, StreamEntry[]>()
   for (const stream of remoteStreams) {
-    const owner = stream.ownerID ?? otherPeers.find(peer => peer.tracks?.some(track => track.stream_id === stream.sourceStreamID))?.user_id
+    const owner = ownerOf(stream)
     const key = owner ?? `unknown:${stream.id}`
     sections.set(key, [...(sections.get(key) ?? []), stream])
   }
@@ -194,8 +202,8 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   // owner and kind (mic vs. this specific participant's screen audio) are
   // resolved the same way ParticipantSection resolves them for the grid.
   const contextMenuFor = (entry: StreamEntry): MouseEventHandler | undefined => {
-    if (!entry.ownerID) return undefined
-    const owner = entry.ownerID
+    const owner = ownerOf(entry)
+    if (!owner) return undefined
     const tracks = peers.find(peer => peer.user_id === owner)?.tracks
     const screen = isScreenShare(entry, tracks)
     const key = `${owner}:${screen ? 'screen' : 'mic'}`
@@ -206,8 +214,9 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></header>
     {error ? <Notice>{error}</Notice> : null}
     {remoteStreams.filter(entry => entry.stream.getAudioTracks().length > 0).map(entry => {
-      const tracks = peers.find(peer => peer.user_id === entry.ownerID)?.tracks
-      const key = entry.ownerID ? `${entry.ownerID}:${isScreenShare(entry, tracks) ? 'screen' : 'mic'}` : entry.id
+      const owner = ownerOf(entry)
+      const tracks = peers.find(peer => peer.user_id === owner)?.tracks
+      const key = owner ? `${owner}:${isScreenShare(entry, tracks) ? 'screen' : 'mic'}` : entry.id
       return <AudioSink key={entry.id} stream={entry.stream} volume={volumes[key] ?? 1} />
     })}
     {reconnectExhausted
