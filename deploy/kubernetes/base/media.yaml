@@ -19,7 +19,7 @@ spec:
       imagePullSecrets: [{name: registry-credentials}]
       containers:
         - name: media
-          image: 130.17.20.23:5000/pet-messenger-media:1c474df
+          image: 130.17.20.23:5000/pet-messenger-media:334aa87
           imagePullPolicy: Always
           env:
             - {name: PORT, value: "8082"}
