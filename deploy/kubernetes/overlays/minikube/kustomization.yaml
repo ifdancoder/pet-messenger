@@ -1,2 +1,31 @@
 namespace: pet-messenger
 resources: [../../base]
+
+# The base manifests point at the private registry for a real release (see
+# ../../README.md). Minikube has no push access to it and no CI builds these
+# tags, so this overlay retargets every image at what deploy-minikube.sh
+# actually builds: straight into minikube's own docker daemon, no registry
+# involved. Never edit newTag by hand — the script rewrites it on every run
+# so that a changed tag is what makes `kubectl apply -k` pick up new code at
+# all; a fixed tag would make repeated applies of the same manifest a no-op.
+images:
+  - {name: 130.17.20.23:5000/pet-messenger-api, newName: pet-messenger-api, newTag: unbuilt}
+  - {name: 130.17.20.23:5000/pet-messenger-media, newName: pet-messenger-media, newTag: unbuilt}
+  - {name: 130.17.20.23:5000/pet-messenger-frontend, newName: pet-messenger-frontend, newTag: unbuilt}
+  - {name: 130.17.20.23:5000/pet-messenger-migrate, newName: pet-messenger-migrate, newTag: unbuilt}
+
+# Always: pulls from the registry named above, which minikube's node can't
+# reach for a locally built image anyway. IfNotPresent is correct once the
+# image name carries no registry host: the node resolves it against its own
+# (here: minikube's) docker daemon instead of trying a network pull.
+patches:
+  - target: {kind: Deployment}
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target: {kind: Job}
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

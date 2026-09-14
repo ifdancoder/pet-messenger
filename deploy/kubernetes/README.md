@@ -20,12 +20,19 @@ minikube kubectl -- -n pet-messenger create secret generic pet-messenger-secrets
 minikube kubectl -- -n pet-messenger create secret generic registry-credentials \
   --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$HOME/.docker/config.json" \
   --dry-run=client -o yaml | minikube kubectl -- apply -f -
-minikube kubectl -- apply -k deploy/kubernetes/overlays/minikube
-minikube kubectl -- -n pet-messenger wait --for=condition=complete job/migrate --timeout=120s
-minikube kubectl -- -n pet-messenger rollout status deployment/api
-minikube kubectl -- -n pet-messenger rollout status deployment/media
-minikube kubectl -- -n pet-messenger rollout status deployment/frontend
+KUBECTL="minikube kubectl --" deploy/kubernetes/deploy-minikube.sh
 ```
+
+There is no CI/registry pipeline for this stack — the base manifests' image
+tags exist only for a real release (see below). `deploy-minikube.sh` is what
+actually gets local changes running: it builds all four images straight into
+minikube's own docker daemon, retags the `overlays/minikube` kustomization to
+match (every build gets a fresh, unique tag so `kubectl apply -k` always sees
+a changed Deployment and actually rolls out — a stable tag would make repeat
+applies a no-op), re-runs the migration Job, and waits for every rollout.
+Run it after any change you want to see in the cluster; `kubectl apply -k`
+alone will not pick up new code. `KUBECTL` defaults to plain `kubectl`;
+override it as above if only `minikube kubectl --` is on your PATH.
 
 For the manual call page, forward the API and media WebSocket ports:
 
