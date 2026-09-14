@@ -3,7 +3,15 @@ import { api } from '../lib/api'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
-export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; ownerID?: string }
+export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]; sourceStreamID?: string; ownerID?: string; firstSeenAt: number }
+
+// staleStreamGraceMs guards against a benign race: the peers roster and the
+// RTP that fires ontrack travel over separate transports (WS vs DTLS-SRTP)
+// with no ordering guarantee between them, so a stream that is genuinely
+// brand new can briefly be missing from the very first peers frame after it
+// was created. Only prune an entry the roster no longer mentions once it has
+// existed longer than this.
+const staleStreamGraceMs = 1_500
 export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; stream_id: string; kind: string; label: string }[] }
 
 // maxReconnectDelayMs caps the signalling socket's reconnect backoff, mirroring
@@ -105,7 +113,7 @@ export function useCall(session: Session) {
       const sourceStreamID = event.streams[0]?.id
       setRemoteStreams(previous => {
         if (previous.some(item => item.id === event.track.id)) return previous
-        return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? '') }]
+        return [...previous, { id: event.track.id, stream, trackIDs: [event.track.id], sourceStreamID, ownerID: ownerIDFromForwardedStream(sourceStreamID ?? ''), firstSeenAt: Date.now() }]
       })
     }
 
@@ -133,7 +141,21 @@ export function useCall(session: Session) {
       } else if (frame.type === 'answer' && frame.sdp) await connection.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
       else if (frame.type === 'candidate' && frame.candidate) {
         if (connection.remoteDescription) await connection.addIceCandidate(frame.candidate); else pendingCandidates.push(frame.candidate)
-      } else if (frame.type === 'peers' && frame.peers) setPeers(frame.peers)
+      } else if (frame.type === 'peers' && frame.peers) {
+        setPeers(frame.peers)
+        // The roster is authoritative for which streams are still actually
+        // being forwarded — a track a participant stopped publishing (screen
+        // share ended, camera turned off) drops out of it, but nothing else
+        // ever prunes remoteStreams on its own: a MediaStream doesn't remove
+        // itself just because its RTP stopped arriving. Without this, a
+        // removed track's last-known state (including its label) stays
+        // stuck on screen forever, all the way down to being relabeled
+        // "Камера" once its own roster entry is gone.
+        const liveStreamIDs = new Set(frame.peers.flatMap(peer => peer.tracks?.map(track => track.stream_id) ?? []))
+        const now = Date.now()
+        setRemoteStreams(previous => previous.filter(entry =>
+          !entry.sourceStreamID || liveStreamIDs.has(entry.sourceStreamID) || now - entry.firstSeenAt < staleStreamGraceMs))
+      }
       else if (frame.type === 'removed') await close(false)
       else if (frame.type === 'error') setError(frame.message ?? 'Ошибка звонка')
       if (connection.remoteDescription) for (const candidate of pendingCandidates.splice(0)) await connection.addIceCandidate(candidate)
