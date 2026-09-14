@@ -114,6 +114,16 @@ export function useCall(session: Session) {
   // fresh negotiation is the supported path, not a special case.
   const connectSignaling = useCallback((join: { ticket: string; media_ws_url: string; ice_servers: RTCIceServer[] }) => {
     setError(''); setIsConnecting(true)
+    // Every remote track this connection ever sees arrives fresh through its
+    // own ontrack — old entries from a previous connection (a reconnect
+    // replaces peer.current wholesale) are for a PeerConnection that no
+    // longer exists. Nothing else would ever clear them: the peers-roster
+    // pruning keys on stream_id + kind, and a track that's still genuinely
+    // published looks identical whichever connection last reported it, so a
+    // stale pre-reconnect entry and the fresh post-reconnect one for that
+    // same mic both read as "live" and both survive — one more phantom
+    // <audio> stacking its playback on every reconnect, forever.
+    setRemoteStreams([])
     const connection = new RTCPeerConnection({ iceServers: join.ice_servers })
     peer.current = connection
     const pendingCandidates: RTCIceCandidateInit[] = []
