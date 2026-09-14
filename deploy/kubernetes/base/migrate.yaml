@@ -9,6 +9,6 @@ spec:
       imagePullSecrets: [{name: registry-credentials}]
       containers:
         - name: migrate
-          image: 130.17.20.23:5000/pet-messenger-migrate:ea74cd9
+          image: 130.17.20.23:5000/pet-messenger-migrate:bd2e48c
           imagePullPolicy: Always
           envFrom: [{configMapRef: {name: pet-messenger-config}}, {secretRef: {name: pet-messenger-secrets}}]
