@@ -501,3 +501,124 @@ func TestRoomLabelsTrackFromClientDeclaredKind(t *testing.T) {
 		}
 	}
 }
+
+// TestRoomCorrectsAlreadyPublishedLabelWhenDeclaredLate guards the self-heal
+// path in declareTrackKinds: if a track_kinds declaration for a mid shows up
+// only after that mid's track has already been published under resolveKind's
+// guess (whatever the reason it wasn't there in time — this has no hard
+// ordering guarantee across every browser's WebRTC stack), the label must
+// still end up correct, without the track ever being removed and re-added.
+func TestRoomCorrectsAlreadyPublishedLabelWhenDeclaredLate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping Pion forwarding test in short mode (needs ICE + DTLS)")
+	}
+
+	api, err := newWebRTCAPI()
+	if err != nil {
+		t.Fatalf("newWebRTCAPI: %v", err)
+	}
+	events := &fakeEvents{}
+	mgr, err := NewManager(pionTestConfig(), events)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	callID := uuid.Must(uuid.NewV7())
+	if err := mgr.CreateRoom(callID); err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	userA := uuid.Must(uuid.NewV7())
+	clientA := newClient(t, api, mgr, callID, userA)
+	video, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
+		"video-a", "undeclared-a", // no "screen" anywhere: the fallback must guess "camera"
+	)
+	if err != nil {
+		t.Fatalf("NewTrackLocalStaticSample: %v", err)
+	}
+	senderA, err := clientA.pc.AddTrack(video)
+	if err != nil {
+		t.Fatalf("A AddTrack: %v", err)
+	}
+	go drainRTCP(senderA)
+	go clientA.run(ctx)
+
+	if err := mgr.Join(callID, userA, "publisher", clientA.sig); err != nil {
+		t.Fatalf("Join A: %v", err)
+	}
+	// Deliberately undeclared: this is the exact gap the fallback exists for.
+	clientA.offer(ctx)
+	clientA.waitConnected()
+	go writeSilence(ctx, video)
+
+	userB := uuid.Must(uuid.NewV7())
+	clientB := newClient(t, api, mgr, callID, userB)
+	if _, err := clientB.pc.AddTransceiverFromKind(
+		webrtc.RTPCodecTypeVideo,
+		webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly},
+	); err != nil {
+		t.Fatalf("B AddTransceiverFromKind: %v", err)
+	}
+	go clientB.run(ctx)
+	if err := mgr.Join(callID, userB, "viewer", clientB.sig); err != nil {
+		t.Fatalf("Join B: %v", err)
+	}
+	clientB.offer(ctx)
+	clientB.waitConnected()
+
+	// First: confirm B actually sees the wrong guess — otherwise a later pass
+	// proves nothing about correction, only that it was labeled right from
+	// the start.
+	sawGuessedCamera := false
+	deadline := time.After(mediaTimeout)
+waitForGuess:
+	for {
+		select {
+		case fr := <-clientB.peers:
+			for _, peer := range fr.Peers {
+				if peer.UserID != userA.String() {
+					continue
+				}
+				for _, tr := range peer.Tracks {
+					if tr.Label == LabelCamera {
+						sawGuessedCamera = true
+						break waitForGuess
+					}
+					if tr.Label == LabelScreen {
+						t.Fatal("A's track was already labeled \"screen\" before any declaration was ever sent — this run can't test correction")
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatal("never saw A's undeclared track published under the fallback \"camera\" guess")
+		}
+	}
+	if !sawGuessedCamera {
+		t.Fatal("expected to observe the fallback guess before declaring the real kind")
+	}
+
+	// Now declare it, late — same track, same transceiver, nothing added or
+	// removed. The already-published label must retroactively correct.
+	clientA.offerWithKinds(ctx, map[webrtc.TrackLocal]string{video: LabelScreen})
+
+	deadline = time.After(mediaTimeout)
+	for {
+		select {
+		case fr := <-clientB.peers:
+			for _, peer := range fr.Peers {
+				if peer.UserID != userA.String() {
+					continue
+				}
+				for _, tr := range peer.Tracks {
+					if tr.Label == LabelScreen {
+						return
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatal("late track_kinds declaration never corrected the already-published \"camera\" label to \"screen\"")
+		}
+	}
+}

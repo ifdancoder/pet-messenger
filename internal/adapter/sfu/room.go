@@ -384,8 +384,12 @@ func (r *room) handleOffer(userID uuid.UUID, sdp string, trackKinds map[string]s
 	// Recorded before the glare check and before SetRemoteDescription: a
 	// parked offer is replayed later through this same function, and OnTrack
 	// can fire as soon as the remote description is set, so the declared kind
-	// must already be in place by then.
-	p.declareTrackKinds(trackKinds)
+	// must already be in place by then. It can also retroactively fix a label
+	// that was already published under resolveKind's guess — broadcast that
+	// correction immediately even if this offer itself ends up parked below.
+	if p.declareTrackKinds(trackKinds) {
+		r.broadcastPeers()
+	}
 	if p.signalingBusy {
 		// Glare: our own offer is still outstanding. Park the client's offer
 		// and replay it once the answer lands.

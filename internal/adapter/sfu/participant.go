@@ -44,6 +44,11 @@ type participant struct {
 	// of which mid carries which kind of media (see Frame.TrackKinds). Read by
 	// onPublish when a track for that mid arrives.
 	trackKinds map[string]string
+	// midToSourceID remembers which already-published track (keyed the same
+	// way as published/publishedKind) came in on which mid, so a track_kinds
+	// declaration that arrives after onPublish already resolved a guess can
+	// still go back and correct it — see declareTrackKinds.
+	midToSourceID map[string]string
 
 	// negotiated turns true once the client's initial offer has been answered.
 	// The client is the initial offerer, so the server must not jump in with a
@@ -72,6 +77,7 @@ func newParticipant(userID uuid.UUID, role string, sig Signaller, pc *webrtc.Pee
 		remoteSSRC:    map[string]webrtc.SSRC{},
 		publishedKind: map[string]string{},
 		trackKinds:    map[string]string{},
+		midToSourceID: map[string]string{},
 	}
 }
 
@@ -115,12 +121,27 @@ func (p *participant) flushCandidates() {
 // replaced: a mid's kind is stable for the life of its transceiver, and a
 // later offer that omits a mid (the client only resends what changed) must
 // not erase what an earlier one already declared.
-func (p *participant) declareTrackKinds(kinds map[string]string) {
+//
+// If a mid's track already published under a guessed label (resolveKind's
+// fallback runs the moment OnTrack fires, whatever the reason its declaration
+// hadn't arrived yet — client/server signalling ordering has no hard
+// guarantee across every browser's WebRTC stack), a declaration that shows up
+// afterward corrects the already-published label instead of leaving it wrong
+// for the rest of that track's life. Reports whether it corrected anything,
+// so the caller knows to broadcast the fix.
+func (p *participant) declareTrackKinds(kinds map[string]string) bool {
+	corrected := false
 	for mid, kind := range kinds {
-		if isKnownLabel(kind) {
-			p.trackKinds[mid] = kind
+		if !isKnownLabel(kind) {
+			continue
+		}
+		p.trackKinds[mid] = kind
+		if sourceID, ok := p.midToSourceID[mid]; ok && p.publishedKind[sourceID] != kind {
+			p.publishedKind[sourceID] = kind
+			corrected = true
 		}
 	}
+	return corrected
 }
 
 // info renders this participant for a peers frame.

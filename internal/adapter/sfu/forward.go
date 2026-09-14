@@ -79,6 +79,9 @@ func (r *room) onPublish(pub *participant, remote *webrtc.TrackRemote, receiver 
 	pub.published[remote.ID()] = local
 	pub.remoteSSRC[remote.ID()] = remote.SSRC()
 	pub.publishedKind[remote.ID()] = kind
+	if mid := midForReceiver(pub.pc, receiver); mid != "" {
+		pub.midToSourceID[mid] = remote.ID()
+	}
 
 	for id, sub := range r.peers {
 		if id != pub.userID {
@@ -149,6 +152,11 @@ func (r *room) dropLocal(local *webrtc.TrackLocalStaticRTP) {
 			delete(p.published, sourceID)
 			delete(p.remoteSSRC, sourceID)
 			delete(p.publishedKind, sourceID)
+			for mid, sid := range p.midToSourceID {
+				if sid == sourceID {
+					delete(p.midToSourceID, mid)
+				}
+			}
 		}
 	}
 	r.unsubscribeAll(local)
