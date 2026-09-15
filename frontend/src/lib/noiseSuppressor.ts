@@ -10,7 +10,13 @@ let workletLoadedOn: AudioContext | null = null
 // rawStream's mic passed through RNNoise, plus a cleanup function that
 // must be called when the raw track is replaced or the call ends — an
 // AudioContext node graph otherwise leaks (it isn't garbage collected just
-// because the MediaStream it feeds stops being used).
+// because the MediaStream it feeds stops being used). cleanup also stops
+// rawStream's own track(s): the processed track returned in `stream` (from
+// ctx.createMediaStreamDestination()) is a distinct MediaStreamTrack object
+// from rawStream's raw capture track, so callers that later call .stop() on
+// the processed track (setNoiseSuppression's oldTrack.stop(), close()'s
+// teardown loop) never reach the raw one — disconnecting the graph nodes
+// alone does not stop the underlying capture or release the mic hardware.
 export async function applyNoiseSuppression(rawStream: MediaStream, ctx: AudioContext): Promise<{ stream: MediaStream; cleanup: () => void }> {
   if (!cachedWasmBinary) cachedWasmBinary = await loadRnnoise({ url: rnnoiseWasmPath, simdUrl: rnnoiseWasmSimdPath })
   if (workletLoadedOn !== ctx) {
@@ -24,6 +30,6 @@ export async function applyNoiseSuppression(rawStream: MediaStream, ctx: AudioCo
   node.connect(dest)
   return {
     stream: dest.stream,
-    cleanup: () => { source.disconnect(); node.disconnect() },
+    cleanup: () => { source.disconnect(); node.disconnect(); rawStream.getTracks().forEach(track => track.stop()) },
   }
 }
