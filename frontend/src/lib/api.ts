@@ -22,7 +22,7 @@ export function setSessionRefreshHandler(handler: SessionRefreshHandler | null) 
 async function rawRequest<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiURL + path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
+    headers: { ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
   })
   const body = await response.json().catch(() => ({})) as { error?: string }
   if (!response.ok) throw new APIError(body.error ?? `Ошибка запроса (${response.status})`, response.status)
@@ -90,4 +90,6 @@ export const api = {
   muteCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}/mute`, token, { method: 'POST' }),
   unmuteCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}/unmute`, token, { method: 'POST' }),
   removeCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}`, token, { method: 'DELETE' }),
+  updateProfile: (patch: { display_name?: string; username?: string }, token: string) => request<User>('/users/me', token, { method: 'PATCH', body: JSON.stringify(patch) }),
+  uploadAvatar: (file: File, token: string) => { const form = new FormData(); form.append('avatar', file); return request<User>('/users/me/avatar', token, { method: 'POST', body: form }) },
 }

@@ -1,4 +1,4 @@
-export type User = { id: string; username: string; display_name: string }
+export type User = { id: string; username: string; display_name: string; avatar_url: string }
 
 export type Session = { access_token: string; access_token_expires_at: string; refresh_token: string; user: User }
 
