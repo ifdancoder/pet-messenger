@@ -19,6 +19,7 @@ func main() {
 		fxapp.CallModule,
 		fxapp.NATSModule,
 		fxapp.RedisModule,
+		fxapp.ObjectStoreModule,
 		fxapp.WSModule,
 		fxapp.HTTPModule,
 	).Run()

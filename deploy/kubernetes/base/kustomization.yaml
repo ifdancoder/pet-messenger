@@ -3,6 +3,7 @@ resources:
   - config.yaml
   - postgres.yaml
   - redis.yaml
+  - minio.yaml
   - nats.yaml
   - coturn.yaml
   - media.yaml

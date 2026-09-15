@@ -49,6 +49,14 @@ type PushConfig struct {
 	FCMCredentialsJSON string
 }
 
+type MinIOConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	UseSSL    bool
+}
+
 type MediaConfig struct {
 	NodeID        string
 	GRPCAddr      string
@@ -107,6 +115,7 @@ type Config struct {
 	NATS     NATSConfig
 	Redis    RedisConfig
 	Push     PushConfig
+	MinIO    MinIOConfig
 	CORS     CORSConfig
 	Media    MediaConfig
 	TURN     TURNConfig
@@ -142,6 +151,15 @@ func Load() (*Config, error) {
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
 		redisURL = "redis://127.0.0.1:6379"
+	}
+
+	minioEndpoint := os.Getenv("MINIO_ENDPOINT")
+	if minioEndpoint == "" {
+		minioEndpoint = "127.0.0.1:9000"
+	}
+	minioBucket := os.Getenv("MINIO_BUCKET")
+	if minioBucket == "" {
+		minioBucket = "avatars"
 	}
 
 	var origins []string
@@ -212,6 +230,13 @@ func Load() (*Config, error) {
 			VAPIDSubject:       os.Getenv("PUSH_VAPID_SUBJECT"),
 			FCMProjectID:       os.Getenv("PUSH_FCM_PROJECT_ID"),
 			FCMCredentialsJSON: os.Getenv("PUSH_FCM_CREDENTIALS_JSON"),
+		},
+		MinIO: MinIOConfig{
+			Endpoint:  minioEndpoint,
+			AccessKey: os.Getenv("MINIO_ACCESS_KEY"),
+			SecretKey: os.Getenv("MINIO_SECRET_KEY"),
+			Bucket:    minioBucket,
+			UseSSL:    os.Getenv("MINIO_USE_SSL") == "true",
 		},
 		CORS: CORSConfig{AllowedOrigins: origins},
 		Media: MediaConfig{
