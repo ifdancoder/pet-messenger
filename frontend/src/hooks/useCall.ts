@@ -506,20 +506,58 @@ export function useCall(session: Session) {
   const switchDevice = useCallback(async (kind: 'audioinput' | 'videoinput', deviceId: string) => {
     if (!peer.current || !local.current) return
     const isAudio = kind === 'audioinput'
-    const media = await navigator.mediaDevices.getUserMedia(
-      isAudio
-        ? { audio: { deviceId: { exact: deviceId }, echoCancellation: true } }
-        : { video: { deviceId: { exact: deviceId } } },
-    )
-    const newTrack = isAudio ? media.getAudioTracks()[0] : media.getVideoTracks()[0]
-    if (!newTrack) return
-    const sender = peer.current.getSenders().find(s => s.track?.kind === (isAudio ? 'audio' : 'video'))
-    if (sender) await sender.replaceTrack(newTrack)
+    // Sourced from local.current — which only ever holds mic+camera tracks,
+    // never screen tracks (those live separately in screen.current) — and
+    // matched below by exact track identity, not by kind: a default screen
+    // share (see defaultScreenShareOptions, audio: true) adds a second
+    // 'audio'-kind sender (tab/system audio) and a second 'video'-kind
+    // sender (screen video) alongside the mic/camera ones, so matching by
+    // kind alone on the whole peer connection could silently replace the
+    // screen share's track instead of the mic/camera's.
     const oldTrack = isAudio ? local.current.getAudioTracks()[0] : local.current.getVideoTracks()[0]
-    if (oldTrack) { local.current.removeTrack(oldTrack); oldTrack.stop() }
-    local.current.addTrack(newTrack)
-    setLocalStream(local.current)
-  }, [])
+    try {
+      const media = await navigator.mediaDevices.getUserMedia(
+        isAudio
+          ? { audio: { deviceId: { exact: deviceId }, echoCancellation: true } }
+          : { video: { deviceId: { exact: deviceId } } },
+      )
+      const newTrack = isAudio ? media.getAudioTracks()[0] : media.getVideoTracks()[0]
+      if (!newTrack) return
+      if (oldTrack) {
+        const sender = peer.current.getSenders().find(s => s.track === oldTrack)
+        if (sender) await sender.replaceTrack(newTrack)
+        // Recorded in the same tick as the swap, same reasoning as
+        // shareScreen/toggleCamera's own knownKinds.current.set calls: the
+        // old track's entry would otherwise point buildTrackKinds at a
+        // MediaStreamTrack object no transceiver holds any more, and the
+        // freshly swapped-in track would have no recorded kind at all for
+        // whichever renegotiation (a later toggleCamera, shareScreen, or
+        // reconnect) comes next.
+        knownKinds.current.delete(oldTrack)
+        local.current.removeTrack(oldTrack)
+        oldTrack.stop()
+        local.current.addTrack(newTrack)
+        knownKinds.current.set(newTrack, isAudio ? 'mic' : 'camera')
+      } else {
+        // No existing mic/camera track to swap (e.g. the camera is
+        // currently off) — publish the new track the same way toggleCamera's
+        // ON branch does (addTrack, record its kind, flip isCameraOff, then
+        // renegotiate): peer.current.addTrack alone never reaches the peer,
+        // since this file only renegotiates explicitly — there's no
+        // negotiationneeded listener anywhere — so skipping renegotiate()
+        // here would leave the new track stranded exactly as before, just
+        // one step later. isCameraOff must flip too, or a subsequent
+        // toggleCamera() call (still seeing isCameraOff === true) would
+        // acquire and publish a second, duplicate video track.
+        local.current.addTrack(newTrack)
+        peer.current.addTrack(newTrack, local.current)
+        knownKinds.current.set(newTrack, isAudio ? 'mic' : 'camera')
+        if (!isAudio) setIsCameraOff(false)
+        await renegotiate()
+      }
+      setLocalStream(local.current)
+    } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
+  }, [renegotiate])
 
   const moderate = useCallback(async (userID: string, action: 'mute' | 'unmute' | 'remove') => {
     if (!callID.current) return
