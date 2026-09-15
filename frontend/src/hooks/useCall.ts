@@ -524,12 +524,22 @@ export function useCall(session: Session) {
     // screen share's track instead of the mic/camera's.
     const oldTrack = isAudio ? local.current.getAudioTracks()[0] : local.current.getVideoTracks()[0]
     try {
-      const media = await navigator.mediaDevices.getUserMedia(
-        isAudio
-          ? { audio: { deviceId: { exact: deviceId }, echoCancellation: true } }
-          : { video: { deviceId: { exact: deviceId } } },
-      )
-      const newTrack = isAudio ? media.getAudioTracks()[0] : media.getVideoTracks()[0]
+      let newTrack: MediaStreamTrack | undefined
+      if (isAudio) {
+        // Routed through localAudio, not a bare getUserMedia call, so a
+        // device switch while noise suppression is on keeps publishing a
+        // processed track — and tears down the OLD device's raw capture
+        // feeding the now-orphaned RNNoise graph — the same reasoning as
+        // setNoiseSuppression's own localAudio+noiseCleanup pairing below.
+        const prefs = loadDevicePrefs()
+        noiseCleanup.current()
+        const { stream, cleanup } = await localAudio(deviceId, prefs.noiseSuppression, prefs.noiseSuppression ? getAudioContext() : undefined)
+        noiseCleanup.current = cleanup
+        newTrack = stream.getAudioTracks()[0]
+      } else {
+        const media = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } })
+        newTrack = media.getVideoTracks()[0]
+      }
       if (!newTrack) return
       if (oldTrack) {
         const sender = peer.current.getSenders().find(s => s.track === oldTrack)
