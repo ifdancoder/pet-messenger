@@ -55,6 +55,26 @@ export const screenFrameRates = [15, 24, 30, 60]
 export type ScreenShareOptions = { width: number; height: number; frameRate: number; audio: boolean }
 export const defaultScreenShareOptions: ScreenShareOptions = { width: 1920, height: 1080, frameRate: 30, audio: true }
 
+// noiseSuppressionSetupTimeoutMs bounds how long localAudio waits for RNNoise
+// (a WASM binary fetch + an AudioWorklet module registration, entirely out
+// of this app's control once handed to the browser) before giving up and
+// publishing the raw mic track instead. Noise suppression is an enhancement;
+// it must never be able to block or delay the call itself connecting at all
+// — a slow or wedged WASM/worklet load previously left start() hanging
+// indefinitely on this await, so the whole call never even reached
+// connectSignaling.
+const noiseSuppressionSetupTimeoutMs = 3_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    const timer = window.setTimeout(() => resolve(null), ms)
+    promise.then(
+      value => { window.clearTimeout(timer); resolve(value) },
+      () => { window.clearTimeout(timer); resolve(null) },
+    )
+  })
+}
+
 // Camera starts off: only the microphone is captured up front. toggleCamera
 // acquires and publishes a camera track on demand.
 async function localAudio(deviceId?: string, noiseSuppression?: boolean, ctx?: AudioContext) {
@@ -65,7 +85,8 @@ async function localAudio(deviceId?: string, noiseSuppression?: boolean, ctx?: A
       audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: !noiseSuppression },
     })
     if (!noiseSuppression || !ctx) return { stream: raw, cleanup: () => {} }
-    return await applyNoiseSuppression(raw, ctx)
+    const suppressed = await withTimeout(applyNoiseSuppression(raw, ctx), noiseSuppressionSetupTimeoutMs)
+    return suppressed ?? { stream: raw, cleanup: () => {} }
   } catch {
     return { stream: new MediaStream(), cleanup: () => {} }
   }
