@@ -44,6 +44,26 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*u
 	return r.scanOne(ctx, `SELECT id, username, display_name, avatar_url, password_hash, created_at FROM users WHERE username = $1`, username)
 }
 
+func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
+	const q = `UPDATE users SET username = $2, display_name = $3, avatar_url = $4 WHERE id = $1`
+	res, err := r.db.ExecContext(ctx, q, u.ID, u.Username, u.DisplayName, u.AvatarURL)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return user.ErrUsernameTaken
+		}
+		return fmt.Errorf("update user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update user rows affected: %w", err)
+	}
+	if n == 0 {
+		return user.ErrNotFound
+	}
+	return nil
+}
+
 func (r *UserRepository) scanOne(ctx context.Context, query string, arg any) (*user.User, error) {
 	row := r.db.QueryRowContext(ctx, query, arg)
 	var u user.User

@@ -174,6 +174,7 @@ func (f *fakeUserRepo) GetByID(_ context.Context, id uuid.UUID) (*user.User, err
 func (f *fakeUserRepo) GetByUsername(context.Context, string) (*user.User, error) {
 	return nil, user.ErrNotFound
 }
+func (f *fakeUserRepo) Update(context.Context, *user.User) error { return nil }
 
 type fakeRevoker struct {
 	revoked [][2]uuid.UUID

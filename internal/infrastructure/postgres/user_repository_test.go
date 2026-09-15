@@ -83,3 +83,57 @@ func TestUserRepository_GetByUsername(t *testing.T) {
 		t.Errorf("ID = %v, want %v", got.ID, u.ID)
 	}
 }
+
+func TestUserRepository_Update(t *testing.T) {
+	repo := NewUserRepository(testDB)
+	u, err := user.New("update_target_"+randomUsername(), "Original Name")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	u.PasswordHash = "hash"
+	if err := repo.Create(context.Background(), u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := u.SetDisplayName("Updated Name"); err != nil {
+		t.Fatalf("SetDisplayName: %v", err)
+	}
+	u.AvatarURL = "/users/" + u.Username + "/avatar"
+	if err := repo.Update(context.Background(), u); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.DisplayName != "Updated Name" || got.AvatarURL != u.AvatarURL {
+		t.Fatalf("got %+v, want DisplayName=Updated Name AvatarURL=%s", got, u.AvatarURL)
+	}
+}
+
+func TestUserRepository_Update_UsernameCollision(t *testing.T) {
+	repo := NewUserRepository(testDB)
+	a, _ := user.New("collide_a_"+randomUsername(), "A")
+	a.PasswordHash = "hash"
+	_ = repo.Create(context.Background(), a)
+	b, _ := user.New("collide_b_"+randomUsername(), "B")
+	b.PasswordHash = "hash"
+	_ = repo.Create(context.Background(), b)
+
+	if err := b.Rename(a.Username); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if err := repo.Update(context.Background(), b); !errors.Is(err, user.ErrUsernameTaken) {
+		t.Fatalf("got %v, want ErrUsernameTaken", err)
+	}
+}
+
+func TestUserRepository_Update_NotFound(t *testing.T) {
+	repo := NewUserRepository(testDB)
+	ghost, _ := user.New("ghost_"+randomUsername(), "Ghost")
+	ghost.ID = uuid.Must(uuid.NewV7())
+	if err := repo.Update(context.Background(), ghost); !errors.Is(err, user.ErrNotFound) {
+		t.Fatalf("got %v, want ErrNotFound", err)
+	}
+}
