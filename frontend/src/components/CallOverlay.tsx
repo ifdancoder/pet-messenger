@@ -33,7 +33,7 @@ function MinimizeIcon() {
 // AudioContexts a page may create, but one context happily hosts any number
 // of analyser nodes.
 let sharedAudioContext: AudioContext | null = null
-function getAudioContext() {
+export function getAudioContext() {
   if (!sharedAudioContext) sharedAudioContext = new AudioContext()
   if (sharedAudioContext.state === 'suspended') void sharedAudioContext.resume()
   return sharedAudioContext

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
-import { loadDevicePrefs } from '../lib/devicePrefs'
+import { getAudioContext } from '../components/CallOverlay'
+import { loadDevicePrefs, saveDevicePrefs } from '../lib/devicePrefs'
+import { applyNoiseSuppression } from '../lib/noiseSuppressor'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
@@ -55,15 +57,17 @@ export const defaultScreenShareOptions: ScreenShareOptions = { width: 1920, heig
 
 // Camera starts off: only the microphone is captured up front. toggleCamera
 // acquires and publishes a camera track on demand.
-async function localAudio(deviceId?: string) {
+async function localAudio(deviceId?: string, noiseSuppression?: boolean, ctx?: AudioContext) {
   const devices = await navigator.mediaDevices.enumerateDevices()
-  if (!devices.some(device => device.kind === 'audioinput')) return new MediaStream()
+  if (!devices.some(device => device.kind === 'audioinput')) return { stream: new MediaStream(), cleanup: () => {} }
   try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true },
+    const raw = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: !noiseSuppression },
     })
+    if (!noiseSuppression || !ctx) return { stream: raw, cleanup: () => {} }
+    return await applyNoiseSuppression(raw, ctx)
   } catch {
-    return new MediaStream()
+    return { stream: new MediaStream(), cleanup: () => {} }
   }
 }
 
@@ -113,6 +117,7 @@ export function useCall(session: Session) {
   const signal = useRef<WebSocket | null>(null)
   const local = useRef<MediaStream | null>(null)
   const screen = useRef<MediaStream | null>(null)
+  const noiseCleanup = useRef<() => void>(() => {})
   const callID = useRef<string | null>(null)
   const sessionRef = useRef(session)
   useEffect(() => { sessionRef.current = session }, [session])
@@ -183,6 +188,7 @@ export function useCall(session: Session) {
     peer.current?.close(); peer.current = null
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
+    noiseCleanup.current()
     knownKinds.current.clear()
     setLocalStream(null); setLocalScreenStream(null); setRemoteStreams([]); setPeers([]); setIsOpen(false); setIsConnecting(false); setIsMuted(false); setIsCameraOff(true); setIsSharingScreen(false)
     callID.current = null
@@ -379,9 +385,11 @@ export function useCall(session: Session) {
     try {
       const { call, join } = await api.startCall(conversation.id, sessionRef.current.access_token)
       callID.current = call.id
-      const stream = await localAudio(loadDevicePrefs().audioInputId)
-      stream.getAudioTracks().forEach(track => knownKinds.current.set(track, 'mic'))
-      local.current = stream; setLocalStream(stream)
+      const prefs = loadDevicePrefs()
+      const { stream: audio, cleanup } = await localAudio(prefs.audioInputId, prefs.noiseSuppression, prefs.noiseSuppression ? getAudioContext() : undefined)
+      noiseCleanup.current = cleanup
+      audio.getAudioTracks().forEach(track => knownKinds.current.set(track, 'mic'))
+      local.current = audio; setLocalStream(audio)
       connectSignaling(join)
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось начать звонок'); await close(false) }
   }, [close, connectSignaling])
@@ -559,6 +567,56 @@ export function useCall(session: Session) {
     } catch (error) { if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message) }
   }, [renegotiate])
 
+  // setNoiseSuppression re-acquires the mic through (or back out of) RNNoise
+  // and republishes it into the active call, same mechanism switchDevice
+  // uses for a device change — noise suppression is really "switch to a
+  // processed version of the same device". A no-op on the active call when
+  // there isn't one; devicePrefs is still saved regardless, so it takes
+  // effect on the next start().
+  const setNoiseSuppression = useCallback(async (enabled: boolean) => {
+    const prefs = loadDevicePrefs()
+    saveDevicePrefs({ ...prefs, noiseSuppression: enabled })
+    if (!peer.current || !local.current) return
+    // Sourced from local.current and matched below by exact track identity,
+    // not by kind — see switchDevice's own comment: a screen share's
+    // tab/system audio is also an 'audio'-kind sender, so a kind-only
+    // lookup across the whole peer connection could silently grab it
+    // instead of the mic's own sender.
+    const oldTrack = local.current.getAudioTracks()[0]
+    try {
+      noiseCleanup.current()
+      const { stream: media, cleanup } = await localAudio(prefs.audioInputId, enabled, enabled ? getAudioContext() : undefined)
+      noiseCleanup.current = cleanup
+      const newTrack = media.getAudioTracks()[0]
+      if (!newTrack) return
+      if (oldTrack) {
+        const sender = peer.current.getSenders().find(s => s.track === oldTrack)
+        if (sender) await sender.replaceTrack(newTrack)
+        // Recorded in the same tick as the swap, same reasoning as
+        // switchDevice's own knownKinds bookkeeping.
+        knownKinds.current.delete(oldTrack)
+        local.current.removeTrack(oldTrack)
+        oldTrack.stop()
+        local.current.addTrack(newTrack)
+        knownKinds.current.set(newTrack, 'mic')
+      } else {
+        // No existing mic track to swap (unlikely for audio specifically,
+        // but handled the same way as switchDevice's own "no old track"
+        // branch for consistency): publish via addTrack, record its kind,
+        // then renegotiate() explicitly — this file has no
+        // onnegotiationneeded listener, so peer.current.addTrack alone
+        // never reaches the peer.
+        local.current.addTrack(newTrack)
+        peer.current.addTrack(newTrack, local.current)
+        knownKinds.current.set(newTrack, 'mic')
+        await renegotiate()
+      }
+      setLocalStream(local.current)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось изменить шумоподавление')
+    }
+  }, [renegotiate])
+
   const moderate = useCallback(async (userID: string, action: 'mute' | 'unmute' | 'remove') => {
     if (!callID.current) return
     try {
@@ -568,5 +626,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [])
 
-  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, switchDevice, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
+  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, switchDevice, setNoiseSuppression, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
 }
