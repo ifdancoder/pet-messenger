@@ -42,7 +42,8 @@ export function SettingsModal({ session, onSessionUpdate, onClose, isCallActive,
     if (!file) return
     setError('')
     try {
-      await api.uploadAvatar(file, session.access_token)
+      const updated = await api.uploadAvatar(file, session.access_token)
+      onSessionUpdate({ ...session, user: { ...session.user, avatar_url: updated.avatar_url } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить аватар')
     }
