@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MouseEvent, MouseEventHandler } from 'react'
+import type { MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
 import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
 import { Button, IconButton, Notice, Spinner } from './ui'
@@ -107,15 +107,14 @@ function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus,
   const screenAudioStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && isScreenShare(entry, tracks))?.stream
   const mediaStatus = videoStreams.length > 1 ? 'видео и демонстрация' : videoStreams.length === 1 ? 'медиа' : 'камера выключена'
   const micMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'mic'))
-  // The identity chip lives in the header, not in the media area, precisely
-  // so it survives whatever the media area is showing: a placeholder is
-  // never mounted alongside a video tile (only one or the other), but the
-  // mic it controls keeps playing through AudioSink regardless — without a
-  // permanent spot for it, starting a screen share (or the camera) took the
-  // only place that offered it clean off the page. Every video tile also
-  // carries its own copy of the same chip (see VideoTile), so the identity
-  // + volume affordance never depends on which layout is showing it.
-  return <article className="call-participant"><header><IdentityChip label={title} stream={micStream} size="sm" onContextMenu={micMenu} /><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} /> }) : <EmptyVideoTile label={title} stream={micStream} onContextMenu={micMenu} />}</div></article>
+  // Exactly one identity chip is ever on screen for this participant, never
+  // two at once: with no video, the large placeholder chip in the media
+  // area IS the identity/glow/volume affordance, so the header stays plain
+  // text — showing the small header chip too used to glow both at once for
+  // the same mic, which read as two separate, competing "windows". Video
+  // showing needs the header chip instead, since the media area has no
+  // spare room for a big placeholder once real video is playing there.
+  return <article className="call-participant"><header>{videoStreams.length ? <IdentityChip label={title} stream={micStream} size="sm" onContextMenu={micMenu} /> : <span className="call-participant__identity-text">{title}</span>}<small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} /> }) : <EmptyVideoTile label={title} stream={micStream} onContextMenu={micMenu} />}</div></article>
 }
 // A remote participant's mic (and a shared screen's own tab/system audio)
 // arrives as its own audio-only MediaStream, never bundled into a video
@@ -210,7 +209,46 @@ function MiniCallBar({ names, isMuted, onToggleMute, onEnd, onExpand, connectedS
     const id = window.setInterval(() => setElapsed(Math.max(0, Math.floor((Date.now() - connectedSince) / 1000))), 1000)
     return () => window.clearInterval(id)
   }, [connectedSince])
-  return <div className="call-mini-bar" role="button" tabIndex={0} onClick={onExpand} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onExpand() }}>
+  // Dragging is layered on top of the plain click-to-expand behavior rather
+  // than replacing it: a pointerdown that never moves past a small
+  // threshold still expands the call on release, exactly like before —
+  // only a real drag (mouse/touch/pen alike, via the Pointer Events API)
+  // suppresses that and repositions the bar instead. Position is absolute
+  // pixel coordinates once set, overriding the CSS default bottom-right
+  // corner; clamped to the viewport so a drag can never push it off-screen.
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null)
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    drag.current = { startX: event.clientX, startY: event.clientY, originX: position?.x ?? rect.left, originY: position?.y ?? rect.top, moved: false }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = drag.current
+    if (!state) return
+    const dx = event.clientX - state.startX
+    const dy = event.clientY - state.startY
+    if (!state.moved && Math.hypot(dx, dy) < 4) return
+    state.moved = true
+    const rect = event.currentTarget.getBoundingClientRect()
+    setPosition({
+      x: Math.min(Math.max(0, state.originX + dx), window.innerWidth - rect.width),
+      y: Math.min(Math.max(0, state.originY + dy), window.innerHeight - rect.height),
+    })
+  }
+  const onPointerUp = () => {
+    const wasDrag = drag.current?.moved
+    drag.current = null
+    if (!wasDrag) onExpand()
+  }
+  return <div
+    className="call-mini-bar"
+    role="button" tabIndex={0}
+    style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined}
+    onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onExpand() }}
+  >
     <span className="call-mini-bar__names">{names.length ? names.join(', ') : 'Звонок'}</span>
     <span className="call-mini-bar__timer">{elapsedLabel(elapsed)}</span>
     <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={event => { event.stopPropagation(); onToggleMute() }}>{isMuted ? '🔇' : '🎙️'}</IconButton>
