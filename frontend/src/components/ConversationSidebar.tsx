@@ -13,12 +13,13 @@ type Props = {
   onSelect: (conversation: Conversation) => void
   onCreate: (kind: 'direct' | 'group', value: string) => Promise<boolean>
   onLogout: () => void
+  onOpenSettings: () => void
 }
 
 function conversationTitle(conversation: Conversation) { return conversation.title || conversation.direct_display_name || conversation.direct_username || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
 function conversationSubtitle(conversation: Conversation) { return conversation.kind === 'direct' && conversation.direct_username ? `@${conversation.direct_username}` : conversation.kind === 'direct' ? 'личный разговор' : 'группа' }
 
-export function ConversationSidebar({ session, conversations, unreadByConversation, activeConversation, isLoading, onSelect, onCreate, onLogout }: Props) {
+export function ConversationSidebar({ session, conversations, unreadByConversation, activeConversation, isLoading, onSelect, onCreate, onLogout, onOpenSettings }: Props) {
   const [isComposerOpen, setIsComposerOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   async function copyID() {
@@ -26,7 +27,7 @@ export function ConversationSidebar({ session, conversations, unreadByConversati
     setCopied(true); window.setTimeout(() => setCopied(false), 1_800)
   }
   return <aside className="sidebar">
-    <header className="sidebar__header"><Brand /><IconButton label="Выйти" onClick={onLogout}>↗</IconButton></header>
+    <header className="sidebar__header"><Brand /><IconButton label="Настройки" onClick={onOpenSettings}>⚙</IconButton><IconButton label="Выйти" onClick={onLogout}>↗</IconButton></header>
     <section className="identity"><div className="identity__avatar">{(session.user.display_name || session.user.username).slice(0, 1).toUpperCase()}</div><div><strong>{session.user.display_name || session.user.username}</strong><span>@{session.user.username}</span></div><Button variant="ghost" className="identity__copy" onClick={() => void copyID()}>{copied ? 'Скопировано' : 'Копировать мой ID'}</Button></section>
     <div className="sidebar__section-title"><h2>Диалоги</h2><Button variant="secondary" className="button--compact" onClick={() => setIsComposerOpen(value => !value)}>Новый</Button></div>
     {isComposerOpen ? <NewConversationForm onCreate={onCreate} /> : null}
