@@ -7,6 +7,7 @@ import (
 	httpadapter "pet-messenger/internal/adapter/http"
 	"pet-messenger/internal/config"
 	infraauth "pet-messenger/internal/infrastructure/auth"
+	objectstoreinfra "pet-messenger/internal/infrastructure/objectstore"
 	"pet-messenger/internal/infrastructure/postgres"
 	usecaseauth "pet-messenger/internal/usecase/auth"
 )
@@ -27,5 +28,6 @@ var AuthModule = fx.Module("auth",
 		usecaseauth.NewService,
 		httpadapter.NewAuthHandler,
 		httpadapter.NewUserHandler,
+		objectstoreinfra.NewMinioAvatarStore,
 	),
 )

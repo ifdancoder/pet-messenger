@@ -24,6 +24,7 @@ func TestModulesWireTogether(t *testing.T) {
 		fxapp.CallModule,
 		fxapp.NATSModule,
 		fxapp.RedisModule,
+		fxapp.ObjectStoreModule,
 		fxapp.WSModule,
 		fxapp.HTTPModule,
 	); err != nil {

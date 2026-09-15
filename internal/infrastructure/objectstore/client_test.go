@@ -12,7 +12,8 @@ import (
 	"pet-messenger/internal/infrastructure/objectstore"
 )
 
-func TestNewClient_CreatesBucketAndConnects(t *testing.T) {
+func startMinioContainer(t *testing.T) *config.Config {
+	t.Helper()
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
 		Image:        "minio/minio:latest",
@@ -26,21 +27,21 @@ func TestNewClient_CreatesBucketAndConnects(t *testing.T) {
 		t.Fatalf("start minio container: %v", err)
 	}
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
 	endpoint, err := container.Endpoint(ctx, "")
 	if err != nil {
 		t.Fatalf("container endpoint: %v", err)
 	}
+	return &config.Config{MinIO: config.MinIOConfig{Endpoint: endpoint, AccessKey: "testuser", SecretKey: "testpassword", Bucket: "avatars-test"}}
+}
 
-	cfg := &config.Config{MinIO: config.MinIOConfig{
-		Endpoint: endpoint, AccessKey: "testuser", SecretKey: "testpassword", Bucket: "avatars-test",
-	}}
+func TestNewClient_CreatesBucketAndConnects(t *testing.T) {
+	cfg := startMinioContainer(t)
 
 	client, err := objectstore.NewClient(fxNoopLifecycle{}, cfg)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	exists, err := client.BucketExists(ctx, "avatars-test")
+	exists, err := client.BucketExists(context.Background(), cfg.MinIO.Bucket)
 	if err != nil || !exists {
 		t.Fatalf("bucket should exist after NewClient: exists=%v err=%v", exists, err)
 	}
