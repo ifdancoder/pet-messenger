@@ -157,5 +157,9 @@ func (h *UserHandler) ServeAvatar(c *gin.Context) {
 	}
 	defer data.Close()
 	c.Header("Cache-Control", "private, max-age=300")
+	// The content-type served here is whatever was sniffed and stored at
+	// upload time (already restricted to png/jpeg/webp), but nosniff still
+	// costs nothing and stops a browser from second-guessing it.
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.DataFromReader(http.StatusOK, -1, contentType, data, nil)
 }

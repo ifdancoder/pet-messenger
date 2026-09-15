@@ -23,10 +23,17 @@ export function SettingsModal({ session, onSessionUpdate, onClose, isCallActive,
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [prefs, setPrefs] = useState(loadDevicePrefs())
 
+  // Only primes permissions/enumerates once per modal session — every device
+  // list refresh briefly flashes the camera/mic indicator (the permission
+  // grant it needs), which doing on every tab click would make needlessly
+  // noisy for no benefit once the list is already populated.
   const loadDevices = async () => {
+    if (devices.length > 0) return
     await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(s => s.getTracks().forEach(t => t.stop())).catch(() => {})
     setDevices(await navigator.mediaDevices.enumerateDevices())
   }
+
+  const switchTab = (next: Tab) => { setTab(next); setError('') }
 
   const saveProfile = async () => {
     setError('')
@@ -65,9 +72,9 @@ export function SettingsModal({ session, onSessionUpdate, onClose, isCallActive,
     <section className="settings-modal" role="dialog" aria-modal="true" aria-label="Настройки" onClick={event => event.stopPropagation()}>
       <header><h2>Настройки</h2><IconButton label="Закрыть" onClick={onClose}>✕</IconButton></header>
       <nav className="settings-modal__tabs">
-        <button type="button" className={tab === 'profile' ? 'is-active' : ''} onClick={() => setTab('profile')}>Профиль</button>
-        <button type="button" className={tab === 'devices' ? 'is-active' : ''} onClick={() => { setTab('devices'); void loadDevices() }}>Устройства</button>
-        <button type="button" className={tab === 'audio' ? 'is-active' : ''} onClick={() => setTab('audio')}>Звук</button>
+        <button type="button" className={tab === 'profile' ? 'is-active' : ''} onClick={() => switchTab('profile')}>Профиль</button>
+        <button type="button" className={tab === 'devices' ? 'is-active' : ''} onClick={() => { switchTab('devices'); void loadDevices() }}>Устройства</button>
+        <button type="button" className={tab === 'audio' ? 'is-active' : ''} onClick={() => switchTab('audio')}>Звук</button>
       </nav>
       {error ? <p className="settings-modal__error">{error}</p> : null}
       {tab === 'profile' ? <div className="settings-modal__panel">
