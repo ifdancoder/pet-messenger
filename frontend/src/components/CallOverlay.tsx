@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent, MouseEventHandler } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
 import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
-import { Button, Notice, Spinner } from './ui'
+import { Button, IconButton, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'mid' | 'ownerID'>
-type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
+type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler; identityLabel?: string; identityStream?: MediaStream; identityOnContextMenu?: MouseEventHandler }
 // entryMatchesTrack checks mid first (this connection's own
 // RTCRtpTransceiver.mid, matched against the roster's per-viewer
 // TrackInfo.mid) and only falls back to the MediaStream id the track arrived
@@ -13,10 +13,21 @@ type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boole
 function isScreenShare(entry: StreamEntry, tracks?: CallPeer['tracks']) {
   return tracks?.find(track => entryMatchesTrack(entry, track))?.label === 'screen'
 }
+// A participant's mic is never ambiguous even when their screen's own
+// tab/system audio is also present as a second audio-only stream — this is
+// the one shared rule both the grid header and the focused view's identity
+// chip resolve it by, so they never drift into showing two different mic
+// streams for the same person.
+function findMicStream(streams: StreamEntry[], tracks?: CallPeer['tracks']) {
+  return streams.find(entry => entry.stream.getAudioTracks().length > 0 && !isScreenShare(entry, tracks))?.stream
+}
 function FocusIcon({ focused }: { focused: boolean }) {
   return focused
     ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M3 15h6v6M21 15h-6v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+function MinimizeIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14h4v4M18 10h-4V6M14 14l7 7M10 10 3 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
 // sharedAudioContext is reused everywhere: browsers cap how many
 // AudioContexts a page may create, but one context happily hosts any number
@@ -31,9 +42,8 @@ function getAudioContext() {
 // this ticks every animation frame, and running that through useState would
 // re-render the whole tile 60 times a second for a purely cosmetic effect.
 // The ref attaches directly to whatever element should carry the reactive
-// outline — the avatar's own mark, or a video tile's whole frame — so the
-// same hook drives both the mic indicator and a screen share's independent
-// one without a separate overlay element for either.
+// outline — the identity chip's own frame, or a video tile's whole frame —
+// so the same hook drives both without a separate overlay element for either.
 function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
   const target = useRef<T>(null)
   useEffect(() => {
@@ -65,32 +75,35 @@ function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
   }, [stream])
   return target
 }
-function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
+// IdentityChip is the one persistent "who is this" affordance in the whole
+// overlay: an avatar mark plus name inside a single frame. The frame itself
+// — not the avatar mark alone — carries both the speaking glow and the
+// right-click target, so a viewer always has one obvious bordered thing to
+// find and right-click for that person's volume, regardless of which tile
+// layout (grid, focused, video, placeholder) currently surrounds it.
+function IdentityChip({ label, stream, size, onContextMenu }: { label: string; stream?: MediaStream; size: 'lg' | 'sm'; onContextMenu?: MouseEventHandler }) {
+  const name = label.split(' · ').at(-1) || label
+  const frame = useAudioLevelRef<HTMLSpanElement>(stream)
+  return <span className={`identity-chip identity-chip--${size}`} ref={frame} onContextMenu={onContextMenu}><span className="identity-chip__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span><span className="identity-chip__name">{label}</span></span>
+}
+function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu, identityLabel, identityStream, identityOnContextMenu }: TileProps) {
   const video = useRef<HTMLVideoElement>(null)
   useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
   // audioStream is only ever this specific tile's own audio (a screen
   // share's tab/system sound) — a camera tile gets none, so its outline
   // just never lights up, no separate code path needed.
   const frame = useAudioLevelRef<HTMLElement>(audioStream)
-  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
-}
-// size drives the CSS var the mark reads its dimensions from — one avatar
-// implementation for both the full placeholder tile and the small identity
-// chip that stays put once a video tile takes the placeholder's place.
-function Avatar({ label, stream, size, onContextMenu }: { label: string; stream?: MediaStream; size: 'lg' | 'sm'; onContextMenu?: MouseEventHandler }) {
-  const name = label.split(' · ').at(-1) || label
-  const mark = useAudioLevelRef<HTMLSpanElement>(stream)
-  return <span className={`call-avatar call-avatar--${size}`} onContextMenu={onContextMenu}><span className="call-avatar__mark" ref={mark} aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span></span>
+  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} />{identityLabel ? <IdentityChip label={identityLabel} stream={identityStream} size="sm" onContextMenu={identityOnContextMenu} /> : null}<figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
 function EmptyVideoTile({ label, stream, onContextMenu }: { label: string; stream?: MediaStream; onContextMenu?: MouseEventHandler }) {
-  return <figure className="call-video call-video--placeholder"><div className="call-video__profile"><Avatar label={label} stream={stream} size="lg" onContextMenu={onContextMenu} /><figcaption>{label}</figcaption></div></figure>
+  return <figure className="call-video call-video--placeholder"><div className="call-video__profile"><IdentityChip label={label} stream={stream} size="lg" onContextMenu={onContextMenu} /></div></figure>
 }
 function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus, onVolumeMenu }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
   // Two distinct audio sources can coexist for one participant — their mic,
   // and their screen's own tab/system audio — so "the audio entry" is never
   // unambiguous; each one drives its own outline independently.
-  const micStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && !isScreenShare(entry, tracks))?.stream
+  const micStream = findMicStream(streams, tracks)
   const screenAudioStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && isScreenShare(entry, tracks))?.stream
   const mediaStatus = videoStreams.length > 1 ? 'видео и демонстрация' : videoStreams.length === 1 ? 'медиа' : 'камера выключена'
   const micMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'mic'))
@@ -99,19 +112,55 @@ function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus,
   // never mounted alongside a video tile (only one or the other), but the
   // mic it controls keeps playing through AudioSink regardless — without a
   // permanent spot for it, starting a screen share (or the camera) took the
-  // only place that offered it clean off the page.
-  return <article className="call-participant"><header><span className="call-participant__identity"><Avatar label={title} stream={micStream} size="sm" onContextMenu={micMenu} /><span>{title}</span></span><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} /> }) : <EmptyVideoTile label={title} stream={micStream} onContextMenu={micMenu} />}</div></article>
+  // only place that offered it clean off the page. Every video tile also
+  // carries its own copy of the same chip (see VideoTile), so the identity
+  // + volume affordance never depends on which layout is showing it.
+  return <article className="call-participant"><header><IdentityChip label={title} stream={micStream} size="sm" onContextMenu={micMenu} /><small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} identityLabel={title} identityStream={micStream} identityOnContextMenu={micMenu} /> }) : <EmptyVideoTile label={title} stream={micStream} onContextMenu={micMenu} />}</div></article>
 }
 // A remote participant's mic (and a shared screen's own tab/system audio)
 // arrives as its own audio-only MediaStream, never bundled into a video
 // tile's srcObject — video tiles come and go with the grid/focused layout,
 // but audio must keep playing regardless of which tiles happen to be
-// mounted right now. Rendered off-screen, once per audio track, always.
+// mounted right now, and regardless of whether the call is minimized: this
+// is rendered unconditionally by CallOverlay, never inside the branch that
+// switches between the full layout and the mini/PiP one.
 function AudioSink({ stream, volume }: { stream: MediaStream; volume: number }) {
   const audio = useRef<HTMLAudioElement>(null)
   useEffect(() => { if (audio.current) audio.current.srcObject = stream }, [stream])
   useEffect(() => { if (audio.current) audio.current.volume = volume }, [volume])
   return <audio ref={audio} autoPlay hidden />
+}
+// PipVideoSink hosts the browser's own Picture-in-Picture window: a tiny,
+// permanently-mounted, invisible <video> whose srcObject is whichever
+// remote video is currently worth watching. It never renders on the page
+// itself (real audio always comes from AudioSink, so this stays muted to
+// avoid doubling it) — its only job is to be a valid PiP source so
+// navigating to another chat can float the call's video above the rest of
+// the app (and, with the OS, above the browser entirely) instead of just
+// stopping being visible. requestPictureInPicture can refuse (no video
+// track yet, a Firefox build without the API, no outstanding user gesture
+// by the time this effect runs) — onExit is how the caller finds out its
+// attempt didn't stick, so it can fall back to the compact bar instead of
+// silently minimizing into nothing.
+function PipVideoSink({ stream, active, onExit }: { stream: MediaStream | null; active: boolean; onExit: () => void }) {
+  const video = useRef<HTMLVideoElement>(null)
+  useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
+  useEffect(() => {
+    const el = video.current
+    if (!el) return
+    if (active && stream && document.pictureInPictureEnabled) {
+      if (document.pictureInPictureElement !== el) el.requestPictureInPicture().catch(() => onExit())
+    } else if (!active && document.pictureInPictureElement === el) {
+      void document.exitPictureInPicture().catch(() => {})
+    }
+  }, [active, stream, onExit])
+  useEffect(() => {
+    const el = video.current
+    if (!el) return
+    el.addEventListener('leavepictureinpicture', onExit)
+    return () => el.removeEventListener('leavepictureinpicture', onExit)
+  }, [onExit])
+  return <video ref={video} autoPlay playsInline muted style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: -9999 }} />
 }
 function ShareScreenModal({ onConfirm, onCancel }: { onConfirm: (options: ScreenShareOptions) => void; onCancel: () => void }) {
   const [resolutionIndex, setResolutionIndex] = useState(1)
@@ -141,11 +190,54 @@ function VolumeMenu({ menu, value, onChange, onClose }: { menu: VolumeMenuState;
     </div>
   </div>
 }
+// elapsedLabel formats seconds as m:ss / h:mm:ss for the mini bar's call timer.
+function elapsedLabel(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`
+}
+// MiniCallBar is what shows while minimized and no video is available to
+// hand off to the browser's own Picture-in-Picture (an audio-only call, an
+// unsupported browser, or PiP being refused this time) — a small persistent
+// floating control strip rather than nothing, so leaving the call's chat
+// never reads as leaving the call itself.
+function MiniCallBar({ names, isMuted, onToggleMute, onEnd, onExpand, connectedSince }: { names: string[]; isMuted: boolean; onToggleMute: () => void; onEnd: () => void; onExpand: () => void; connectedSince: number | null }) {
+  const [elapsed, setElapsed] = useState(() => connectedSince === null ? 0 : Math.max(0, Math.floor((Date.now() - connectedSince) / 1000)))
+  useEffect(() => {
+    if (connectedSince === null) return
+    const id = window.setInterval(() => setElapsed(Math.max(0, Math.floor((Date.now() - connectedSince) / 1000))), 1000)
+    return () => window.clearInterval(id)
+  }, [connectedSince])
+  return <div className="call-mini-bar" role="button" tabIndex={0} onClick={onExpand} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onExpand() }}>
+    <span className="call-mini-bar__names">{names.length ? names.join(', ') : 'Звонок'}</span>
+    <span className="call-mini-bar__timer">{elapsedLabel(elapsed)}</span>
+    <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={event => { event.stopPropagation(); onToggleMute() }}>{isMuted ? '🔇' : '🎙️'}</IconButton>
+    <IconButton label="Завершить звонок" className="call-mini-bar__end" onClick={event => { event.stopPropagation(); onEnd() }}>✕</IconButton>
+  </div>
+}
 
-type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
-export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; minimized: boolean; onToggleMinimize: () => void; onRestore: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, minimized, onToggleMinimize, onRestore, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  // Tracks when the call actually connected, so the mini bar's timer doesn't
+  // restart just because the overlay got minimized. Derived from isConnected
+  // rather than passed down some other way because "the moment it first
+  // became true" isn't a value either side already has lying around.
+  const [connectedSince, setConnectedSince] = useState<number | null>(null)
+  useEffect(() => {
+    if (isConnected) setConnectedSince(current => current ?? Date.now())
+    else if (!isConnecting) setConnectedSince(null)
+  }, [isConnected, isConnecting])
+  // PiP can refuse an individual attempt (no active gesture by the time the
+  // effect ran, browser declined it); pipDismissed remembers that for the
+  // rest of this minimized stretch so it falls back to the mini bar instead
+  // of retrying every render, and clears the moment the call is next shown
+  // in full so a later minimize gets a fresh attempt.
+  const [pipDismissed, setPipDismissed] = useState(false)
+  useEffect(() => { if (!minimized) setPipDismissed(false) }, [minimized])
   // Keyed "<userID>:mic" / "<userID>:screen", not by stream id: a stream id
   // is only as stable as the RTCPeerConnection that reported it, so a
   // reconnect would silently reset every volume choice back to 100% if this
@@ -192,12 +284,40 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   const allStreams = [...local, ...[...sections.values()].flat()]
   const focused = focusedStreamID ? allStreams.find(stream => stream.id === focusedStreamID) : undefined
   const toggleFocus = (id: string) => setFocusedStreamID(current => current === id ? null : id)
+  const isLocal = (id: string) => id === 'local-camera' || id === 'local-screen'
   const labelFor = (id: string) => {
     if (isLocal(id)) return nameFor(currentUserID, 'Вы')
     const owner = [...sections.entries()].find(([, streams]) => streams.some(stream => stream.id === id))?.[0]
     return owner ? nameFor(owner, 'Собеседник') : 'Собеседник'
   }
-  const isLocal = (id: string) => id === 'local-camera' || id === 'local-screen'
+  // kindLabelFor is what a tile's caption always shows now (Камера vs.
+  // Демонстрация экрана) — separated out from the person's own name, which
+  // moved to the identity chip. Focused view used to conflate the two by
+  // captioning every tile with just the person's name, so a participant
+  // sharing both their camera and their screen produced two filmstrip tiles
+  // with the same caption and no way to tell them apart.
+  const kindLabelFor = (entry: StreamEntry) => {
+    if (entry.id === 'local-screen') return 'Демонстрация экрана'
+    if (entry.id === 'local-camera') return 'Камера'
+    const owner = ownerOf(entry)
+    return isScreenShare(entry, owner ? peers.find(peer => peer.user_id === owner)?.tracks : undefined) ? 'Демонстрация экрана' : 'Камера'
+  }
+  const identityStreamFor = (entry: StreamEntry) => {
+    if (isLocal(entry.id)) return findMicStream(local, localTracks)
+    const owner = ownerOf(entry)
+    if (!owner) return undefined
+    return findMicStream(sections.get(owner) ?? [], peers.find(peer => peer.user_id === owner)?.tracks)
+  }
+  // The identity chip's own right-click always targets that person's mic —
+  // regardless of which kind of tile it happens to be riding on — while the
+  // tile's own right-click (contextMenuFor, unchanged) keeps controlling
+  // that specific tile's own audio (a shared screen's tab sound included).
+  const identityContextMenuFor = (entry: StreamEntry): MouseEventHandler | undefined => {
+    if (isLocal(entry.id)) return undefined
+    const owner = ownerOf(entry)
+    if (!owner) return undefined
+    return event => openVolumeMenu(event, `${owner}:mic`, `Микрофон — ${labelFor(entry.id)}`)
+  }
   // Shared by the focused main tile and its filmstrip: a remote entry's
   // owner and kind (mic vs. this specific participant's screen audio) are
   // resolved the same way ParticipantSection resolves them for the grid.
@@ -210,27 +330,40 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     const label = `${screen ? 'Демонстрация' : 'Микрофон'} — ${labelFor(entry.id)}`
     return event => openVolumeMenu(event, key, label)
   }
-  return <section className="call-overlay" aria-label="Звонок">
-    <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></header>
-    {error ? <Notice>{error}</Notice> : null}
+  // The PiP candidate: the first remote video going, screen share preferred
+  // over camera (same priority ParticipantSection sorts by) — an audio-only
+  // call (or every remote camera off) has none, so PiP is never attempted
+  // and the mini bar is what minimizing shows instead.
+  const remoteVideoStreams = [...sections.values()].flat().filter(entry => entry.stream.getVideoTracks().length > 0)
+    .sort((left, right) => Number(isScreenShare(right, peers.find(peer => peer.user_id === ownerOf(right))?.tracks)) - Number(isScreenShare(left, peers.find(peer => peer.user_id === ownerOf(left))?.tracks)))
+  const pipStream = remoteVideoStreams[0]?.stream ?? null
+  const pipActive = minimized && !pipDismissed && pipStream !== null
+  return <section className={`call-overlay${minimized ? ' call-overlay--minimized' : ''}`} aria-label="Звонок">
     {remoteStreams.filter(entry => entry.stream.getAudioTracks().length > 0).map(entry => {
       const owner = ownerOf(entry)
       const tracks = peers.find(peer => peer.user_id === owner)?.tracks
       const key = owner ? `${owner}:${isScreenShare(entry, tracks) ? 'screen' : 'mic'}` : entry.id
       return <AudioSink key={entry.id} stream={entry.stream} volume={volumes[key] ?? 1} />
     })}
-    {reconnectExhausted
-      ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
-      : focused
-      ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={labelFor(focused.id)} focused onFocus={() => toggleFocus(focused.id)} onContextMenu={contextMenuFor(focused)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id && stream.stream.getVideoTracks().length > 0).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={labelFor(stream.id)} focused={false} onFocus={() => toggleFocus(stream.id)} onContextMenu={contextMenuFor(stream)} />)}</div></div>
-      : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Микрофон'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
-    <footer>
-      <Button variant="secondary" onClick={onToggleMute}>{isMuted ? 'Включить микрофон' : 'Выключить микрофон'}</Button>
-      <Button variant="secondary" onClick={() => void onToggleCamera()}>{isCameraOff ? 'Включить камеру' : 'Выключить камеру'}</Button>
-      <Button variant="secondary" onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}>{isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'}</Button>
-      {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
-    </footer>
-    {shareModalOpen ? <ShareScreenModal onCancel={() => setShareModalOpen(false)} onConfirm={options => { setShareModalOpen(false); void onShare(options) }} /> : null}
-    {volumeMenu ? <VolumeMenu menu={volumeMenu} value={volumes[volumeMenu.key] ?? 1} onChange={volume => setVolumes(previous => ({ ...previous, [volumeMenu.key]: volume }))} onClose={() => setVolumeMenu(null)} /> : null}
+    <PipVideoSink stream={pipStream} active={pipActive} onExit={() => setPipDismissed(true)} />
+    {minimized
+      ? <MiniCallBar names={otherPeers.map(peer => nameFor(peer.user_id, 'Собеседник'))} isMuted={isMuted} onToggleMute={onToggleMute} onEnd={() => void onEnd()} onExpand={onRestore} connectedSince={connectedSince} />
+      : <>
+        <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><div className="call-overlay__header-actions"><IconButton label="Свернуть в попап" onClick={onToggleMinimize}><MinimizeIcon /></IconButton><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></div></header>
+        {error ? <Notice>{error}</Notice> : null}
+        {reconnectExhausted
+          ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
+          : focused
+          ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={kindLabelFor(focused)} focused onFocus={() => toggleFocus(focused.id)} onContextMenu={contextMenuFor(focused)} identityLabel={labelFor(focused.id)} identityStream={identityStreamFor(focused)} identityOnContextMenu={identityContextMenuFor(focused)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id && stream.stream.getVideoTracks().length > 0).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={kindLabelFor(stream)} focused={false} onFocus={() => toggleFocus(stream.id)} onContextMenu={contextMenuFor(stream)} identityLabel={labelFor(stream.id)} identityStream={identityStreamFor(stream)} identityOnContextMenu={identityContextMenuFor(stream)} />)}</div></div>
+          : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Микрофон'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
+        <footer>
+          <Button variant="secondary" onClick={onToggleMute}>{isMuted ? 'Включить микрофон' : 'Выключить микрофон'}</Button>
+          <Button variant="secondary" onClick={() => void onToggleCamera()}>{isCameraOff ? 'Включить камеру' : 'Выключить камеру'}</Button>
+          <Button variant="secondary" onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}>{isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'}</Button>
+          {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
+        </footer>
+        {shareModalOpen ? <ShareScreenModal onCancel={() => setShareModalOpen(false)} onConfirm={options => { setShareModalOpen(false); void onShare(options) }} /> : null}
+        {volumeMenu ? <VolumeMenu menu={volumeMenu} value={volumes[volumeMenu.key] ?? 1} onChange={volume => setVolumes(previous => ({ ...previous, [volumeMenu.key]: volume }))} onClose={() => setVolumeMenu(null)} /> : null}
+      </>}
   </section>
 }

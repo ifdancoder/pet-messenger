@@ -19,6 +19,11 @@ function Messenger({ session, onLogout }: { session: Session; onLogout: () => vo
   const messenger = useMessenger(session, onLogout)
   const { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error: callError, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted } = useCall(session)
   const [callConversation, setCallConversation] = useState<Conversation | null>(null)
+  // manuallyMinimized is the "collapse it myself" override; leaving the
+  // call's own conversation minimizes automatically (see `minimized` below)
+  // without needing this at all, but a user parked right there wants to be
+  // able to shrink it too — for instance to read the chat behind it.
+  const [manuallyMinimized, setManuallyMinimized] = useState(false)
   const [membersConversation, setMembersConversation] = useState<Conversation | null>(null)
   const [callParticipantNames, setCallParticipantNames] = useState<Record<string, string>>({})
   const liveCalls = useLiveCalls(session, messenger.conversations)
@@ -40,10 +45,22 @@ function Messenger({ session, onLogout }: { session: Session; onLogout: () => vo
       .catch(() => { if (current) setCallParticipantNames({}) })
     return () => { current = false }
   }, [callConversation, session.access_token])
-  const openCall = useCallback((conversation: Conversation) => { setCallParticipantNames({}); setCallConversation(conversation) }, [])
-  const endCall = useCallback(async () => { await close(true); setCallParticipantNames({}); setCallConversation(null) }, [close])
+  const openCall = useCallback((conversation: Conversation) => { setCallParticipantNames({}); setManuallyMinimized(false); setCallConversation(conversation) }, [])
+  const endCall = useCallback(async () => { await close(true); setCallParticipantNames({}); setCallConversation(null); setManuallyMinimized(false) }, [close])
   const ownCallName = `@${session.user.username} · ${session.user.display_name || session.user.username}`
-  return <main className="messenger-app"><ConversationSidebar session={session} conversations={messenger.conversations} unreadByConversation={messenger.unreadByConversation} activeConversation={messenger.activeConversation} isLoading={messenger.isLoadingConversations} onSelect={messenger.selectConversation} onCreate={messenger.createConversation} onLogout={onLogout} /><div className="workspace">{messenger.error ? <Notice>{messenger.error}</Notice> : null}<ChatPanel session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} onStartCall={openCall} onShowMembers={setMembersConversation} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => openCall(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallOverlay localStream={localStream} localScreenStream={localScreenStream} remoteStreams={remoteStreams} peers={peers} currentUserID={session.user.id} participantNames={{ ...callParticipantNames, [session.user.id]: ownCallName }} canModerate={callConversation.kind !== 'direct'} error={callError} isConnecting={isConnecting} isConnected={isOpen} isMuted={isMuted} isCameraOff={isCameraOff} isSharingScreen={isSharingScreen} reconnectExhausted={reconnectExhausted} onReconnect={reconnectNow} onShare={shareScreen} onStopShare={stopScreenShare} onToggleMute={toggleMute} onToggleCamera={toggleCamera} onModerate={moderate} onEnd={endCall} /> : null}</div></main>
+  // Navigating to a different chat than the one the call belongs to shrinks
+  // it to a popup automatically — the call itself (useCall, above) was
+  // already independent of which conversation is on screen, so this only
+  // ever changes what CallOverlay renders, never anything about the
+  // connection. onRestore both un-minimizes and jumps back to that
+  // conversation, so expanding a call you navigated away from doesn't leave
+  // you staring at an unrelated chat with a full-screen overlay on top of it.
+  const minimized = Boolean(callConversation) && (manuallyMinimized || messenger.activeConversation?.id !== callConversation?.id)
+  const restoreCall = useCallback(() => {
+    setManuallyMinimized(false)
+    if (callConversation) messenger.selectConversation(callConversation)
+  }, [callConversation, messenger])
+  return <main className="messenger-app"><ConversationSidebar session={session} conversations={messenger.conversations} unreadByConversation={messenger.unreadByConversation} activeConversation={messenger.activeConversation} isLoading={messenger.isLoadingConversations} onSelect={messenger.selectConversation} onCreate={messenger.createConversation} onLogout={onLogout} /><div className="workspace">{messenger.error ? <Notice>{messenger.error}</Notice> : null}<ChatPanel session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} onStartCall={openCall} onShowMembers={setMembersConversation} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => openCall(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallOverlay localStream={localStream} localScreenStream={localScreenStream} remoteStreams={remoteStreams} peers={peers} currentUserID={session.user.id} participantNames={{ ...callParticipantNames, [session.user.id]: ownCallName }} canModerate={callConversation.kind !== 'direct'} error={callError} isConnecting={isConnecting} isConnected={isOpen} isMuted={isMuted} isCameraOff={isCameraOff} isSharingScreen={isSharingScreen} reconnectExhausted={reconnectExhausted} minimized={minimized} onToggleMinimize={() => setManuallyMinimized(current => !current)} onRestore={restoreCall} onReconnect={reconnectNow} onShare={shareScreen} onStopShare={stopScreenShare} onToggleMute={toggleMute} onToggleCamera={toggleCamera} onModerate={moderate} onEnd={endCall} /> : null}</div></main>
 }
 
 export default function App() {
