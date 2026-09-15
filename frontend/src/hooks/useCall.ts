@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
+import { loadDevicePrefs } from '../lib/devicePrefs'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
@@ -54,10 +55,16 @@ export const defaultScreenShareOptions: ScreenShareOptions = { width: 1920, heig
 
 // Camera starts off: only the microphone is captured up front. toggleCamera
 // acquires and publishes a camera track on demand.
-async function localAudio() {
+async function localAudio(deviceId?: string) {
   const devices = await navigator.mediaDevices.enumerateDevices()
   if (!devices.some(device => device.kind === 'audioinput')) return new MediaStream()
-  try { return await navigator.mediaDevices.getUserMedia({ audio: true }) } catch { return new MediaStream() }
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true },
+    })
+  } catch {
+    return new MediaStream()
+  }
 }
 
 function ownerIDFromForwardedStream(streamID: string) {
@@ -372,7 +379,7 @@ export function useCall(session: Session) {
     try {
       const { call, join } = await api.startCall(conversation.id, sessionRef.current.access_token)
       callID.current = call.id
-      const stream = await localAudio()
+      const stream = await localAudio(loadDevicePrefs().audioInputId)
       stream.getAudioTracks().forEach(track => knownKinds.current.set(track, 'mic'))
       local.current = stream; setLocalStream(stream)
       connectSignaling(join)
@@ -464,7 +471,10 @@ export function useCall(session: Session) {
     if (!peer.current) return
     if (isCameraOff) {
       try {
-        const media = await navigator.mediaDevices.getUserMedia({ video: true })
+        const videoDeviceId = loadDevicePrefs().videoInputId
+        const media = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: videoDeviceId ? { exact: videoDeviceId } : undefined },
+        })
         const track = media.getVideoTracks()[0]
         if (!track) return
         local.current?.addTrack(track)
@@ -488,6 +498,29 @@ export function useCall(session: Session) {
     }
   }, [isCameraOff, renegotiate])
 
+  // switchDevice live-swaps the mic or camera track on an ACTIVE call via
+  // RTCRtpSender.replaceTrack — no renegotiation needed, unlike
+  // addTrack/removeTrack. A no-op when there's no active call: the Devices
+  // tab always saves the choice to devicePrefs regardless, so it still
+  // takes effect on the next start()/toggleCamera() call.
+  const switchDevice = useCallback(async (kind: 'audioinput' | 'videoinput', deviceId: string) => {
+    if (!peer.current || !local.current) return
+    const isAudio = kind === 'audioinput'
+    const media = await navigator.mediaDevices.getUserMedia(
+      isAudio
+        ? { audio: { deviceId: { exact: deviceId }, echoCancellation: true } }
+        : { video: { deviceId: { exact: deviceId } } },
+    )
+    const newTrack = isAudio ? media.getAudioTracks()[0] : media.getVideoTracks()[0]
+    if (!newTrack) return
+    const sender = peer.current.getSenders().find(s => s.track?.kind === (isAudio ? 'audio' : 'video'))
+    if (sender) await sender.replaceTrack(newTrack)
+    const oldTrack = isAudio ? local.current.getAudioTracks()[0] : local.current.getVideoTracks()[0]
+    if (oldTrack) { local.current.removeTrack(oldTrack); oldTrack.stop() }
+    local.current.addTrack(newTrack)
+    setLocalStream(local.current)
+  }, [])
+
   const moderate = useCallback(async (userID: string, action: 'mute' | 'unmute' | 'remove') => {
     if (!callID.current) return
     try {
@@ -497,5 +530,5 @@ export function useCall(session: Session) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось изменить участника') }
   }, [])
 
-  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
+  return { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, switchDevice, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted }
 }
