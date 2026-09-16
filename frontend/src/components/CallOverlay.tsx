@@ -173,6 +173,11 @@ function ShareScreenModal({ onConfirm, onCancel }: { onConfirm: (options: Screen
     <label className="share-modal__field"><span>Разрешение</span><select value={resolutionIndex} onChange={event => setResolutionIndex(Number(event.target.value))}>{screenResolutions.map((option, index) => <option key={option.label} value={index}>{option.label}</option>)}</select></label>
     <label className="share-modal__field"><span>Частота кадров</span><select value={frameRate} onChange={event => setFrameRate(Number(event.target.value))}>{screenFrameRates.map(fps => <option key={fps} value={fps}>{fps} кадр/с</option>)}</select></label>
     <label className="share-modal__toggle"><input type="checkbox" checked={audio} onChange={event => setAudio(event.target.checked)} />Транслировать звук экрана</label>
+    {/* This checkbox only tells the browser audio is wanted; the browser's
+        own share-source picker (opened right after "Начать демонстрацию",
+        outside this app's control) decides whether it actually captures
+        any — and it never does for a single window, on any platform. */}
+    <p className="share-modal__hint">Чтобы звук передавался, в окне выбора источника выберите «Вкладка Chrome» и включите «Также поделиться звуком вкладки», либо «Весь экран» со звуком системы. Отдельное окно приложения передать звук не может.</p>
     <div className="share-modal__actions"><Button variant="secondary" onClick={onCancel}>Отмена</Button><Button onClick={() => onConfirm({ width: resolution.width, height: resolution.height, frameRate, audio })}>Начать демонстрацию</Button></div>
   </section></div>
 }
