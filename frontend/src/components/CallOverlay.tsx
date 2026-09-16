@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
 import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
@@ -406,7 +407,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     return event => openVolumeMenu(event, key, label)
   }
   return <section className={`call-overlay${docked ? ' call-overlay--docked' : ''}`} aria-label="Звонок">
-    <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><div className="call-overlay__header-actions"><IconButton label={docked ? 'Развернуть звонок' : 'Свернуть звонок'} onClick={onToggleDock}>{docked ? <ExpandIcon /> : <MinimizeIcon />}</IconButton><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></div></header>
+    <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><div className="call-overlay__header-actions"><IconButton label={docked ? 'Развернуть звонок' : 'Свернуть звонок'} onClick={onToggleDock}>{docked ? <ExpandIcon /> : <MinimizeIcon />}</IconButton></div></header>
     {error ? <Notice>{error}</Notice> : null}
     {reconnectExhausted
       ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
@@ -417,9 +418,17 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
       <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
       <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
       <IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton>
+      <IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}>✕</IconButton>
       {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
     </footer>
-    {shareModalOpen ? <ShareScreenModal onCancel={() => setShareModalOpen(false)} onConfirm={options => { setShareModalOpen(false); void onShare(options) }} /> : null}
-    {volumeMenu ? <VolumeMenu menu={volumeMenu} value={volumes[volumeMenu.key] ?? 1} onChange={volume => onVolumeChange(volumeMenu.key, volume)} onClose={() => setVolumeMenu(null)} /> : null}
+    {/* Portalled straight to document.body: both are position:fixed, and a
+        fixed descendant of a zoomed ancestor (the docked view's own
+        CSS zoom) does not reliably position against the real viewport in
+        every browser — it can render at the wrong place or the wrong
+        size. Escaping the zoomed subtree entirely sidesteps that, so
+        these always land where the pointer actually was regardless of
+        which view (full or docked) opened them. */}
+    {shareModalOpen ? createPortal(<ShareScreenModal onCancel={() => setShareModalOpen(false)} onConfirm={options => { setShareModalOpen(false); void onShare(options) }} />, document.body) : null}
+    {volumeMenu ? createPortal(<VolumeMenu menu={volumeMenu} value={volumes[volumeMenu.key] ?? 1} onChange={volume => onVolumeChange(volumeMenu.key, volume)} onClose={() => setVolumeMenu(null)} />, document.body) : null}
   </section>
 }
