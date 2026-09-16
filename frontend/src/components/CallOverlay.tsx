@@ -361,6 +361,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   }
   const otherPeers = peers.filter(peer => peer.user_id !== currentUserID)
   const title = isConnected ? 'Соединение установлено' : isConnecting ? 'Подключаемся…' : reconnectExhausted ? 'Не удалось переподключиться' : 'Соединение потеряно'
+  const statusClass = isConnected ? 'is-connected' : isConnecting ? 'is-connecting' : 'is-lost'
   // Camera and screen are two independent slots here, exactly like a remote
   // participant's own separate published tracks — never one shared "current
   // local stream" toggled by whichever of shareScreen/toggleCamera last ran.
@@ -407,7 +408,12 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     return event => openVolumeMenu(event, key, label)
   }
   return <section className={`call-overlay${docked ? ' call-overlay--docked' : ''}`} aria-label="Звонок">
-    <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><div className="call-overlay__header-actions"><IconButton label={docked ? 'Развернуть звонок' : 'Свернуть звонок'} onClick={onToggleDock}>{docked ? <ExpandIcon /> : <MinimizeIcon />}</IconButton></div></header>
+    {/* The status dot replaces a header title that used to change size and
+        text on every state change — at the docked view's zoom it read as
+        visually louder than everything around it. Color plus a native
+        title tooltip carries the same information far more quietly. */}
+    <span className={`call-overlay__status call-overlay__status--${statusClass}`} title={title} />
+    <header><span className="call-label">Звонок</span><div className="call-overlay__header-actions"><IconButton label={docked ? 'Развернуть звонок' : 'Свернуть звонок'} onClick={onToggleDock}>{docked ? <ExpandIcon /> : <MinimizeIcon />}</IconButton></div></header>
     {error ? <Notice>{error}</Notice> : null}
     {reconnectExhausted
       ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
