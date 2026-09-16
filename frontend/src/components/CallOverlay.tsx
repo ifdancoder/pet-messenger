@@ -341,39 +341,16 @@ export function MiniCallBar({ names, isMuted, onToggleMute, onEnd, onExpand, con
     <IconButton label="Завершить звонок" className="call-mini-bar__end" onClick={event => { event.stopPropagation(); onEnd() }}>✕</IconButton>
   </div>
 }
-type DockedCallBarProps = { names: string[]; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; connectedSince: number | null; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onExpand: () => void; onEnd: () => Promise<void> }
-// DockedCallBar sits inline above the message list of the call's own chat
-// (see ChatPanel's callBanner slot) — not a floating overlay, so it's never
-// draggable; it lives wherever the chat layout puts it. This is what a call
-// collapses into by default while you're still looking at that chat; the
-// floating MiniCallBar is reserved for navigating away from it entirely.
-export function DockedCallBar({ names, isMuted, isCameraOff, isSharingScreen, connectedSince, onToggleMute, onToggleCamera, onShare, onStopShare, onExpand, onEnd }: DockedCallBarProps) {
-  const elapsed = useElapsed(connectedSince)
-  const [shareModalOpen, setShareModalOpen] = useState(false)
-  return <div className="call-docked-bar">
-    <div className="call-docked-bar__info">
-      <span className="call-docked-bar__names">{names.length ? names.join(', ') : 'Звонок'}</span>
-      <span className="call-docked-bar__timer">{elapsedLabel(elapsed)}</span>
-    </div>
-    <div className="call-docked-bar__controls">
-      <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
-      <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
-      <IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton>
-      <IconButton label="Развернуть звонок" onClick={onExpand}><ExpandIcon /></IconButton>
-      <IconButton label="Завершить звонок" className="call-docked-bar__end" onClick={() => void onEnd()}>✕</IconButton>
-    </div>
-    {shareModalOpen ? <ShareScreenModal onCancel={() => setShareModalOpen(false)} onConfirm={options => { setShareModalOpen(false); void onShare(options) }} /> : null}
-  </div>
-}
-
-type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; onDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
-// CallOverlay is the full-screen view only — the caller (App) mounts it
-// exactly while the call's own conversation is showing and hasn't been
-// docked, and unmounts it otherwise (docked or floating render their own,
-// much smaller components instead). CallAudio, rendered by the caller
-// alongside whichever of the three views is current, is what keeps audio
-// and PiP alive across all of that regardless.
-export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, volumes, onVolumeChange, onDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+// CallOverlay is the one call view for both full-screen and docked — docked
+// is the exact same layout, just visually shrunk to a fixed height and
+// embedded above the call's own chat (see ChatPanel's callBanner slot)
+// instead of covering the screen; nothing about its content or behavior
+// changes between the two. CallAudio, mounted by the caller alongside
+// whichever of the three views (this, docked or full; or the floating
+// MiniCallBar) is current, is what keeps audio and PiP alive across
+// switches between them — this component never touches either itself.
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [volumeMenu, setVolumeMenu] = useState<VolumeMenuState | null>(null)
@@ -428,8 +405,8 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     const label = `${screen ? 'Демонстрация' : 'Громкость'} — ${labelFor(entry.id)}`
     return event => openVolumeMenu(event, key, label)
   }
-  return <section className="call-overlay" aria-label="Звонок">
-    <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><div className="call-overlay__header-actions"><IconButton label="Свернуть звонок" onClick={onDock}><MinimizeIcon /></IconButton><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></div></header>
+  return <section className={`call-overlay${docked ? ' call-overlay--docked' : ''}`} aria-label="Звонок">
+    <header><div><span className="call-label">Звонок</span><h2>{title}</h2></div><div className="call-overlay__header-actions"><IconButton label={docked ? 'Развернуть звонок' : 'Свернуть звонок'} onClick={onToggleDock}>{docked ? <ExpandIcon /> : <MinimizeIcon />}</IconButton><Button variant="danger" onClick={() => void onEnd()}>Завершить</Button></div></header>
     {error ? <Notice>{error}</Notice> : null}
     {reconnectExhausted
       ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>

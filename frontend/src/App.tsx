@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AuthScreen } from './components/AuthScreen'
-import { CallAudio, CallOverlay, DockedCallBar, MiniCallBar } from './components/CallOverlay'
+import { CallAudio, CallOverlay, MiniCallBar } from './components/CallOverlay'
 import { IncomingCallDialog } from './components/IncomingCallDialog'
 import { ChatPanel } from './components/ChatPanel'
 import { ConversationSidebar } from './components/ConversationSidebar'
@@ -79,10 +79,27 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     setFullScreen(false)
     if (callConversation) messenger.selectConversation(callConversation)
   }, [callConversation, messenger])
-  const expandCall = useCallback(() => setFullScreen(true), [])
+  // toggleDock flips fullScreen without navigating anywhere — used by the
+  // full/docked view's own header button, since it's only ever clicked
+  // while already on the call's conversation.
+  const toggleDock = useCallback(() => setFullScreen(current => !current), [])
   const setVolume = useCallback((key: string, volume: number) => setVolumes(previous => ({ ...previous, [key]: volume })), [])
   const otherCallNames = peers.filter(peer => peer.user_id !== session.user.id).map(peer => callParticipantNames[peer.user_id] ?? 'Собеседник')
-  return <main className="messenger-app"><ConversationSidebar session={session} conversations={messenger.conversations} unreadByConversation={messenger.unreadByConversation} activeConversation={messenger.activeConversation} isLoading={messenger.isLoadingConversations} onSelect={messenger.selectConversation} onCreate={messenger.createConversation} onLogout={onLogout} onOpenSettings={() => setSettingsOpen(true)} /><div className="workspace">{messenger.error ? <Notice>{messenger.error}</Notice> : null}<ChatPanel session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} callBanner={docked ? <DockedCallBar names={otherCallNames} isMuted={isMuted} isCameraOff={isCameraOff} isSharingScreen={isSharingScreen} connectedSince={connectedSince} onToggleMute={toggleMute} onToggleCamera={toggleCamera} onShare={shareScreen} onStopShare={stopScreenShare} onExpand={expandCall} onEnd={endCall} /> : null} onStartCall={openCall} onShowMembers={setMembersConversation} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => openCall(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallAudio remoteStreams={remoteStreams} peers={peers} volumes={volumes} floating={floating} /> : null}{floating ? <MiniCallBar names={otherCallNames} isMuted={isMuted} onToggleMute={toggleMute} onEnd={() => void endCall()} onExpand={dockCall} connectedSince={connectedSince} /> : null}{callConversation && !floating && !docked ? <CallOverlay localStream={localStream} localScreenStream={localScreenStream} remoteStreams={remoteStreams} peers={peers} currentUserID={session.user.id} participantNames={{ ...callParticipantNames, [session.user.id]: ownCallName }} canModerate={callConversation.kind !== 'direct'} error={callError} isConnecting={isConnecting} isConnected={isOpen} isMuted={isMuted} isCameraOff={isCameraOff} isSharingScreen={isSharingScreen} reconnectExhausted={reconnectExhausted} volumes={volumes} onVolumeChange={setVolume} onDock={dockCall} onReconnect={reconnectNow} onShare={shareScreen} onStopShare={stopScreenShare} onToggleMute={toggleMute} onToggleCamera={toggleCamera} onModerate={moderate} onEnd={endCall} /> : null}{settingsOpen ? <SettingsModal session={session} onSessionUpdate={onSessionUpdate} onClose={() => setSettingsOpen(false)} isCallActive={isOpen} switchDevice={switchDevice} setNoiseSuppression={setNoiseSuppression} /> : null}</div></main>
+  // Docked and full-screen are the exact same CallOverlay, just mounted in
+  // two different places (see the docked= prop) — sharing one props object
+  // keeps the two call sites from drifting out of sync on everything but
+  // that flag.
+  const callOverlayProps = callConversation ? {
+    localStream, localScreenStream, remoteStreams, peers,
+    currentUserID: session.user.id,
+    participantNames: { ...callParticipantNames, [session.user.id]: ownCallName },
+    canModerate: callConversation.kind !== 'direct',
+    error: callError, isConnecting, isConnected: isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted,
+    volumes, onVolumeChange: setVolume, onToggleDock: toggleDock,
+    onReconnect: reconnectNow, onShare: shareScreen, onStopShare: stopScreenShare,
+    onToggleMute: toggleMute, onToggleCamera: toggleCamera, onModerate: moderate, onEnd: endCall,
+  } : null
+  return <main className="messenger-app"><ConversationSidebar session={session} conversations={messenger.conversations} unreadByConversation={messenger.unreadByConversation} activeConversation={messenger.activeConversation} isLoading={messenger.isLoadingConversations} onSelect={messenger.selectConversation} onCreate={messenger.createConversation} onLogout={onLogout} onOpenSettings={() => setSettingsOpen(true)} /><div className="workspace">{messenger.error ? <Notice>{messenger.error}</Notice> : null}<ChatPanel session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} callBanner={callOverlayProps && docked ? <CallOverlay {...callOverlayProps} docked /> : null} onStartCall={openCall} onShowMembers={setMembersConversation} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => openCall(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallAudio remoteStreams={remoteStreams} peers={peers} volumes={volumes} floating={floating} /> : null}{floating ? <MiniCallBar names={otherCallNames} isMuted={isMuted} onToggleMute={toggleMute} onEnd={() => void endCall()} onExpand={dockCall} connectedSince={connectedSince} /> : null}{callOverlayProps && !floating && !docked ? <CallOverlay {...callOverlayProps} docked={false} /> : null}{settingsOpen ? <SettingsModal session={session} onSessionUpdate={onSessionUpdate} onClose={() => setSettingsOpen(false)} isCallActive={isOpen} switchDevice={switchDevice} setNoiseSuppression={setNoiseSuppression} /> : null}</div></main>
 }
 
 export default function App() {
