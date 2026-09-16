@@ -50,6 +50,26 @@ function FocusIcon({ focused }: { focused: boolean }) {
 function MinimizeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14h4v4M18 10h-4V6M14 14l7 7M10 10 3 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
+// SignalIcon carries connection state through shape (wifi arcs, full for a
+// good connection; a "no signal" slash when lost) rather than color — it
+// stays a plain white glyph in every state, like a phone's own signal
+// indicator, with the actual wording still available as its title tooltip.
+function SignalIcon({ state }: { state: 'connected' | 'connecting' | 'lost' }) {
+  if (state === 'lost') {
+    return <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12.55a11 11 0 0 1 5.17-2.92M13.83 9.63A11 11 0 0 1 19 12.55" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.53 16.11a6 6 0 0 1 6.95 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="20" r="1" fill="currentColor" />
+      <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  }
+  return <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M5 12.55a11 11 0 0 1 14.08 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M1.42 9a16 16 0 0 1 21.16 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8.53 16.11a6 6 0 0 1 6.95 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="12" cy="20" r="1" fill="currentColor" />
+  </svg>
+}
 function ExpandIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
@@ -408,11 +428,6 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     return event => openVolumeMenu(event, key, label)
   }
   return <section className={`call-overlay${docked ? ' call-overlay--docked' : ''}`} aria-label="Звонок">
-    {/* The status dot replaces a header title that used to change size and
-        text on every state change — at the docked view's zoom it read as
-        visually louder than everything around it. Color plus a native
-        title tooltip carries the same information far more quietly. */}
-    <span className={`call-overlay__status call-overlay__status--${statusClass}`} title={title} />
     <header><span className="call-label">Звонок</span><div className="call-overlay__header-actions"><IconButton label={docked ? 'Развернуть звонок' : 'Свернуть звонок'} onClick={onToggleDock}>{docked ? <ExpandIcon /> : <MinimizeIcon />}</IconButton></div></header>
     {error ? <Notice>{error}</Notice> : null}
     {reconnectExhausted
@@ -421,10 +436,17 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
       ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={labelFor(focused.id)} focused onFocus={() => toggleFocus(focused.id)} onContextMenu={contextMenuFor(focused)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id && stream.stream.getVideoTracks().length > 0).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={labelFor(stream.id)} focused={false} onFocus={() => toggleFocus(stream.id)} onContextMenu={contextMenuFor(stream)} />)}</div></div>
       : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} micMuted={peers.find(peer => peer.user_id === userID)?.muted} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Громкость'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
     <footer>
-      <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
-      <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
-      <IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton>
-      <IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}>✕</IconButton>
+      {/* The status icon lives here, not floating over the whole overlay,
+          so it lines up on the same vertical center as the icon row next
+          to it — color plus a native title tooltip carries the wording a
+          header title used to (see statusClass above). */}
+      <span className={`call-overlay__status call-overlay__status--${statusClass}`} title={title}><SignalIcon state={statusClass === 'is-connected' ? 'connected' : statusClass === 'is-connecting' ? 'connecting' : 'lost'} /></span>
+      <div className="call-overlay__controls">
+        <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
+        <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
+        <IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton>
+        <IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}>✕</IconButton>
+      </div>
       {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
     </footer>
     {/* Portalled straight to document.body: both are position:fixed, and a
