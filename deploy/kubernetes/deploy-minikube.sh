@@ -28,7 +28,13 @@ docker build -q -t "pet-messenger-migrate:$TAG" -f deploy/kubernetes/Dockerfile.
 docker build -q -t "pet-messenger-frontend:$TAG" -f frontend/Dockerfile frontend >/dev/null
 
 echo "==> pointing $OVERLAY at :$TAG"
-sed -i -E "s/newTag: [A-Za-z0-9._-]+/newTag: ${TAG}/g" "$OVERLAY/kustomization.yaml"
+# Quoted: an unquoted tag is a YAML scalar, and a short SHA ending in a
+# digit-letter-digit run that reads as scientific notation (a commit
+# hash ending "e" followed by "-<all-digit timestamp>", e.g.
+# "724920e-1789545873") parses as a number, not a string, and kustomize
+# rejects it outright. The pattern matches either quoted or unquoted
+# form so this stays idempotent across repeated runs.
+sed -i -E "s/newTag: \"?[A-Za-z0-9._-]+\"?/newTag: \"${TAG}\"/g" "$OVERLAY/kustomization.yaml"
 
 # Job pod templates are immutable after creation, so a plain apply on top of
 # an already-run migrate Job fails with "field is immutable" instead of
