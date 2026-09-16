@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,21 +36,29 @@ func TestServersFor_TURNCreds(t *testing.T) {
 
 	uid := uuid.Must(uuid.NewV7())
 	got := p.ServersFor(uid)
-	if len(got) != 2 {
-		t.Fatalf("want stun + turn, got %d", len(got))
+	if len(got) != 4 {
+		t.Fatalf("want stun + 3 turn entries (udp, tcp, tls), got %d: %+v", len(got), got)
 	}
-	turn := got[1]
 	wantExpiry := strconv.FormatInt(fixed.Add(time.Hour).Unix(), 10)
-	if !strings.HasPrefix(turn.Username, wantExpiry+":") || !strings.HasSuffix(turn.Username, uid.String()) {
-		t.Fatalf("username = %q", turn.Username)
-	}
 	mac := hmac.New(sha1.New, []byte("s3cr3t"))
-	mac.Write([]byte(turn.Username))
-	want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-	if turn.Credential != want {
-		t.Fatalf("credential = %q, want %q", turn.Credential, want)
+	for _, turn := range got[1:] {
+		if !strings.HasPrefix(turn.Username, wantExpiry+":") || !strings.HasSuffix(turn.Username, uid.String()) {
+			t.Fatalf("username = %q", turn.Username)
+		}
+		mac.Reset()
+		mac.Write([]byte(turn.Username))
+		want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+		if turn.Credential != want {
+			t.Fatalf("credential = %q, want %q", turn.Credential, want)
+		}
 	}
-	if len(turn.URLs) != 2 {
-		t.Fatalf("turn URLs = %v", turn.URLs)
+	// Each transport variant gets its own single-URL entry — never bundled
+	// into one array — since a mixed array was observed making Firefox
+	// silently drop the whole entry.
+	wantURLs := [][]string{{"turn:t:3478"}, {"turn:t:3478?transport=tcp"}, {"turns:t:5349"}}
+	for i, turn := range got[1:] {
+		if !slices.Equal(turn.URLs, wantURLs[i]) {
+			t.Fatalf("turn[%d] URLs = %v, want %v", i, turn.URLs, wantURLs[i])
+		}
 	}
 }

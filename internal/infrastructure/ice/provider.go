@@ -53,10 +53,34 @@ func (p *Provider) ServersFor(userID uuid.UUID) []usecasecall.ICEServer {
 	mac.Write([]byte(username))
 	cred := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
-	urls := []string{p.turnURL}
+	// A TCP-transport variant is offered alongside the default UDP TURN URL:
+	// UDP is coturn's normal, lower-overhead path, but some networks (a VPN
+	// client's own WebRTC/leak-protection filtering in particular, which
+	// commonly targets UDP specifically since that's the classic STUN/TURN
+	// IP-leak vector) block outbound UDP from the browser process itself
+	// without blocking TCP. Offering both lets ICE fall back to whichever
+	// one the client's network actually allows, instead of failing outright
+	// when only one direction is viable.
+	//
+	// Each variant gets its own ICEServer entry rather than sharing one
+	// "urls" array: Firefox was observed silently discarding an entire
+	// RTCIceServer whose urls array mixed a plain "turn:" URL with a
+	// "?transport=tcp" one — it never attempted TURN over either transport,
+	// while Chromium-based browsers handled the same array fine. Separate
+	// entries are also the conventional way real TURN deployments (Twilio's
+	// NTS docs, for one) advertise multiple transports, so this sidesteps
+	// the ambiguity entirely instead of relying on multi-URL handling.
+	out = append(out, usecasecall.ICEServer{URLs: []string{p.turnURL}, Username: username, Credential: cred})
+	out = append(out, usecasecall.ICEServer{URLs: []string{turnURLWithTCP(p.turnURL)}, Username: username, Credential: cred})
 	if p.turnTLS != "" {
-		urls = append(urls, p.turnTLS)
+		out = append(out, usecasecall.ICEServer{URLs: []string{p.turnTLS}, Username: username, Credential: cred})
 	}
-	out = append(out, usecasecall.ICEServer{URLs: urls, Username: username, Credential: cred})
 	return out
+}
+
+// turnURLWithTCP appends coturn's own documented query-string transport
+// selector to a plain "turn:host:port" URL. A "turns:" (TLS) URL is already
+// TCP-only and never needs this.
+func turnURLWithTCP(turnURL string) string {
+	return turnURL + "?transport=tcp"
 }
