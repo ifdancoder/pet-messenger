@@ -75,27 +75,23 @@ function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
   }, [stream])
   return target
 }
-// IdentityChip is the one persistent "who is this" affordance in the whole
-// overlay: an avatar mark plus name inside a single frame. The frame itself
-// — not the avatar mark alone — carries both the speaking glow and the
-// right-click target, so a viewer always has one obvious bordered thing to
-// find and right-click for that person's volume, regardless of which tile
-// layout (grid, focused, video, placeholder) currently surrounds it.
-function IdentityChip({ label, stream, onContextMenu }: { label: string; stream?: MediaStream; onContextMenu?: MouseEventHandler }) {
+// IdentityTile is the one persistent "who is this, how loud are they"
+// affordance for a participant — a full tile the same size and weight as a
+// video tile (sharing its glow and its figcaption label styling), not a
+// small chip easy to overlook. It never yields to a video tile: a
+// camera/screen share turning on would otherwise take away the only place
+// to adjust that participant's volume.
+function IdentityTile({ label, stream, onContextMenu }: { label: string; stream?: MediaStream; onContextMenu?: MouseEventHandler }) {
   const name = label.split(' · ').at(-1) || label
-  const frame = useAudioLevelRef<HTMLSpanElement>(stream)
-  return <span className="identity-chip" ref={frame} onContextMenu={onContextMenu}><span className="identity-chip__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span><span className="identity-chip__name">{label}</span></span>
+  const frame = useAudioLevelRef<HTMLElement>(stream)
+  return <figure className="call-video call-video--identity" ref={frame} onContextMenu={onContextMenu}><span className="identity-tile__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span><figcaption>{label}</figcaption></figure>
 }
 function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
   const video = useRef<HTMLVideoElement>(null)
   useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
   // audioStream is only ever a screen share's own tab/system audio (see
   // ParticipantSection) — a camera tile gets none, so its outline just
-  // never lights up, no separate code path needed. This is in addition to,
-  // not instead of, the header's own "Демонстрация" chip: the video tile
-  // itself is what a viewer is actually looking at, so the glow and
-  // right-click volume control belong there too, not only in a small chip
-  // easy to miss above it.
+  // never lights up, no separate code path needed.
   const frame = useAudioLevelRef<HTMLElement>(audioStream)
   return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
@@ -109,14 +105,7 @@ function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus,
   const mediaStatus = videoStreams.length > 1 ? 'видео и демонстрация' : videoStreams.length === 1 ? 'медиа' : 'камера выключена'
   const micMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'mic'))
   const screenMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'screen'))
-  // The header's identity chip (glow + right-click volume) is the one
-  // permanent "who is this, how loud are they" affordance for this
-  // participant — it never yields to a video tile, or a camera/screen
-  // share turning on would silently take away the only way to adjust their
-  // volume. A second chip for the screen's own tab/system audio appears
-  // alongside it whenever that audio exists, exactly mirroring the mic
-  // chip rather than relying on the video tile itself to carry a glow.
-  return <article className="call-participant"><header><div className="call-participant__identities"><IdentityChip label={title} stream={micStream} onContextMenu={micMenu} />{screenAudioStream ? <IdentityChip label="Демонстрация" stream={screenAudioStream} onContextMenu={screenMenu} /> : null}</div><small>{mediaStatus}</small></header>{videoStreams.length ? <div className="call-participant__media">{videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={screen ? screenMenu : undefined} /> })}</div> : null}</article>
+  return <article className="call-participant"><header><span className="call-participant__identity-text">{title}</span><small>{mediaStatus}</small></header><div className="call-participant__media"><IdentityTile label={title} stream={micStream} onContextMenu={micMenu} />{videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={screen ? screenMenu : undefined} /> })}</div></article>
 }
 // A remote participant's mic (and a shared screen's own tab/system audio)
 // arrives as its own audio-only MediaStream, never bundled into a video
