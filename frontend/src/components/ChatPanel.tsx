@@ -31,5 +31,11 @@ export function ChatBody({ session, conversation, messages, isLoading, onSend }:
     setIsSending(false)
   }
   if (!conversation) return <section className="chat"><EmptyChat /></section>
-  return <section className="chat"><div className="message-list">{isLoading ? <div className="messages-loading"><Spinner /></div> : null}{!isLoading && messages.length === 0 ? <p className="messages-empty">Здесь пока тихо. Напишите первое сообщение.</p> : null}{messages.map(message => <article className={message.sender_id === session.user.id ? 'message message--mine' : 'message'} key={message.id}><p>{message.content || 'Системное сообщение'}</p><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{message.sender_id === session.user.id ? <span className="message__status">{deliveryStatus(message)}</span> : null}</time></article>)}</div><form className="composer" onSubmit={submit}><TextField name="content" placeholder="Напишите сообщение" autoComplete="off" /><Button type="submit" disabled={isSending}>{isSending ? '...' : 'Отправить'}</Button></form></section>
+  // message-list itself spans the full width (so its background texture
+  // reaches the edges), but the messages inside stay in a centered, capped
+  // inner column — otherwise a left-aligned received bubble and a
+  // right-aligned sent one would anchor to opposite edges of the full-width
+  // container and end up far apart, the same gap narrowing the column used
+  // to fix in the first place.
+  return <section className="chat"><div className="message-list"><div className="message-list__inner">{isLoading ? <div className="messages-loading"><Spinner /></div> : null}{!isLoading && messages.length === 0 ? <p className="messages-empty">Здесь пока тихо. Напишите первое сообщение.</p> : null}{messages.map(message => <article className={message.sender_id === session.user.id ? 'message message--mine' : 'message'} key={message.id}><p>{message.content || 'Системное сообщение'}</p><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{message.sender_id === session.user.id ? <span className="message__status">{deliveryStatus(message)}</span> : null}</time></article>)}</div></div><form className="composer" onSubmit={submit}><div className="composer__inner"><TextField name="content" placeholder="Напишите сообщение" autoComplete="off" /><Button type="submit" disabled={isSending}>{isSending ? '...' : 'Отправить'}</Button></div></form></section>
 }

@@ -172,7 +172,7 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
   // ParticipantSection) — a camera tile gets none, so its outline just
   // never lights up, no separate code path needed.
   const frame = useAudioLevelRef<HTMLElement>(audioStream)
-  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
+  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
 function ParticipantSection({ title, streams, tracks, muted, micMuted, focusedID, onFocus, onVolumeMenu }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; micMuted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
@@ -440,7 +440,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
           so it lines up on the same vertical center as the icon row next
           to it — color plus a native title tooltip carries the wording a
           header title used to (see statusClass above). */}
-      <span className={`call-overlay__status call-overlay__status--${statusClass}`} title={title}><SignalIcon state={statusClass === 'is-connected' ? 'connected' : statusClass === 'is-connecting' ? 'connecting' : 'lost'} /></span>
+      <span className={`call-overlay__status call-overlay__status--${statusClass}`} data-tooltip={title}><SignalIcon state={statusClass === 'is-connected' ? 'connected' : statusClass === 'is-connecting' ? 'connecting' : 'lost'} /></span>
       <div className="call-overlay__controls">
         <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
         <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
