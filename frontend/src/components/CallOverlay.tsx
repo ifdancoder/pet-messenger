@@ -5,7 +5,7 @@ import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks
 import { Button, IconButton, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'mid' | 'ownerID'>
-type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
+type TileProps = { stream: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
 // entryMatchesTrack checks mid first (this connection's own
 // RTCRtpTransceiver.mid, matched against the roster's per-viewer
 // TrackInfo.mid) and only falls back to the MediaStream id the track arrived
@@ -81,22 +81,15 @@ function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
 // right-click target, so a viewer always has one obvious bordered thing to
 // find and right-click for that person's volume, regardless of which tile
 // layout (grid, focused, video, placeholder) currently surrounds it.
-function IdentityChip({ label, stream, size, onContextMenu }: { label: string; stream?: MediaStream; size: 'lg' | 'sm'; onContextMenu?: MouseEventHandler }) {
+function IdentityChip({ label, stream, onContextMenu }: { label: string; stream?: MediaStream; onContextMenu?: MouseEventHandler }) {
   const name = label.split(' · ').at(-1) || label
   const frame = useAudioLevelRef<HTMLSpanElement>(stream)
-  return <span className={`identity-chip identity-chip--${size}`} ref={frame} onContextMenu={onContextMenu}><span className="identity-chip__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span><span className="identity-chip__name">{label}</span></span>
+  return <span className="identity-chip" ref={frame} onContextMenu={onContextMenu}><span className="identity-chip__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span><span className="identity-chip__name">{label}</span></span>
 }
-function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
+function VideoTile({ stream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
   const video = useRef<HTMLVideoElement>(null)
   useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
-  // audioStream is only ever this specific tile's own audio (a screen
-  // share's tab/system sound) — a camera tile gets none, so its outline
-  // just never lights up, no separate code path needed.
-  const frame = useAudioLevelRef<HTMLElement>(audioStream)
-  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
-}
-function EmptyVideoTile({ label, stream, onContextMenu }: { label: string; stream?: MediaStream; onContextMenu?: MouseEventHandler }) {
-  return <figure className="call-video call-video--placeholder"><div className="call-video__profile"><IdentityChip label={label} stream={stream} size="lg" onContextMenu={onContextMenu} /></div></figure>
+  return <figure className="call-video" onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} title={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
 function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus, onVolumeMenu }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
@@ -107,14 +100,15 @@ function ParticipantSection({ title, streams, tracks, muted, focusedID, onFocus,
   const screenAudioStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && isScreenShare(entry, tracks))?.stream
   const mediaStatus = videoStreams.length > 1 ? 'видео и демонстрация' : videoStreams.length === 1 ? 'медиа' : 'камера выключена'
   const micMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'mic'))
-  // Exactly one identity chip is ever on screen for this participant, never
-  // two at once: with no video, the large placeholder chip in the media
-  // area IS the identity/glow/volume affordance, so the header stays plain
-  // text — showing the small header chip too used to glow both at once for
-  // the same mic, which read as two separate, competing "windows". Video
-  // showing needs the header chip instead, since the media area has no
-  // spare room for a big placeholder once real video is playing there.
-  return <article className="call-participant"><header>{videoStreams.length ? <IdentityChip label={title} stream={micStream} size="sm" onContextMenu={micMenu} /> : <span className="call-participant__identity-text">{title}</span>}<small>{mediaStatus}</small></header><div className="call-participant__media">{videoStreams.length ? videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={onVolumeMenu && (event => onVolumeMenu(event, screen ? 'screen' : 'mic'))} /> }) : <EmptyVideoTile label={title} stream={micStream} onContextMenu={micMenu} />}</div></article>
+  const screenMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'screen'))
+  // The header's identity chip (glow + right-click volume) is the one
+  // permanent "who is this, how loud are they" affordance for this
+  // participant — it never yields to a video tile, or a camera/screen
+  // share turning on would silently take away the only way to adjust their
+  // volume. A second chip for the screen's own tab/system audio appears
+  // alongside it whenever that audio exists, exactly mirroring the mic
+  // chip rather than relying on the video tile itself to carry a glow.
+  return <article className="call-participant"><header><div className="call-participant__identities"><IdentityChip label={title} stream={micStream} onContextMenu={micMenu} />{screenAudioStream ? <IdentityChip label="Демонстрация" stream={screenAudioStream} onContextMenu={screenMenu} /> : null}</div><small>{mediaStatus}</small></header>{videoStreams.length ? <div className="call-participant__media">{videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} /> })}</div> : null}</article>
 }
 // A remote participant's mic (and a shared screen's own tab/system audio)
 // arrives as its own audio-only MediaStream, never bundled into a video
@@ -337,7 +331,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     const tracks = peers.find(peer => peer.user_id === owner)?.tracks
     const screen = isScreenShare(entry, tracks)
     const key = `${owner}:${screen ? 'screen' : 'mic'}`
-    const label = `${screen ? 'Демонстрация' : 'Микрофон'} — ${labelFor(entry.id)}`
+    const label = `${screen ? 'Демонстрация' : 'Громкость'} — ${labelFor(entry.id)}`
     return event => openVolumeMenu(event, key, label)
   }
   // The PiP candidate: the first remote video going, screen share preferred
@@ -365,7 +359,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
           ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
           : focused
           ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={labelFor(focused.id)} focused onFocus={() => toggleFocus(focused.id)} onContextMenu={contextMenuFor(focused)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id && stream.stream.getVideoTracks().length > 0).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={labelFor(stream.id)} focused={false} onFocus={() => toggleFocus(stream.id)} onContextMenu={contextMenuFor(stream)} />)}</div></div>
-          : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Микрофон'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
+          : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Громкость'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
         <footer>
           <Button variant="secondary" onClick={onToggleMute}>{isMuted ? 'Включить микрофон' : 'Выключить микрофон'}</Button>
           <Button variant="secondary" onClick={() => void onToggleCamera()}>{isCameraOff ? 'Включить камеру' : 'Выключить камеру'}</Button>
