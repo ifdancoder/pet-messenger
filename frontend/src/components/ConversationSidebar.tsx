@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Avatar } from './Avatar'
 import { Brand } from './Brand'
 import { NewConversationForm } from './NewConversationForm'
 import { Button, IconButton, Spinner } from './ui'
@@ -18,6 +19,7 @@ type Props = {
 
 function conversationTitle(conversation: Conversation) { return conversation.title || conversation.direct_display_name || conversation.direct_username || (conversation.kind === 'direct' ? 'Личный диалог' : conversation.kind) }
 function conversationSubtitle(conversation: Conversation) { return conversation.kind === 'direct' && conversation.direct_username ? `@${conversation.direct_username}` : conversation.kind === 'direct' ? 'личный разговор' : 'группа' }
+function conversationAvatarUrl(conversation: Conversation) { return conversation.kind === 'direct' ? conversation.direct_avatar_url : conversation.avatar_url }
 
 export function ConversationSidebar({ session, conversations, unreadByConversation, activeConversation, isLoading, onSelect, onCreate, onLogout, onOpenSettings }: Props) {
   const [isComposerOpen, setIsComposerOpen] = useState(false)
@@ -28,13 +30,13 @@ export function ConversationSidebar({ session, conversations, unreadByConversati
   }
   return <aside className="sidebar">
     <header className="sidebar__header"><Brand /><IconButton label="Настройки" onClick={onOpenSettings}>⚙</IconButton><IconButton label="Выйти" onClick={onLogout}>↗</IconButton></header>
-    <section className="identity"><div className="identity__avatar">{(session.user.display_name || session.user.username).slice(0, 1).toUpperCase()}</div><div><strong>{session.user.display_name || session.user.username}</strong><span>@{session.user.username}</span></div><Button variant="ghost" className="identity__copy" onClick={() => void copyID()}>{copied ? 'Скопировано' : 'Копировать мой ID'}</Button></section>
+    <section className="identity"><Avatar subject={{ avatarUrl: session.user.avatar_url, displayName: session.user.display_name, username: session.user.username }} token={session.access_token} className="identity__avatar" /><div><strong>{session.user.display_name || session.user.username}</strong><span>@{session.user.username}</span></div><Button variant="ghost" className="identity__copy" onClick={() => void copyID()}>{copied ? 'Скопировано' : 'Копировать мой ID'}</Button></section>
     <div className="sidebar__section-title"><h2>Диалоги</h2><Button variant="secondary" className="button--compact" onClick={() => setIsComposerOpen(value => !value)}>Новый</Button></div>
     {isComposerOpen ? <NewConversationForm onCreate={onCreate} /> : null}
     <nav className="conversation-list" aria-label="Диалоги">
       {isLoading ? <div className="sidebar-loading"><Spinner /></div> : null}
       {!isLoading && conversations.length === 0 ? <p className="sidebar-empty">Начните разговор, создав личный диалог или группу.</p> : null}
-      {conversations.map(conversation => <button className={conversation.id === activeConversation?.id ? 'conversation-item conversation-item--active' : 'conversation-item'} key={conversation.id} onClick={() => onSelect(conversation)}><span className="conversation-item__avatar">{conversationTitle(conversation).slice(0, 1).toUpperCase()}</span><span><b>{conversationTitle(conversation)}</b><small>{conversationSubtitle(conversation)}</small></span>{unreadByConversation[conversation.id] ? <span className="conversation-item__unread">{unreadByConversation[conversation.id]}</span> : null}</button>)}
+      {conversations.map(conversation => <button className={conversation.id === activeConversation?.id ? 'conversation-item conversation-item--active' : 'conversation-item'} key={conversation.id} onClick={() => onSelect(conversation)}><Avatar subject={{ avatarUrl: conversationAvatarUrl(conversation), displayName: conversationTitle(conversation) }} token={session.access_token} className="conversation-item__avatar" /><span><b>{conversationTitle(conversation)}</b><small>{conversationSubtitle(conversation)}</small></span>{unreadByConversation[conversation.id] ? <span className="conversation-item__unread">{unreadByConversation[conversation.id]}</span> : null}</button>)}
     </nav>
   </aside>
 }

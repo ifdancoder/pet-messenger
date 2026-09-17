@@ -152,10 +152,12 @@ type Conversation struct {
 	// conversation lists. It equals CreatedAt for a conversation with no
 	// messages and is advanced by the message repository as messages are sent.
 	LastMessageAt time.Time
-	// DirectUsername and DirectDisplayName identify the other participant when
-	// this conversation is listed for one member of a direct chat.
+	// DirectUsername, DirectDisplayName, and DirectAvatarURL identify the
+	// other participant when this conversation is listed for one member of a
+	// direct chat.
 	DirectUsername    string
 	DirectDisplayName string
+	DirectAvatarURL   string
 	// UnreadCount is the number of text messages from other participants whose
 	// sequence is ahead of the listing member's read cursor.
 	UnreadCount int

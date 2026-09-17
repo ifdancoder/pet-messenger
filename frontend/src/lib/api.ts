@@ -1,7 +1,7 @@
 import { clearSession, readSession, saveSession } from './session'
 import type { Conversation, MemberProfile, Message, Notification, Session, User } from '../types'
 
-const apiURL = import.meta.env.VITE_API_URL ?? `http://localhost:${import.meta.env.VITE_PORT ?? '8080'}`
+export const apiURL = import.meta.env.VITE_API_URL ?? `http://localhost:${import.meta.env.VITE_PORT ?? '8080'}`
 
 export class APIError extends Error {
   readonly status: number

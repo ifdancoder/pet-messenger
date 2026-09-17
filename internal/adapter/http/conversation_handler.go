@@ -146,6 +146,7 @@ type conversationResponse struct {
 	DirectUsername    string     `json:"direct_username,omitempty"`
 	UnreadCount       int        `json:"unread_count"`
 	DirectDisplayName string     `json:"direct_display_name,omitempty"`
+	DirectAvatarURL   string     `json:"direct_avatar_url,omitempty"`
 }
 
 type conversationListResponse struct {
@@ -171,6 +172,7 @@ func toConversationResponse(c *domainconv.Conversation) conversationResponse {
 		DirectUsername:    c.DirectUsername,
 		UnreadCount:       c.UnreadCount,
 		DirectDisplayName: c.DirectDisplayName,
+		DirectAvatarURL:   c.DirectAvatarURL,
 	}
 }
 

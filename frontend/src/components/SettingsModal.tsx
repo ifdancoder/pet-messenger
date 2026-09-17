@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Session } from '../types'
+import { Avatar } from './Avatar'
 import { Button, IconButton, SelectField, TextField } from './ui'
 import { api } from '../lib/api'
 import { loadDevicePrefs, saveDevicePrefs } from '../lib/devicePrefs'
@@ -50,7 +51,12 @@ export function SettingsModal({ session, onSessionUpdate, onClose, isCallActive,
     setError('')
     try {
       const updated = await api.uploadAvatar(file, session.access_token)
-      onSessionUpdate({ ...session, user: { ...session.user, avatar_url: updated.avatar_url } })
+      // The path itself doesn't change on a re-upload, so a plain
+      // avatar_url update wouldn't budge either React's own re-render (same
+      // src string) or the browser's 5-minute avatar cache. Tagging it with
+      // a version makes this and every other place that renders this
+      // session's own avatar fetch the new bytes right away.
+      onSessionUpdate({ ...session, user: { ...session.user, avatar_url: `${updated.avatar_url}?v=${Date.now()}` } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить аватар')
     }
@@ -80,7 +86,12 @@ export function SettingsModal({ session, onSessionUpdate, onClose, isCallActive,
       {tab === 'profile' ? <div className="settings-modal__panel">
         <label>Отображаемое имя<TextField value={displayName} onChange={e => setDisplayName(e.target.value)} /></label>
         <label>Имя пользователя<TextField value={username} onChange={e => setUsername(e.target.value)} /></label>
-        <label>Аватар<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e => void onAvatarChange(e.target.files?.[0] ?? null)} /></label>
+        <label className="settings-modal__avatar-field">Аватар
+          <span className="settings-modal__avatar-row">
+            <Avatar subject={{ avatarUrl: session.user.avatar_url, displayName: session.user.display_name, username: session.user.username }} token={session.access_token} className="settings-modal__avatar" />
+            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={e => void onAvatarChange(e.target.files?.[0] ?? null)} />
+          </span>
+        </label>
         <Button onClick={() => void saveProfile()}>Сохранить</Button>
       </div> : null}
       {tab === 'devices' ? <div className="settings-modal__panel">

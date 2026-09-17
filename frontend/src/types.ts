@@ -6,9 +6,11 @@ export type Conversation = {
   id: string
   kind: string
   title: string
+  avatar_url?: string
   last_message_at: string
   direct_username?: string
   direct_display_name?: string
+  direct_avatar_url?: string
   unread_count: number
 }
 

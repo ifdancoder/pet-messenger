@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../lib/api'
 import type { Conversation, MemberProfile, Session } from '../types'
+import { Avatar } from './Avatar'
 import { Button, IconButton, Notice, Spinner, TextField } from './ui'
 import './MembersPanel.css'
 
@@ -35,5 +36,5 @@ export function MembersPanel({ conversation, session, onClose }: Props) {
   }
   const currentMember = members.find(member => member.user_id === session.user.id)
   const canManage = Boolean(currentMember?.admin_tier)
-  return <aside className="members-panel"><header><div><span>Группа</span><h2>Участники</h2></div><IconButton label="Закрыть" onClick={onClose}>×</IconButton></header>{canManage ? <form className="members-invite" onSubmit={invite}><TextField name="username" placeholder="Логин пользователя" required /><Button type="submit" disabled={isInviting}>{isInviting ? '…' : 'Пригласить'}</Button></form> : null}{error ? <Notice>{error}</Notice> : null}<div className="members-list">{isLoading ? <div className="members-loading"><Spinner /></div> : members.map(member => <article className="member" key={member.user_id}><span className="member__avatar">{(member.display_name || member.username).slice(0, 1).toUpperCase()}</span><div className="member__body"><b>{member.display_name || member.username}</b><small>@{member.username} · {member.role}</small></div>{canManage && member.user_id !== session.user.id ? <Button className="member__remove" variant="danger" disabled={removingUserID === member.user_id} onClick={() => void removeMember(member)}>{removingUserID === member.user_id ? '…' : 'Удалить'}</Button> : null}</article>)}</div></aside>
+  return <aside className="members-panel"><header><div><span>Группа</span><h2>Участники</h2></div><IconButton label="Закрыть" onClick={onClose}>×</IconButton></header>{canManage ? <form className="members-invite" onSubmit={invite}><TextField name="username" placeholder="Логин пользователя" required /><Button type="submit" disabled={isInviting}>{isInviting ? '…' : 'Пригласить'}</Button></form> : null}{error ? <Notice>{error}</Notice> : null}<div className="members-list">{isLoading ? <div className="members-loading"><Spinner /></div> : members.map(member => <article className="member" key={member.user_id}><Avatar subject={{ avatarUrl: member.avatar_url, displayName: member.display_name, username: member.username }} token={session.access_token} className="member__avatar" /><div className="member__body"><b>{member.display_name || member.username}</b><small>@{member.username} · {member.role}</small></div>{canManage && member.user_id !== session.user.id ? <Button className="member__remove" variant="danger" disabled={removingUserID === member.user_id} onClick={() => void removeMember(member)}>{removingUserID === member.user_id ? '…' : 'Удалить'}</Button> : null}</article>)}</div></aside>
 }
