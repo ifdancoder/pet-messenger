@@ -214,7 +214,18 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
   // ParticipantSection) — a camera tile gets none, so its outline just
   // never lights up, no separate code path needed.
   const frame = useAudioLevelRef<HTMLElement>(audioStream, onSpeakingChange)
-  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
+  // The tile's aspect ratio should match what's actually being captured
+  // (a phone camera's 9:16, an ultrawide screen share's 21:9, ...) rather
+  // than a fixed guess — read it straight off the video element once its
+  // real dimensions are known, and again on 'resize' since a shared
+  // window can change size mid-call. --video-ratio has no default value:
+  // the CSS falls back to 16/10 (via var(--video-ratio, 16/10)) for the
+  // brief window before metadata arrives.
+  const syncRatio = () => {
+    const el = video.current
+    if (el?.videoWidth && el.videoHeight) frame.current?.style.setProperty('--video-ratio', `${el.videoWidth} / ${el.videoHeight}`)
+  }
+  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} onLoadedMetadata={syncRatio} onResize={syncRatio} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
 // gridRef attaches the pager/reorder hook's per-card element ref straight
 // to this card's own root — see useCallGrid below; onSpeakingChange is
