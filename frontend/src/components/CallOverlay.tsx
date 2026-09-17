@@ -486,9 +486,21 @@ function useCallGrid(orderedKeys: string[]) {
       leadSpacerRef.current.style.width = Math.max(0, clientW / 2 - padLeft - firstW / 2 - firstW * 0.135) + 'px'
       trailSpacerRef.current.style.width = Math.max(0, clientW / 2 - padRight - lastW / 2 - lastW * 0.135) + 'px'
     }
+    // Disabled state is "is the edge card already centered", not "is
+    // scrollLeft near the scrollable max" — the two disagree once the lead/
+    // trail spacers (sized above so the first/last card CAN reach center)
+    // are wider than a plain scrollLeft-vs-max comparison expects, which
+    // left the last-card case needing a manual drag past where pageNext
+    // could reach to make the arrow disappear.
     const max = track.scrollWidth - track.clientWidth
-    setPrevDisabled(track.scrollLeft <= 1)
-    setNextDisabled(max <= 1 || track.scrollLeft >= max - 40)
+    if (!list.length || max <= 1) {
+      setPrevDisabled(true)
+      setNextDisabled(true)
+    } else {
+      const current = closestIndex()
+      setPrevDisabled(current <= 0)
+      setNextDisabled(current >= list.length - 1)
+    }
     const trackRect = track.getBoundingClientRect()
     const centerX = trackRect.left + trackRect.width / 2
     const halfSpan = trackRect.width / 2 || 1
