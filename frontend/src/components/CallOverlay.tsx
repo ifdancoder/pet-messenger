@@ -47,6 +47,11 @@ function FocusIcon({ focused }: { focused: boolean }) {
     ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M3 15h6v6M21 15h-6v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
+function MaximizeIcon({ active }: { active: boolean }) {
+  return active
+    ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M15 20v-5h5M9 20v-5H4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
 function MinimizeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14h4v4M18 10h-4V6M14 14l7 7M10 10 3 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
@@ -225,7 +230,25 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
     const el = video.current
     if (el?.videoWidth && el.videoHeight) frame.current?.style.setProperty('--video-ratio', `${el.videoWidth} / ${el.videoHeight}`)
   }
-  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} onLoadedMetadata={syncRatio} onResize={syncRatio} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
+  // Real screen-filling maximize (the Fullscreen API on this tile's own
+  // figure, not another in-app layout), independent of the focus toggle
+  // above — focus rearranges the grid, this actually fills the display, and
+  // a screen share in particular is worth seeing at native size. isMaximized
+  // tracks document.fullscreenElement rather than a plain click flag so
+  // pressing Escape (the browser's own exit gesture) also flips the icon
+  // back correctly.
+  const [isMaximized, setIsMaximized] = useState(false)
+  useEffect(() => {
+    const onChange = () => setIsMaximized(document.fullscreenElement === frame.current)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const toggleMaximize = () => {
+    if (document.fullscreenElement === frame.current) void document.exitFullscreen()
+    else void frame.current?.requestFullscreen()
+  }
+  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} onLoadedMetadata={syncRatio} onResize={syncRatio} /><figcaption>{label}</figcaption><button className="call-video__maximize" type="button" aria-label={isMaximized ? 'Свернуть на весь экран' : 'На весь экран'} data-tooltip={isMaximized ? 'Свернуть' : 'На весь экран'} onClick={toggleMaximize}><MaximizeIcon active={isMaximized} /></button><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
 // gridRef attaches the pager/reorder hook's per-card element ref straight
 // to this card's own root — see useCallGrid below; onSpeakingChange is
