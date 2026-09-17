@@ -641,6 +641,14 @@ function useCallGrid(orderedKeys: string[]) {
     let startScroll = 0
     const onDown = (event: PointerEvent) => {
       if (event.button !== 0) return
+      // Capturing the pointer here also redirects the resulting click's
+      // compatibility mouse event to the track itself (per the Pointer
+      // Events spec), not whatever was actually under the cursor — so
+      // starting a drag from inside a button silently ate every click on a
+      // tile's own focus/maximize controls before it ever reached them.
+      // Let a press that starts on a button behave like a normal click
+      // instead of the start of a drag.
+      if ((event.target as HTMLElement).closest('button')) return
       dragging = true
       dragMoved = false
       startX = event.clientX
