@@ -30,22 +30,25 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   const [fullScreen, setFullScreen] = useState(true)
   const [membersConversation, setMembersConversation] = useState<Conversation | null>(null)
   const [callParticipantNames, setCallParticipantNames] = useState<Record<string, string>>({})
-  // volumes and connectedSince are lifted here rather than owned by
-  // whichever view (full/docked/floating) happens to be mounted, so a
-  // per-participant volume tweak or the call's own elapsed timer survives
-  // switching between them instead of silently resetting whenever the
-  // visible view unmounts.
+  // volumes is lifted here rather than owned by whichever view
+  // (full/docked/floating) happens to be mounted, so a per-participant
+  // volume tweak survives switching between them instead of silently
+  // resetting whenever the visible view unmounts.
   const [volumes, setVolumes] = useState<Record<string, number>>({})
-  const [connectedSince, setConnectedSince] = useState<number | null>(null)
-  useEffect(() => {
-    if (isOpen) setConnectedSince(current => current ?? Date.now())
-    else if (!isConnecting) setConnectedSince(null)
-  }, [isOpen, isConnecting])
   const liveCalls = useLiveCalls(session, messenger.conversations)
   const ringingCallID = useRef<string | null>(null)
   const [dismissedCallID, setDismissedCallID] = useState<string | null>(null)
   const activeLiveCall = liveCalls.find(item => item.conversation.id === messenger.activeConversation?.id)
   const incomingCall = liveCalls.find(item => item.call.initiator_id !== session.user.id && item.call.id !== dismissedCallID)
+  // The elapsed-time source of truth is the call record's own started_at
+  // (polled every 2.5s by useLiveCalls), not a client-local Date.now()
+  // snapshot: a local snapshot made each participant's timer start from
+  // when THEIR OWN connection happened to open (drifting between
+  // participants) and reset to zero on any refresh even though the call
+  // itself kept running. Looked up via callConversation rather than
+  // messenger.activeConversation so it stays correct while floating.
+  const currentLiveCall = callConversation ? liveCalls.find(item => item.conversation.id === callConversation.id) : undefined
+  const connectedSince = currentLiveCall ? new Date(currentLiveCall.call.started_at).getTime() : null
   useEffect(() => {
     if (!incomingCall || callConversation || ringingCallID.current === incomingCall.call.id) return
     ringingCallID.current = incomingCall.call.id
