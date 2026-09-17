@@ -94,7 +94,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     currentUserID: session.user.id,
     participantNames: { ...callParticipantNames, [session.user.id]: ownCallName },
     canModerate: callConversation.kind !== 'direct',
-    error: callError, isConnecting, isConnected: isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted,
+    error: callError, isConnecting, isConnected: isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince,
     volumes, onVolumeChange: setVolume, onToggleDock: toggleDock,
     onReconnect: reconnectNow, onShare: shareScreen, onStopShare: stopScreenShare,
     onToggleMute: toggleMute, onToggleCamera: toggleCamera, onModerate: moderate, onEnd: endCall,

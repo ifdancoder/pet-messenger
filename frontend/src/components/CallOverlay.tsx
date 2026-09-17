@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
@@ -6,7 +6,7 @@ import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks
 import { Button, IconButton, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'mid' | 'ownerID'>
-type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler }
+type TileProps = { stream: MediaStream; audioStream?: MediaStream; muted?: boolean; label: string; focused: boolean; onFocus: () => void; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }
 // entryMatchesTrack checks mid first (this connection's own
 // RTCRtpTransceiver.mid, matched against the roster's per-viewer
 // TrackInfo.mid) and only falls back to the MediaStream id the track arrived
@@ -73,6 +73,15 @@ function SignalIcon({ state }: { state: 'connected' | 'connecting' | 'lost' }) {
 function ExpandIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
+function PagerIcon({ direction }: { direction: 'prev' | 'next' }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points={direction === 'prev' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+// A drawn X, matching every other control's stroke-based style (round caps,
+// same weight) — a plain "✕" text glyph here read as a different, flatter
+// icon language than the rest of the row right next to it.
+function EndCallIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+}
 // MicIcon doubles as the local mute button's glyph and the badge overlaid on
 // a remote participant's identity tile when their mic is off — muted is a
 // visually exceptional state worth crossing the icon out for, unlike a
@@ -119,10 +128,16 @@ export function getAudioContext() {
 // The ref attaches directly to whatever element should carry the reactive
 // outline — the identity tile's own frame, or a video tile's whole frame —
 // so the same hook drives both without a separate overlay element for either.
-function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
+// onSpeakingChange is read through a ref, not a dependency: an inline
+// arrow passed fresh every render would otherwise tear down and rebuild
+// the AnalyserNode on every render instead of once per actual stream
+// change, resetting the (already-working) --level glow along with it.
+function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream, onSpeakingChange?: (speaking: boolean) => void) {
   const target = useRef<T>(null)
+  const onSpeakingChangeRef = useRef(onSpeakingChange)
+  onSpeakingChangeRef.current = onSpeakingChange
   useEffect(() => {
-    if (!stream?.getAudioTracks().length) return
+    if (!stream?.getAudioTracks().length) { onSpeakingChangeRef.current?.(false); return }
     let analyser: AnalyserNode
     let source: MediaStreamAudioSourceNode
     try {
@@ -137,16 +152,27 @@ function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
     }
     const data = new Uint8Array(analyser.frequencyBinCount)
     let raf = 0
+    // Hysteresis, not a raw threshold crossing: "speaking" latches on
+    // instantly but only releases after speakingHoldMs of quiet, so a
+    // participant's card doesn't flicker back and forth in the
+    // speaking-priority order on every short pause between words.
+    const speakingHoldMs = 500
+    let lastAboveThreshold = 0
+    let wasSpeaking = false
     const tick = () => {
       analyser.getByteFrequencyData(data)
       let sum = 0
       for (const value of data) sum += value
       const level = Math.min(1, (sum / data.length / 255) * 2.5)
       target.current?.style.setProperty('--level', level.toFixed(3))
+      const now = performance.now()
+      if (level > 0.12) lastAboveThreshold = now
+      const speaking = now - lastAboveThreshold < speakingHoldMs
+      if (speaking !== wasSpeaking) { wasSpeaking = speaking; onSpeakingChangeRef.current?.(speaking) }
       raf = requestAnimationFrame(tick)
     }
     tick()
-    return () => { cancelAnimationFrame(raf); source.disconnect(); analyser.disconnect() }
+    return () => { cancelAnimationFrame(raf); source.disconnect(); analyser.disconnect(); onSpeakingChangeRef.current?.(false) }
   }, [stream])
   return target
 }
@@ -156,25 +182,46 @@ function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream) {
 // small chip easy to overlook. It never yields to a video tile: a
 // camera/screen share turning on would otherwise take away the only place
 // to adjust that participant's volume.
-function IdentityTile({ label, stream, muted, onContextMenu }: { label: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler }) {
+// IdentityTile is only ever used inside a card whose own header already
+// names this participant (see ParticipantSection below) — no figcaption
+// here, unlike VideoTile's, so a plain voice-only card doesn't say the same
+// name twice in the little vertical space it has.
+function IdentityTile({ label, stream, muted, onContextMenu, onSpeakingChange }: { label: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }) {
   const name = label.split(' · ').at(-1) || label
-  const frame = useAudioLevelRef<HTMLElement>(stream)
+  const frame = useAudioLevelRef<HTMLElement>(stream, onSpeakingChange)
   return <figure className="call-video call-video--identity" ref={frame} onContextMenu={onContextMenu}>
     <span className="identity-tile__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
     {muted ? <span className="identity-tile__muted" aria-label="Микрофон выключен"><MicIcon muted /></span> : null}
-    <figcaption>{label}</figcaption>
   </figure>
 }
-function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu }: TileProps) {
+// IdentityChip is IdentityTile's compact counterpart for a participant who
+// already has at least one video tile: a full tile-sized box just to hold
+// a mic ring and a name would compete with that video for grid space for
+// no benefit, so this shrinks to a pill (name + avatar initial) that still
+// carries the same speaking glow and right-click volume menu.
+function IdentityChip({ label, stream, muted, onContextMenu, onSpeakingChange }: { label: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }) {
+  const frame = useAudioLevelRef<HTMLButtonElement>(stream, onSpeakingChange)
+  return <button type="button" className="call-participant__chip" ref={frame} onContextMenu={onContextMenu}>
+    <span className="call-participant__chip-avatar" aria-hidden="true">{label.slice(0, 1).toUpperCase()}</span>
+    <span className="call-participant__chip-name">{label}</span>
+    {muted ? <span className="call-participant__chip-muted" aria-label="Микрофон выключен"><MicIcon muted /></span> : null}
+  </button>
+}
+function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onContextMenu, onSpeakingChange }: TileProps) {
   const video = useRef<HTMLVideoElement>(null)
   useEffect(() => { if (video.current) video.current.srcObject = stream }, [stream])
   // audioStream is only ever a screen share's own tab/system audio (see
   // ParticipantSection) — a camera tile gets none, so its outline just
   // never lights up, no separate code path needed.
-  const frame = useAudioLevelRef<HTMLElement>(audioStream)
+  const frame = useAudioLevelRef<HTMLElement>(audioStream, onSpeakingChange)
   return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
 }
-function ParticipantSection({ title, streams, tracks, muted, micMuted, focusedID, onFocus, onVolumeMenu }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; micMuted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void }) {
+// gridRef attaches the pager/reorder hook's per-card element ref straight
+// to this card's own root — see useCallGrid below; onSpeakingChange is
+// tagged by source ('mic' vs 'screen') since a participant with a screen
+// share has two independent audio sources that can each make them count
+// as "currently speaking" for the grid's speaking-first ordering.
+function ParticipantSection({ title, streams, tracks, muted, micMuted, focusedID, onFocus, onVolumeMenu, gridRef, onSpeakingChange }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; micMuted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void; gridRef?: (el: HTMLElement | null) => void; onSpeakingChange?: (source: 'mic' | 'screen', speaking: boolean) => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
   // Two distinct audio sources can coexist for one participant — their mic,
   // and their screen's own tab/system audio — so "the audio entry" is never
@@ -183,7 +230,23 @@ function ParticipantSection({ title, streams, tracks, muted, micMuted, focusedID
   const screenAudioStream = streams.find(entry => entry.stream.getAudioTracks().length > 0 && isScreenShare(entry, tracks))?.stream
   const micMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'mic'))
   const screenMenu = onVolumeMenu && ((event: MouseEvent) => onVolumeMenu(event, 'screen'))
-  return <article className="call-participant"><header><span className="call-participant__identity-text">{title}</span></header><div className="call-participant__media"><IdentityTile label={title} stream={micStream} muted={micMuted} onContextMenu={micMenu} />{videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={screen ? screenMenu : undefined} /> })}</div></article>
+  const onMicSpeaking = onSpeakingChange && ((speaking: boolean) => onSpeakingChange('mic', speaking))
+  const onScreenSpeaking = onSpeakingChange && ((speaking: boolean) => onSpeakingChange('screen', speaking))
+  // A participant with any video gets a compact identity chip instead of
+  // the full-size IdentityTile — a whole tile just to hold a mic ring and
+  // a name competed with their actual video for grid space, when a small
+  // pill (matching the call-design-concept artifact) carries the same
+  // glow and right-click volume menu just as well.
+  const hasVideo = videoStreams.length > 0
+  return <article className="call-participant" ref={gridRef} data-media-count={hasVideo ? videoStreams.length : 0}>
+    {hasVideo
+      ? <IdentityChip label={title} stream={micStream} muted={micMuted} onContextMenu={micMenu} onSpeakingChange={onMicSpeaking} />
+      : <header><span className="call-participant__identity-text">{title}</span></header>}
+    <div className="call-participant__media">
+      {hasVideo ? null : <IdentityTile label={title} stream={micStream} muted={micMuted} onContextMenu={micMenu} onSpeakingChange={onMicSpeaking} />}
+      {videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={screen ? screenMenu : undefined} onSpeakingChange={screen ? onScreenSpeaking : undefined} /> })}
+    </div>
+  </article>
 }
 // A remote participant's mic (and a shared screen's own tab/system audio)
 // arrives as its own audio-only MediaStream, never bundled into a video
@@ -359,22 +422,229 @@ export function MiniCallBar({ names, isMuted, onToggleMute, onEnd, onExpand, con
     <span className="call-mini-bar__names">{names.length ? names.join(', ') : 'Звонок'}</span>
     <span className="call-mini-bar__timer">{elapsedLabel(elapsed)}</span>
     <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={event => { event.stopPropagation(); onToggleMute() }}><MicIcon muted={isMuted} /></IconButton>
-    <IconButton label="Завершить звонок" className="call-mini-bar__end" onClick={event => { event.stopPropagation(); onEnd() }}>✕</IconButton>
+    <IconButton label="Завершить звонок" className="call-mini-bar__end" onClick={event => { event.stopPropagation(); onEnd() }}><EndCallIcon /></IconButton>
   </div>
 }
-type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+// useCallGrid ports the call-design-concept artifact's coverflow pager and
+// speaking-priority reorder onto real participant cards — proven out over
+// many iterations there before landing here, not reinvented from scratch:
+// paging steers continuously toward the live center gap every frame
+// (scrollToIndex below) rather than committing to a fixed destination, so
+// it can't overshoot and jerk-correct the way an upfront-computed target
+// did in an earlier version of that artifact; a reorder (driven by
+// orderedKeys, whose order the caller derives from speaking state) animates
+// with a FLIP transform from each card's old position to its new one
+// instead of letting the browser's own reconciliation snap it there.
+function useCallGrid(orderedKeys: string[]) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const leadSpacerRef = useRef<HTMLDivElement>(null)
+  const trailSpacerRef = useRef<HTMLDivElement>(null)
+  const cardEls = useRef(new Map<string, HTMLElement>())
+  const prevRects = useRef(new Map<string, DOMRect>())
+  const animRef = useRef(0)
+  const [prevDisabled, setPrevDisabled] = useState(true)
+  const [nextDisabled, setNextDisabled] = useState(true)
+  const orderedKeysDep = JSON.stringify(orderedKeys)
+
+  const registerCard = (key: string) => (el: HTMLElement | null) => {
+    if (el) cardEls.current.set(key, el)
+    else cardEls.current.delete(key)
+  }
+
+  // A card's own rendered width may already reflect however much this same
+  // growth effect has scaled it up — reading flexBasis instead of the
+  // current (possibly scaled) box avoids feeding that back into itself.
+  const naturalWidth = (el: HTMLElement) => {
+    const fromBasis = parseFloat(getComputedStyle(el).flexBasis)
+    return Number.isFinite(fromBasis) ? fromBasis : el.getBoundingClientRect().width
+  }
+
+  const cards = () => orderedKeys.map(key => cardEls.current.get(key)).filter((el): el is HTMLElement => Boolean(el))
+
+  const update = () => {
+    const track = trackRef.current
+    if (!track) return
+    const list = cards()
+    const cs = getComputedStyle(track)
+    const padLeft = parseFloat(cs.paddingLeft) || 0
+    const padRight = parseFloat(cs.paddingRight) || 0
+    const clientW = track.clientWidth
+    if (list.length && leadSpacerRef.current && trailSpacerRef.current) {
+      const firstW = naturalWidth(list[0])
+      const lastW = naturalWidth(list[list.length - 1])
+      leadSpacerRef.current.style.width = Math.max(0, clientW / 2 - padLeft - firstW / 2 - firstW * 0.135) + 'px'
+      trailSpacerRef.current.style.width = Math.max(0, clientW / 2 - padRight - lastW / 2 - lastW * 0.135) + 'px'
+    }
+    const max = track.scrollWidth - track.clientWidth
+    setPrevDisabled(track.scrollLeft <= 1)
+    setNextDisabled(max <= 1 || track.scrollLeft >= max - 40)
+    const trackRect = track.getBoundingClientRect()
+    const centerX = trackRect.left + trackRect.width / 2
+    const halfSpan = trackRect.width / 2 || 1
+    list.forEach(card => {
+      const rect = card.getBoundingClientRect()
+      const cardCenter = rect.left + rect.width / 2
+      const distance = Math.min(Math.abs(cardCenter - centerX) / halfSpan, 1)
+      const cardW = naturalWidth(card)
+      const growthPx = cardW * 0.27 * (1 - distance) - cardW * 0.155 * distance
+      const scale = (1 + growthPx / rect.width).toFixed(4)
+      card.dataset.scale = scale
+      card.style.transform = `scale(${scale})`
+      const halfGrowth = Math.max(growthPx, 0) / 2
+      card.style.marginLeft = halfGrowth + 'px'
+      card.style.marginRight = halfGrowth + 'px'
+    })
+  }
+
+  const closestIndex = () => {
+    const track = trackRef.current
+    if (!track) return 0
+    const trackRect = track.getBoundingClientRect()
+    const centerX = trackRect.left + trackRect.width / 2
+    let best = 0
+    let bestDist = Infinity
+    cards().forEach((card, i) => {
+      const r = card.getBoundingClientRect()
+      const dist = Math.abs((r.left + r.right) / 2 - centerX)
+      if (dist < bestDist) { bestDist = dist; best = i }
+    })
+    return best
+  }
+
+  const scrollToIndex = (index: number) => {
+    const track = trackRef.current
+    const list = cards()
+    if (!track || !list.length) return
+    const card = list[Math.max(0, Math.min(list.length - 1, index))]
+    const delta = () => {
+      const trackRect = track.getBoundingClientRect()
+      const centerX = trackRect.left + trackRect.width / 2
+      const r = card.getBoundingClientRect()
+      return (r.left + r.right) / 2 - centerX
+    }
+    const runId = ++animRef.current
+    const start = performance.now()
+    const step = (now: number) => {
+      if (runId !== animRef.current) return
+      const d = delta()
+      if (Math.abs(d) < 0.4 || now - start > 900) { track.scrollLeft += d; return }
+      track.scrollLeft += d * 0.22
+      requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }
+
+  const pagePrev = () => scrollToIndex(closestIndex() - 1)
+  const pageNext = () => scrollToIndex(closestIndex() + 1)
+
+  // FLIP the reorder: measure where each card actually is right now (its
+  // resting spot from the previous run of this effect), let this render's
+  // new order + update() settle it into its new spot, then bridge the two
+  // with an animated transform instead of the instant jump React's own
+  // child-reordering would otherwise produce.
+  useLayoutEffect(() => {
+    const before = prevRects.current
+    update()
+    const after = new Map<string, DOMRect>()
+    orderedKeys.forEach(key => {
+      const el = cardEls.current.get(key)
+      if (el) after.set(key, el.getBoundingClientRect())
+    })
+    orderedKeys.forEach(key => {
+      const el = cardEls.current.get(key)
+      const from = before.get(key)
+      const to = after.get(key)
+      if (!el || !from || !to) return
+      const dx = (from.left + from.right) / 2 - (to.left + to.right) / 2
+      const dy = (from.top + from.bottom) / 2 - (to.top + to.bottom) / 2
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+      const scale = el.dataset.scale ?? '1'
+      el.style.transition = 'none'
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`
+      el.getBoundingClientRect() // force the line above to apply before the rAF below releases it
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform .4s cubic-bezier(.22,.8,.25,1)'
+        el.style.transform = `scale(${scale})`
+        el.addEventListener('transitionend', () => { el.style.transition = '' }, { once: true })
+      })
+    })
+    prevRects.current = after
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedKeysDep])
+
+  useEffect(() => {
+    const track = trackRef.current
+    if (!track) return
+    const onScroll = () => update()
+    const onResize = () => update()
+    track.addEventListener('scroll', onScroll)
+    window.addEventListener('resize', onResize)
+    return () => { track.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedKeysDep])
+
+  // Mouse drag-to-scroll via Pointer Events, matching the drag handling
+  // MiniCallBar already uses elsewhere in this file, rather than a separate
+  // mousedown/mousemove/mouseup trio.
+  useEffect(() => {
+    const track = trackRef.current
+    if (!track) return
+    let dragging = false
+    let dragMoved = false
+    let startX = 0
+    let startScroll = 0
+    const onDown = (event: PointerEvent) => {
+      if (event.button !== 0) return
+      dragging = true
+      dragMoved = false
+      startX = event.clientX
+      startScroll = track.scrollLeft
+      track.setPointerCapture(event.pointerId)
+    }
+    const onMove = (event: PointerEvent) => {
+      if (!dragging) return
+      const dx = event.clientX - startX
+      if (Math.abs(dx) > 4) dragMoved = true
+      track.scrollLeft = startScroll - dx
+    }
+    const onUp = () => { dragging = false }
+    // globalThis.MouseEvent, not the bare name: MouseEvent is shadowed at
+    // this file's top by React's own synthetic event type, which a native
+    // addEventListener('click', ...) below can't accept.
+    const onClickCapture = (event: globalThis.MouseEvent) => { if (dragMoved) { event.stopPropagation(); event.preventDefault() } }
+    track.addEventListener('pointerdown', onDown)
+    track.addEventListener('pointermove', onMove)
+    track.addEventListener('pointerup', onUp)
+    track.addEventListener('click', onClickCapture, true)
+    return () => {
+      track.removeEventListener('pointerdown', onDown)
+      track.removeEventListener('pointermove', onMove)
+      track.removeEventListener('pointerup', onUp)
+      track.removeEventListener('click', onClickCapture, true)
+    }
+  }, [])
+
+  return { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled }
+}
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
 // CallOverlay is the one call view for both full-screen and docked — docked
-// is the exact same layout, just visually shrunk to a fixed height and
+// is the exact same component and behavior, just laid out at its own
+// smaller, dedicated scale (its own --tile-w and control sizes, see
+// App.css) rather than a browser-zoomed copy of the full-screen layout,
 // embedded above the call's own chat (see ChatPanel's callBanner slot)
-// instead of covering the screen; nothing about its content or behavior
-// changes between the two. CallAudio, mounted by the caller alongside
+// instead of covering the screen. CallAudio, mounted by the caller alongside
 // whichever of the three views (this, docked or full; or the floating
 // MiniCallBar) is current, is what keeps audio and PiP alive across
 // switches between them — this component never touches either itself.
-export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+  const elapsed = useElapsed(connectedSince)
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [volumeMenu, setVolumeMenu] = useState<VolumeMenuState | null>(null)
+  // Keyed "<userID>:mic" / "<userID>:screen" — a participant with a screen
+  // share has two independent audio sources, either of which should count
+  // toward them being "currently speaking" for ordering below.
+  const [speaking, setSpeaking] = useState<Record<string, boolean>>({})
   const openVolumeMenu = (event: MouseEvent, key: string, label: string) => {
     event.preventDefault()
     setVolumeMenu({ x: event.clientX, y: event.clientY, key, label })
@@ -406,6 +676,20 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   for (const peer of otherPeers) {
     if (!sections.has(peer.user_id)) sections.set(peer.user_id, [])
   }
+  const sectionKeys = [...sections.keys()]
+  // "Собеседник N" fallback names are numbered by join order, not by
+  // current on-screen position — otherwise a participant's own fallback
+  // name would change every time the speaking-priority reorder below moves
+  // them, which would read as a different person joining.
+  const fallbackIndex = new Map(sectionKeys.map((key, i) => [key, i]))
+  const isSpeakingKey = (key: string) => Boolean(speaking[`${key}:mic`]) || Boolean(speaking[`${key}:screen`])
+  // Speaking-first ordering, "Вы" excluded (rendered separately, always
+  // first). A stable sort over sectionKeys' own join order (not a
+  // separately persisted order) means two participants who are both quiet,
+  // or both speaking, keep their existing relative order — only someone
+  // actually starting or stopping speaking moves them past a neighbor.
+  const orderedRemoteKeys = [...sectionKeys].sort((a, b) => Number(isSpeakingKey(b)) - Number(isSpeakingKey(a)))
+  const { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled } = useCallGrid(['local', ...orderedRemoteKeys])
   const allStreams = [...local, ...[...sections.values()].flat()]
   const focused = focusedStreamID ? allStreams.find(stream => stream.id === focusedStreamID) : undefined
   const toggleFocus = (id: string) => setFocusedStreamID(current => current === id ? null : id)
@@ -434,28 +718,64 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
       ? <div className="call-waiting call-waiting--lost"><span>Автоматически переподключиться не удалось</span><Button onClick={onReconnect}>Переподключиться</Button></div>
       : focused
       ? <div className="call-focused"><div className="call-focused__main"><VideoTile stream={focused.stream} muted={isLocal(focused.id)} label={labelFor(focused.id)} focused onFocus={() => toggleFocus(focused.id)} onContextMenu={contextMenuFor(focused)} /></div><div className="call-focused__strip">{allStreams.filter(stream => stream.id !== focused.id && stream.stream.getVideoTracks().length > 0).map(stream => <VideoTile key={stream.id} stream={stream.stream} muted={isLocal(stream.id)} label={labelFor(stream.id)} focused={false} onFocus={() => toggleFocus(stream.id)} onContextMenu={contextMenuFor(stream)} />)}</div></div>
-      : <div className="call-grid"><ParticipantSection title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} />{[...sections].map(([userID, streams], index) => <ParticipantSection key={userID} title={nameFor(userID, `Собеседник ${index + 1}`)} streams={streams} tracks={peers.find(peer => peer.user_id === userID)?.tracks} micMuted={peers.find(peer => peer.user_id === userID)?.muted} focusedID={focusedStreamID} onFocus={toggleFocus} onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Громкость'} — ${nameFor(userID, `Собеседник ${index + 1}`)}`)} />)}{isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}{isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}</div>}
+      : <div className="call-tile-wrap">
+          <button type="button" className="call-pager-btn call-pager-prev" disabled={prevDisabled} onClick={pagePrev} aria-label="Предыдущие участники"><PagerIcon direction="prev" /></button>
+          <div className="call-tile-track" ref={trackRef}>
+            <div className="call-tile-spacer" ref={leadSpacerRef} />
+            <ParticipantSection gridRef={registerCard('local')} title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} />
+            {orderedRemoteKeys.map(userID => {
+              const streams = sections.get(userID) ?? []
+              const label = nameFor(userID, `Собеседник ${(fallbackIndex.get(userID) ?? 0) + 1}`)
+              return <ParticipantSection
+                key={userID}
+                gridRef={registerCard(userID)}
+                title={label}
+                streams={streams}
+                tracks={peers.find(peer => peer.user_id === userID)?.tracks}
+                micMuted={peers.find(peer => peer.user_id === userID)?.muted}
+                focusedID={focusedStreamID}
+                onFocus={toggleFocus}
+                onVolumeMenu={(event, kind) => openVolumeMenu(event, `${userID}:${kind}`, `${kind === 'screen' ? 'Демонстрация' : 'Громкость'} — ${label}`)}
+                onSpeakingChange={(source, isSpeakingNow) => setSpeaking(prev => {
+                  const flagKey = `${userID}:${source}`
+                  if (Boolean(prev[flagKey]) === isSpeakingNow) return prev
+                  return { ...prev, [flagKey]: isSpeakingNow }
+                })}
+              />
+            })}
+            <div className="call-tile-spacer" ref={trailSpacerRef} />
+          </div>
+          <button type="button" className="call-pager-btn call-pager-next" disabled={nextDisabled} onClick={pageNext} aria-label="Следующие участники"><PagerIcon direction="next" /></button>
+          {isConnecting ? <div className="call-waiting"><Spinner /><span>Настраиваем защищённое соединение</span></div> : null}
+          {isConnected && otherPeers.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}
+        </div>}
     <footer>
       {/* The status icon lives here, not floating over the whole overlay,
           so it lines up on the same vertical center as the icon row next
           to it — color plus a native title tooltip carries the wording a
-          header title used to (see statusClass above). */}
-      <span className={`call-overlay__status call-overlay__status--${statusClass}`} data-tooltip={title}><SignalIcon state={statusClass === 'is-connected' ? 'connected' : statusClass === 'is-connecting' ? 'connecting' : 'lost'} /></span>
+          header title used to (see statusClass above). Grouped with the
+          call timer right next to it, matching the concept's own
+          dock-status: icon and elapsed time read as one unit, sitting just
+          to the left of the actual controls rather than floating alone. */}
+      <span className="call-overlay__status-group">
+        <span className={`call-overlay__status call-overlay__status--${statusClass}`} data-tooltip={title}><SignalIcon state={statusClass === 'is-connected' ? 'connected' : statusClass === 'is-connecting' ? 'connecting' : 'lost'} /></span>
+        {connectedSince !== null ? <span className="call-overlay__timer">{elapsedLabel(elapsed)}</span> : null}
+      </span>
       <div className="call-overlay__controls">
         <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
         <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
         <IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton>
-        <IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}>✕</IconButton>
+        <IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}><EndCallIcon /></IconButton>
       </div>
       {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
     </footer>
-    {/* Portalled straight to document.body: both are position:fixed, and a
-        fixed descendant of a zoomed ancestor (the docked view's own
-        CSS zoom) does not reliably position against the real viewport in
-        every browser — it can render at the wrong place or the wrong
-        size. Escaping the zoomed subtree entirely sidesteps that, so
-        these always land where the pointer actually was regardless of
-        which view (full or docked) opened them. */}
+    {/* Portalled straight to document.body: both are position:fixed, and
+        the docked view sits inside call-docked-wrapper's own
+        overflow:hidden clip (see App.css) — a fixed descendant left inside
+        that subtree could still get clipped by it in some browsers.
+        Escaping to document.body sidesteps that, so these always land
+        where the pointer actually was regardless of which view (full or
+        docked) opened them. */}
     {shareModalOpen ? createPortal(<ShareScreenModal onCancel={() => setShareModalOpen(false)} onConfirm={options => { setShareModalOpen(false); void onShare(options) }} />, document.body) : null}
     {volumeMenu ? createPortal(<VolumeMenu menu={volumeMenu} value={volumes[volumeMenu.key] ?? 1} onChange={volume => onVolumeChange(volumeMenu.key, volume)} onClose={() => setVolumeMenu(null)} />, document.body) : null}
   </section>
