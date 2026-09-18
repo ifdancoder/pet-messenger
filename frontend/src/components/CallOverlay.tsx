@@ -525,6 +525,18 @@ function useCallGrid(orderedKeys: string[]) {
   // anything else that isn't itself part of a render) would never notice
   // the swap and would keep listening to the now-detached old element.
   const [track, setTrack] = useState<HTMLDivElement | null>(null)
+  // A caller asking to center on a specific key (see requestScrollToKey)
+  // right when the track happens to still be null — e.g. returning from
+  // the focused view, which unmounts and remounts this whole element —
+  // can't just call scrollToKey immediately: the effect that requests it
+  // lives in the caller's own component, keyed on its own state (not
+  // track), so by the time that effect body actually runs it can be
+  // holding a closure from before the ref callback's setTrack cascaded
+  // through and never see the real element at all. Keeping the request as
+  // state instead of an imperative call means the effect that resolves it
+  // lives here, next to track, and reruns with a fresh closure whenever
+  // track itself changes - not just whenever the caller's own trigger did.
+  const [pendingScrollKey, setPendingScrollKey] = useState<string | null>(null)
   const leadSpacerRef = useRef<HTMLDivElement>(null)
   const trailSpacerRef = useRef<HTMLDivElement>(null)
   const cardEls = useRef(new Map<string, HTMLElement>())
@@ -641,6 +653,16 @@ function useCallGrid(orderedKeys: string[]) {
     const index = orderedKeys.indexOf(key)
     if (index >= 0) scrollToIndex(index)
   }
+  // Resolves a pending requestScrollToKey once the track is actually
+  // there. Deliberately keyed on `track` (not just pendingScrollKey): see
+  // the state's own comment for why the caller's request can't just call
+  // scrollToKey directly.
+  useEffect(() => {
+    if (!track || pendingScrollKey === null) return
+    scrollToKey(pendingScrollKey)
+    setPendingScrollKey(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track, pendingScrollKey])
 
   // FLIP the reorder: measure where each card actually is right now (its
   // resting spot from the previous run of this effect), let this render's
@@ -746,7 +768,7 @@ function useCallGrid(orderedKeys: string[]) {
     }
   }, [track])
 
-  return { trackRef: setTrack, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, scrollToKey }
+  return { trackRef: setTrack, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, requestScrollToKey: setPendingScrollKey }
 }
 type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; token: string; participantNames: Record<string, string>; participantAvatars: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
 // CallOverlay is the one call view for both full-screen and docked — docked
@@ -812,33 +834,26 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   // or both speaking, keep their existing relative order — only someone
   // actually starting or stopping speaking moves them past a neighbor.
   const orderedRemoteKeys = [...sectionKeys].sort((a, b) => Number(isSpeakingKey(b)) - Number(isSpeakingKey(a)))
-  const { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, scrollToKey } = useCallGrid(['local', ...orderedRemoteKeys])
+  const { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, requestScrollToKey } = useCallGrid(['local', ...orderedRemoteKeys])
   const allStreams = [...local, ...[...sections.values()].flat()]
   const focused = focusedStreamID ? allStreams.find(stream => stream.id === focusedStreamID) : undefined
   const isLocal = (id: string) => id === 'local-camera' || id === 'local-screen'
-  // The grid key ('local' or a userID) that owned the stream being focused
-  // — needed to re-center the pager on the right participant once focus
-  // closes and the grid remounts (see the effect below).
+  // The grid key ('local' or a userID) that owned the stream being
+  // focused — used to re-center the pager on the right participant once
+  // focus closes and the grid remounts. requestScrollToKey (not a direct
+  // scrollToKey call here) matters: this closure's own `track` can be
+  // stale by the time whoever reads it runs, since exiting focus remounts
+  // the track as a fresh element - see its own comment in useCallGrid.
   const ownerKeyFor = (id: string) => isLocal(id) ? 'local' : [...sections.entries()].find(([, streams]) => streams.some(stream => stream.id === id))?.[0]
-  const pendingRecenterKey = useRef<string | null>(null)
   const toggleFocus = (id: string) => {
-    setFocusedStreamID(current => {
-      if (current === id) {
-        pendingRecenterKey.current = ownerKeyFor(id) ?? null
-        return null
-      }
-      return id
-    })
+    if (focusedStreamID === id) {
+      const key = ownerKeyFor(id)
+      if (key) requestScrollToKey(key)
+      setFocusedStreamID(null)
+    } else {
+      setFocusedStreamID(id)
+    }
   }
-  // Runs after the grid has remounted (focusedStreamID just went back to
-  // null) — without this the coverflow just settles wherever its freshly
-  // recreated track happens to start, not on whoever was focused.
-  useEffect(() => {
-    if (focusedStreamID !== null || !pendingRecenterKey.current) return
-    scrollToKey(pendingRecenterKey.current)
-    pendingRecenterKey.current = null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedStreamID])
   const labelFor = (id: string) => {
     if (isLocal(id)) return nameFor(currentUserID, 'Вы')
     const owner = [...sections.entries()].find(([, streams]) => streams.some(stream => stream.id === id))?.[0]
