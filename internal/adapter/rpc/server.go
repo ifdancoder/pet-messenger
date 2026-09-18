@@ -114,13 +114,14 @@ func (s *RoomControlServer) ListParticipants(_ context.Context, r *mediav1.ListP
 	}
 	out := make([]*mediav1.Participant, 0, len(peers))
 	for _, p := range peers {
-		kinds := make(map[string]struct{}, len(p.Tracks))
+		seen := make(map[string]bool, len(p.Tracks))
+		kindList := make([]string, 0, len(p.Tracks))
 		for _, tr := range p.Tracks {
-			kinds[tr.Label] = struct{}{}
-		}
-		kindList := make([]string, 0, len(kinds))
-		for k := range kinds {
-			kindList = append(kindList, k)
+			if seen[tr.Label] {
+				continue
+			}
+			seen[tr.Label] = true
+			kindList = append(kindList, tr.Label)
 		}
 		out = append(out, &mediav1.Participant{
 			UserId: p.UserID, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: kindList,
