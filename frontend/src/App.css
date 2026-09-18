@@ -133,7 +133,14 @@
    than deliberate breathing room. */
 .call-overlay--docked .call-tile-track{padding:20px 30px;gap:12px}.call-overlay--docked .call-pager-prev{left:4px}.call-overlay--docked .call-pager-next{right:4px}/* The concept's own exact fixed 150px, not a clamp/vw guess at it. */
 .call-overlay--docked .call-participant{--tile-w:150px;padding:6px;border-radius:4px;gap:6px}
-.call-overlay--docked .call-participant[data-media-count="2"]{flex-basis:calc(var(--tile-w) * 2 - 12px + 6px)}.call-overlay--docked .call-participant>header{font-size:10.5px}.call-overlay--docked .call-participant__chip{padding:3px 12px 3px 3px;font-size:10.5px}.call-overlay--docked .call-participant__chip-avatar{width:22px;height:22px;font-size:10px}.call-overlay--docked .identity-tile__muted{top:6px;right:6px;width:16px;height:16px}.call-overlay--docked .identity-tile__muted svg{width:9px;height:9px}.call-overlay--docked .call-participant__media{grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px}.call-overlay--docked .call-video{border-radius:4px}.call-overlay--docked .call-video:not(:fullscreen){max-height:38vh}/* The focused/enlarged main tile had no breathing room above it in the
+.call-overlay--docked .call-participant[data-media-count="2"]{flex-basis:calc(var(--tile-w) * 2 - 12px + 6px)}.call-overlay--docked .call-participant>header{font-size:10.5px}.call-overlay--docked .call-participant__chip{padding:3px 12px 3px 3px;font-size:10.5px}.call-overlay--docked .call-participant__chip-avatar{width:22px;height:22px;font-size:10px}.call-overlay--docked .identity-tile__muted{top:6px;right:6px;width:16px;height:16px}.call-overlay--docked .identity-tile__muted svg{width:9px;height:9px}.call-overlay--docked .call-participant__media{grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px}.call-overlay--docked .call-video{border-radius:4px}/* Scoped to the grid track specifically, not just .call-overlay--docked
+   .call-video: the focused view's main tile is also a .call-video, and
+   38vh (a fraction of the whole viewport) is far larger than its actual
+   grid cell - this rule's own specificity was beating the focused view's
+   max-height:100% (a fraction of that cell) and letting the tile balloon
+   past its cell in both directions, cropped by the docked overlay's own
+   overflow:hidden along with the maximize/focus buttons sitting on it. */
+.call-overlay--docked .call-tile-track .call-video:not(:fullscreen){max-height:38vh}/* The focused/enlarged main tile had no breathing room above it in the
    docked view (unlike the full view, whose generous header padding gave it
    some for free) and its own top edge would end up flush against - or
    clipped by - the header, with the gap:12px below it (before the strip)
