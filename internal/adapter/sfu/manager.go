@@ -91,7 +91,7 @@ func (m *manager) CreateRoom(callID uuid.UUID) error {
 	if m.cfg.Media.RoomCapacity > 0 && len(m.rooms) >= m.cfg.Media.RoomCapacity {
 		return ErrNodeAtCapacity
 	}
-	m.rooms[callID] = newRoom(callID, m.cfg, m.api, m.events, m.roomDrained)
+	m.rooms[callID] = newRoom(callID, m.cfg, m.api, m.events, m.roomDrained, defaultIdleTimeout, defaultSoloTimeout)
 	return nil
 }
 

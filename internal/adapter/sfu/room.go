@@ -14,9 +14,18 @@ import (
 )
 
 const (
-	// idleTimeout is how long a room with no participants lingers before it
-	// closes itself and reports the call ended.
-	idleTimeout = 30 * time.Second
+	// defaultIdleTimeout is how long a room with zero participants lingers
+	// before it closes itself and reports the call ended. Kept as-is
+	// (not instant) because CreateRoom (manager.go) creates a room before
+	// the caller's own JoinSession completes — a real, if short, window
+	// where a brand-new call legitimately has 0 participants.
+	defaultIdleTimeout = 30 * time.Second
+	// defaultSoloTimeout is how long a room with exactly one participant
+	// (nobody answered yet, or everyone else already left) lingers before
+	// it closes itself the same way. A room with 2+ participants never
+	// times out at all — only these two counts (0 and 1) ever start a
+	// timer.
+	defaultSoloTimeout = 60 * time.Second
 	// cmdBuffer sizes the actor's command channel. Pion callbacks and WS reads
 	// enqueue here, so it is generous enough that a burst of trickled
 	// candidates never blocks a callback goroutine.
@@ -34,6 +43,12 @@ type room struct {
 	events    CallEventPublisher
 	onDrained func(*room)
 
+	// idleTimeout/soloTimeout are fields, not the package constants
+	// directly, so a test can shrink them to milliseconds instead of
+	// actually waiting 30s/60s for a timer to fire.
+	idleTimeout time.Duration
+	soloTimeout time.Duration
+
 	cmds chan func()
 	done chan struct{}
 
@@ -43,25 +58,30 @@ type room struct {
 	closed     bool
 }
 
-func newRoom(callID uuid.UUID, cfg *config.Config, api *webrtc.API, events CallEventPublisher, onDrained func(*room)) *room {
+func newRoom(callID uuid.UUID, cfg *config.Config, api *webrtc.API, events CallEventPublisher, onDrained func(*room), idleTimeout, soloTimeout time.Duration) *room {
 	r := &room{
-		callID:     callID,
-		cfg:        cfg,
-		api:        api,
-		events:     events,
-		onDrained:  onDrained,
-		cmds:       make(chan func(), cmdBuffer),
-		done:       make(chan struct{}),
-		peers:      map[uuid.UUID]*participant{},
-		mutedUsers: map[uuid.UUID]bool{},
+		callID:      callID,
+		cfg:         cfg,
+		api:         api,
+		events:      events,
+		onDrained:   onDrained,
+		idleTimeout: idleTimeout,
+		soloTimeout: soloTimeout,
+		cmds:        make(chan func(), cmdBuffer),
+		done:        make(chan struct{}),
+		peers:       map[uuid.UUID]*participant{},
+		mutedUsers:  map[uuid.UUID]bool{},
 	}
 	go r.loop()
 	return r
 }
 
 func (r *room) loop() {
-	idle := time.NewTimer(idleTimeout)
+	idle := time.NewTimer(r.idleTimeout)
 	defer idle.Stop()
+	solo := time.NewTimer(r.soloTimeout)
+	solo.Stop() // armed only while len(r.peers) == 1 — see the switch below
+	defer solo.Stop()
 	for {
 		select {
 		case <-r.done:
@@ -71,13 +91,24 @@ func (r *room) loop() {
 			if r.closed {
 				return
 			}
-			if len(r.peers) == 0 {
-				idle.Reset(idleTimeout)
-			} else {
+			switch len(r.peers) {
+			case 0:
+				solo.Stop()
+				idle.Reset(r.idleTimeout)
+			case 1:
 				idle.Stop()
+				solo.Reset(r.soloTimeout)
+			default:
+				idle.Stop()
+				solo.Stop()
 			}
 		case <-idle.C:
 			if len(r.peers) == 0 {
+				r.drain()
+				return
+			}
+		case <-solo.C:
+			if len(r.peers) == 1 {
 				r.drain()
 				return
 			}
