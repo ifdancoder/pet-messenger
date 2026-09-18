@@ -96,7 +96,7 @@ async function localAudio(deviceId?: string, noiseSuppression?: boolean, ctx?: A
   }
 }
 
-function ownerIDFromForwardedStream(streamID: string) {
+export function ownerIDFromForwardedStream(streamID: string) {
   const match = /^pm-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})-/i.exec(streamID)
   return match?.[1]
 }
