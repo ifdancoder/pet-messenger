@@ -224,12 +224,14 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
   // (a phone camera's 9:16, an ultrawide screen share's 21:9, ...) rather
   // than a fixed guess — read it straight off the video element once its
   // real dimensions are known, and again on 'resize' since a shared
-  // window can change size mid-call. --video-ratio has no default value:
-  // the CSS falls back to 16/10 (via var(--video-ratio, 16/10)) for the
-  // brief window before metadata arrives.
+  // window can change size mid-call. A bare number (width ÷ height), not the
+  // "W / H" string aspect-ratio itself accepts: the fullscreen sizing below
+  // needs to multiply/divide by it, and calc()/min() can't parse "W / H" as
+  // a value. --video-ratio has no default value: the CSS falls back to 1.6
+  // (== 16/10) for the brief window before metadata arrives.
   const syncRatio = () => {
     const el = video.current
-    if (el?.videoWidth && el.videoHeight) frame.current?.style.setProperty('--video-ratio', `${el.videoWidth} / ${el.videoHeight}`)
+    if (el?.videoWidth && el.videoHeight) frame.current?.style.setProperty('--video-ratio', String(el.videoWidth / el.videoHeight))
   }
   // Real screen-filling maximize (the Fullscreen API on this tile's own
   // figure, not another in-app layout), independent of the focus toggle
