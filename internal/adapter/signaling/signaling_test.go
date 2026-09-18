@@ -78,8 +78,9 @@ func (f *fakeManager) Remove(_, userID uuid.UUID) error {
 	return nil
 }
 
-func (f *fakeManager) Stats(uuid.UUID) sfu.RoomStats { return sfu.RoomStats{} }
-func (f *fakeManager) Totals() sfu.Totals            { return sfu.Totals{} }
+func (f *fakeManager) Stats(uuid.UUID) sfu.RoomStats           { return sfu.RoomStats{} }
+func (f *fakeManager) ListParticipants(uuid.UUID) ([]sfu.PeerInfo, bool) { return nil, false }
+func (f *fakeManager) Totals() sfu.Totals                      { return sfu.Totals{} }
 
 func (f *fakeManager) frameCount() int {
 	f.mu.Lock()

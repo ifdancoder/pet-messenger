@@ -126,6 +126,28 @@ func TestStatsAndTotals(t *testing.T) {
 	}
 }
 
+func TestListParticipants(t *testing.T) {
+	m, _ := newTestManager(t, 0)
+	callID := uuid.Must(uuid.NewV7())
+	if err := m.CreateRoom(callID); err != nil {
+		t.Fatalf("create room: %v", err)
+	}
+	if _, ok := m.ListParticipants(uuid.Must(uuid.NewV7())); ok {
+		t.Fatal("expected ok=false for a call with no room")
+	}
+	userID := uuid.Must(uuid.NewV7())
+	if err := m.Join(callID, userID, "publisher", nopSignaller{}); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	peers, ok := m.ListParticipants(callID)
+	if !ok {
+		t.Fatal("expected ok=true for a live room")
+	}
+	if len(peers) != 1 || peers[0].UserID != userID.String() {
+		t.Fatalf("unexpected participants: %+v", peers)
+	}
+}
+
 func TestMuteRemoveMissingRoom(t *testing.T) {
 	m, _ := newTestManager(t, 0)
 	id := uuid.Must(uuid.NewV7())

@@ -185,6 +185,20 @@ func (r *room) count() int {
 	return ask(r, func() int { return len(r.peers) })
 }
 
+// listParticipants renders every current participant's roster entry with no
+// particular viewer's perspective (mid is left blank for all of them — see
+// participant.info's own doc comment) — used by the control-plane query a
+// non-participant client makes to preview who's in a call before joining.
+func (r *room) listParticipants() []PeerInfo {
+	return ask(r, func() []PeerInfo {
+		out := make([]PeerInfo, 0, len(r.peers))
+		for _, p := range r.peers {
+			out = append(out, p.info(p))
+		}
+		return out
+	})
+}
+
 func (r *room) join(userID uuid.UUID, role string, sig Signaller) error {
 	return askError(r, func() error { return r.addParticipant(userID, role, sig) })
 }

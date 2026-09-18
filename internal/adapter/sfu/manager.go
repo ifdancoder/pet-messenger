@@ -62,6 +62,7 @@ type Manager interface {
 	Unmute(callID, userID uuid.UUID) error
 	Remove(callID, userID uuid.UUID) error
 	Stats(callID uuid.UUID) RoomStats
+	ListParticipants(callID uuid.UUID) ([]PeerInfo, bool)
 	Totals() Totals
 }
 
@@ -170,6 +171,14 @@ func (m *manager) Stats(callID uuid.UUID) RoomStats {
 		return RoomStats{}
 	}
 	return RoomStats{Participants: r.count(), Exists: true}
+}
+
+func (m *manager) ListParticipants(callID uuid.UUID) ([]PeerInfo, bool) {
+	r, ok := m.roomFor(callID)
+	if !ok {
+		return nil, false
+	}
+	return r.listParticipants(), true
 }
 
 func (m *manager) Totals() Totals {
