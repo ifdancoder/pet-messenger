@@ -22,7 +22,11 @@ export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]
 // was created. Only prune an entry the roster no longer mentions once it has
 // existed longer than this.
 const staleStreamGraceMs = 1_500
-export type CallPeer = { user_id: string; role: string; muted: boolean; tracks?: { track_id: string; stream_id: string; kind: string; label: string; mid?: string }[] }
+// muted is the moderator-driven flag (the SFU has actually stopped
+// forwarding this participant's audio); self_muted is their own
+// self-reported mic state and carries no media effect of its own — see
+// FrameMicState. A tile should treat either as "show the muted icon".
+export type CallPeer = { user_id: string; role: string; muted: boolean; self_muted: boolean; tracks?: { track_id: string; stream_id: string; kind: string; label: string; mid?: string }[] }
 
 // maxReconnectDelayMs caps the signalling socket's reconnect backoff, mirroring
 // useRealtimeChat's message socket — the one place a dropped connection here
@@ -294,6 +298,13 @@ export function useCall(session: Session) {
       const offer = await connection.createOffer()
       await connection.setLocalDescription(offer)
       socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: buildTrackKinds(connection, knownKinds.current) }))
+      // The room's own participant state (including self-reported mute) is
+      // fresh on every (re)join, but the local track's own enabled flag
+      // survives a reconnect — read straight from the track rather than the
+      // isMuted state closure, which this callback doesn't depend on and
+      // could otherwise report stale.
+      const audioTracks = local.current?.getAudioTracks() ?? []
+      if (audioTracks.length) socket.send(JSON.stringify({ type: 'mic_state', self_muted: audioTracks.every(track => !track.enabled) }))
     })
     socket.onmessage = event => enqueue(async () => {
       const frame = JSON.parse(String(event.data)) as Signal
@@ -490,6 +501,13 @@ export function useCall(session: Session) {
     const muted = tracks.some(track => track.enabled)
     tracks.forEach(track => { track.enabled = !muted })
     setIsMuted(muted)
+    // Disabling the track only ever silences what we send — the SFU still
+    // forwards it (as silence) exactly like an enabled track, so nothing
+    // about this is otherwise visible to anyone else. Tell the room
+    // directly so their roster's self_muted flag (and their UI's muted
+    // icon for us) actually updates.
+    const socket = signal.current
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'mic_state', self_muted: muted }))
   }, [])
 
   // Camera starts off (see localAudio) and is published/unpublished on
