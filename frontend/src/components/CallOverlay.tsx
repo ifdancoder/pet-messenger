@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
 import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
+import { Avatar } from './Avatar'
 import { Button, IconButton, Notice, Spinner } from './ui'
 
 type StreamEntry = Pick<RemoteStream, 'id' | 'stream' | 'sourceStreamID' | 'mid' | 'ownerID'>
@@ -191,23 +192,23 @@ function useAudioLevelRef<T extends HTMLElement>(stream?: MediaStream, onSpeakin
 // names this participant (see ParticipantSection below) — no figcaption
 // here, unlike VideoTile's, so a plain voice-only card doesn't say the same
 // name twice in the little vertical space it has.
-function IdentityTile({ label, stream, muted, onContextMenu, onSpeakingChange }: { label: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }) {
+function IdentityTile({ label, avatarUrl, token, stream, muted, onContextMenu, onSpeakingChange }: { label: string; avatarUrl?: string; token: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }) {
   const name = label.split(' · ').at(-1) || label
   const frame = useAudioLevelRef<HTMLElement>(stream, onSpeakingChange)
   return <figure className="call-video call-video--identity" ref={frame} onContextMenu={onContextMenu}>
-    <span className="identity-tile__mark" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
+    <Avatar subject={{ avatarUrl, displayName: name }} token={token} className="identity-tile__mark" />
     {muted ? <span className="identity-tile__muted" aria-label="Микрофон выключен"><MicIcon muted /></span> : null}
   </figure>
 }
 // IdentityChip is IdentityTile's compact counterpart for a participant who
 // already has at least one video tile: a full tile-sized box just to hold
 // a mic ring and a name would compete with that video for grid space for
-// no benefit, so this shrinks to a pill (name + avatar initial) that still
+// no benefit, so this shrinks to a pill (name + avatar) that still
 // carries the same speaking glow and right-click volume menu.
-function IdentityChip({ label, stream, muted, onContextMenu, onSpeakingChange }: { label: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }) {
+function IdentityChip({ label, avatarUrl, token, stream, muted, onContextMenu, onSpeakingChange }: { label: string; avatarUrl?: string; token: string; stream?: MediaStream; muted?: boolean; onContextMenu?: MouseEventHandler; onSpeakingChange?: (speaking: boolean) => void }) {
   const frame = useAudioLevelRef<HTMLButtonElement>(stream, onSpeakingChange)
   return <button type="button" className="call-participant__chip" ref={frame} onContextMenu={onContextMenu}>
-    <span className="call-participant__chip-avatar" aria-hidden="true">{label.slice(0, 1).toUpperCase()}</span>
+    <Avatar subject={{ avatarUrl, displayName: label }} token={token} className="call-participant__chip-avatar" />
     <span className="call-participant__chip-name">{label}</span>
     {muted ? <span className="call-participant__chip-muted" aria-label="Микрофон выключен"><MicIcon muted /></span> : null}
   </button>
@@ -255,7 +256,7 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
 // tagged by source ('mic' vs 'screen') since a participant with a screen
 // share has two independent audio sources that can each make them count
 // as "currently speaking" for the grid's speaking-first ordering.
-function ParticipantSection({ title, streams, tracks, muted, micMuted, focusedID, onFocus, onVolumeMenu, gridRef, onSpeakingChange }: { title: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; micMuted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void; gridRef?: (el: HTMLElement | null) => void; onSpeakingChange?: (source: 'mic' | 'screen', speaking: boolean) => void }) {
+function ParticipantSection({ title, avatarUrl, token, streams, tracks, muted, micMuted, focusedID, onFocus, onVolumeMenu, gridRef, onSpeakingChange }: { title: string; avatarUrl?: string; token: string; streams: StreamEntry[]; tracks?: CallPeer['tracks']; muted?: boolean; micMuted?: boolean; focusedID: string | null; onFocus: (id: string) => void; onVolumeMenu?: (event: MouseEvent, kind: 'mic' | 'screen') => void; gridRef?: (el: HTMLElement | null) => void; onSpeakingChange?: (source: 'mic' | 'screen', speaking: boolean) => void }) {
   const videoStreams = streams.filter(entry => entry.stream.getVideoTracks().length > 0).sort((left, right) => Number(isScreenShare(left, tracks)) - Number(isScreenShare(right, tracks)))
   // Two distinct audio sources can coexist for one participant — their mic,
   // and their screen's own tab/system audio — so "the audio entry" is never
@@ -274,10 +275,10 @@ function ParticipantSection({ title, streams, tracks, muted, micMuted, focusedID
   const hasVideo = videoStreams.length > 0
   return <article className="call-participant" ref={gridRef} data-media-count={hasVideo ? videoStreams.length : 0}>
     {hasVideo
-      ? <IdentityChip label={title} stream={micStream} muted={micMuted} onContextMenu={micMenu} onSpeakingChange={onMicSpeaking} />
+      ? <IdentityChip label={title} avatarUrl={avatarUrl} token={token} stream={micStream} muted={micMuted} onContextMenu={micMenu} onSpeakingChange={onMicSpeaking} />
       : <header><span className="call-participant__identity-text">{title}</span></header>}
     <div className="call-participant__media">
-      {hasVideo ? null : <IdentityTile label={title} stream={micStream} muted={micMuted} onContextMenu={micMenu} onSpeakingChange={onMicSpeaking} />}
+      {hasVideo ? null : <IdentityTile label={title} avatarUrl={avatarUrl} token={token} stream={micStream} muted={micMuted} onContextMenu={micMenu} onSpeakingChange={onMicSpeaking} />}
       {videoStreams.map(entry => { const screen = isScreenShare(entry, tracks); return <VideoTile key={entry.id} stream={entry.stream} audioStream={screen ? screenAudioStream : undefined} muted={muted} label={screen ? 'Демонстрация экрана' : 'Камера'} focused={focusedID === entry.id} onFocus={() => onFocus(entry.id)} onContextMenu={screen ? screenMenu : undefined} onSpeakingChange={screen ? onScreenSpeaking : undefined} /> })}
     </div>
   </article>
@@ -680,7 +681,7 @@ function useCallGrid(orderedKeys: string[]) {
 
   return { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled }
 }
-type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; participantNames: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; token: string; participantNames: Record<string, string>; participantAvatars: Record<string, string>; canModerate: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
 // CallOverlay is the one call view for both full-screen and docked — docked
 // is the exact same component and behavior, just laid out at its own
 // smaller, dedicated scale (its own --tile-w and control sizes, see
@@ -690,7 +691,7 @@ type Props = { localStream: MediaStream | null; localScreenStream: MediaStream |
 // whichever of the three views (this, docked or full; or the floating
 // MiniCallBar) is current, is what keeps audio and PiP alive across
 // switches between them — this component never touches either itself.
-export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, participantNames, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, token, participantNames, participantAvatars, canModerate, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const elapsed = useElapsed(connectedSince)
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
@@ -721,6 +722,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   if (localScreenStream) local.push({ id: 'local-screen', stream: localScreenStream, sourceStreamID: 'local-screen', ownerID: undefined })
   const localTracks = [{ track_id: 'local-screen', stream_id: 'local-screen', kind: 'video', label: 'screen' }]
   const nameFor = (userID: string, fallback: string) => participantNames[userID] ?? fallback
+  const avatarFor = (userID: string) => participantAvatars[userID]
   const sections = new Map<string, StreamEntry[]>()
   for (const stream of remoteStreams) {
     const owner = ownerOf(stream, otherPeers)
@@ -776,7 +778,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
           <button type="button" className="call-pager-btn call-pager-prev" disabled={prevDisabled} onClick={pagePrev} aria-label="Предыдущие участники"><PagerIcon direction="prev" /></button>
           <div className="call-tile-track" ref={trackRef}>
             <div className="call-tile-spacer" ref={leadSpacerRef} />
-            <ParticipantSection gridRef={registerCard('local')} title={nameFor(currentUserID, 'Вы')} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} />
+            <ParticipantSection gridRef={registerCard('local')} title={nameFor(currentUserID, 'Вы')} avatarUrl={avatarFor(currentUserID)} token={token} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} />
             {orderedRemoteKeys.map(userID => {
               const streams = sections.get(userID) ?? []
               const label = nameFor(userID, `Собеседник ${(fallbackIndex.get(userID) ?? 0) + 1}`)
@@ -784,6 +786,8 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
                 key={userID}
                 gridRef={registerCard(userID)}
                 title={label}
+                avatarUrl={avatarFor(userID)}
+                token={token}
                 streams={streams}
                 tracks={peers.find(peer => peer.user_id === userID)?.tracks}
                 micMuted={peers.find(peer => peer.user_id === userID)?.muted}

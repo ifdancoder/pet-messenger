@@ -30,6 +30,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   const [fullScreen, setFullScreen] = useState(true)
   const [membersConversation, setMembersConversation] = useState<Conversation | null>(null)
   const [callParticipantNames, setCallParticipantNames] = useState<Record<string, string>>({})
+  const [callParticipantAvatars, setCallParticipantAvatars] = useState<Record<string, string>>({})
   // volumes is lifted here rather than owned by whichever view
   // (full/docked/floating) happens to be mounted, so a per-participant
   // volume tweak survives switching between them instead of silently
@@ -59,12 +60,16 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     if (!callConversation) return
     let current = true
     void api.members(callConversation.id, session.access_token)
-      .then(({ members }) => { if (current) setCallParticipantNames(Object.fromEntries(members.map(member => [member.user_id, `@${member.username} · ${member.display_name || member.username}`]))) })
-      .catch(() => { if (current) setCallParticipantNames({}) })
+      .then(({ members }) => {
+        if (!current) return
+        setCallParticipantNames(Object.fromEntries(members.map(member => [member.user_id, `@${member.username} · ${member.display_name || member.username}`])))
+        setCallParticipantAvatars(Object.fromEntries(members.filter(member => member.avatar_url).map(member => [member.user_id, member.avatar_url])))
+      })
+      .catch(() => { if (current) { setCallParticipantNames({}); setCallParticipantAvatars({}) } })
     return () => { current = false }
   }, [callConversation, session.access_token])
-  const openCall = useCallback((conversation: Conversation) => { setCallParticipantNames({}); setFullScreen(true); setCallConversation(conversation) }, [])
-  const endCall = useCallback(async () => { await close(true); setCallParticipantNames({}); setCallConversation(null); setFullScreen(true) }, [close])
+  const openCall = useCallback((conversation: Conversation) => { setCallParticipantNames({}); setCallParticipantAvatars({}); setFullScreen(true); setCallConversation(conversation) }, [])
+  const endCall = useCallback(async () => { await close(true); setCallParticipantNames({}); setCallParticipantAvatars({}); setCallConversation(null); setFullScreen(true) }, [close])
   const ownCallName = `@${session.user.username} · ${session.user.display_name || session.user.username}`
   // Three mutually exclusive views for an active call: full-screen (on its
   // own chat, fullScreen), docked (on its own chat, not fullScreen — a
@@ -95,7 +100,9 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   const callOverlayProps = callConversation ? {
     localStream, localScreenStream, remoteStreams, peers,
     currentUserID: session.user.id,
+    token: session.access_token,
     participantNames: { ...callParticipantNames, [session.user.id]: ownCallName },
+    participantAvatars: session.user.avatar_url ? { ...callParticipantAvatars, [session.user.id]: session.user.avatar_url } : callParticipantAvatars,
     canModerate: callConversation.kind !== 'direct',
     error: callError, isConnecting, isConnected: isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince,
     volumes, onVolumeChange: setVolume, onToggleDock: toggleDock,
