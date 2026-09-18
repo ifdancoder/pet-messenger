@@ -19,6 +19,14 @@ const (
 	FrameRemoved   = "removed"
 	FrameError     = "error"
 	FrameBye       = "bye"
+	// FrameMicState is client -> server only: a participant self-reporting
+	// their own mic mute state. This is distinct from FrameMuted/FrameUnmuted
+	// (server -> the affected client, moderator-driven, and backed by the SFU
+	// actually dropping/restoring that participant's audio for everyone) -
+	// disabling your own mic track locally still sends silence over the
+	// wire, which looks identical to the SFU, so nothing about self-muting
+	// is otherwise visible in the roster at all.
+	FrameMicState = "mic_state"
 )
 
 // Track labels reported in a peers frame.
@@ -41,6 +49,9 @@ type Frame struct {
 	Peers     []PeerInfo      `json:"peers,omitempty"`
 	By        string          `json:"by,omitempty"`
 	Message   string          `json:"message,omitempty"`
+	// SelfMuted accompanies a FrameMicState frame: the sending client's own
+	// current mic mute state.
+	SelfMuted bool `json:"self_muted,omitempty"`
 	// TrackKinds accompanies a client offer: mid -> one of LabelMic/
 	// LabelCamera/LabelScreen, for every send transceiver the client knows the
 	// kind of. The client is the only party that actually knows why a track
@@ -50,12 +61,18 @@ type Frame struct {
 	TrackKinds map[string]string `json:"track_kinds,omitempty"`
 }
 
-// PeerInfo describes one participant in a peers frame.
+// PeerInfo describes one participant in a peers frame. Muted is the
+// moderator-driven flag (the SFU has actually stopped forwarding this
+// participant's audio to everyone); SelfMuted is that participant's own
+// last self-reported mic state (see FrameMicState) and carries no media
+// effect of its own — a self-muted track's silence is still forwarded like
+// any other audio, this is purely a status other clients render.
 type PeerInfo struct {
-	UserID string      `json:"user_id"`
-	Role   string      `json:"role"`
-	Muted  bool        `json:"muted"`
-	Tracks []TrackInfo `json:"tracks,omitempty"`
+	UserID    string      `json:"user_id"`
+	Role      string      `json:"role"`
+	Muted     bool        `json:"muted"`
+	SelfMuted bool        `json:"self_muted"`
+	Tracks    []TrackInfo `json:"tracks,omitempty"`
 }
 
 // TrackInfo describes one forwarded track of a participant, from one

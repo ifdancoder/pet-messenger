@@ -189,6 +189,8 @@ func (r *room) dispatchClientFrame(userID uuid.UUID, f Frame) {
 		r.handleAnswer(userID, f.SDP)
 	case FrameCandidate:
 		r.handleCandidate(userID, f.Candidate)
+	case FrameMicState:
+		r.handleMicState(userID, f.SelfMuted)
 	case FrameBye:
 		r.removeParticipant(userID)
 	default:
@@ -467,6 +469,21 @@ func (r *room) handleCandidate(userID uuid.UUID, raw json.RawMessage) {
 		return
 	}
 	p.addCandidate(cand)
+}
+
+// handleMicState records a participant's own self-reported mic mute state
+// and re-broadcasts the roster so everyone else's UI picks it up. Purely a
+// status flag — unlike muteParticipant, it never touches track forwarding.
+func (r *room) handleMicState(userID uuid.UUID, selfMuted bool) {
+	p, ok := r.peers[userID]
+	if !ok {
+		return
+	}
+	if p.selfMuted == selfMuted {
+		return
+	}
+	p.selfMuted = selfMuted
+	r.broadcastPeers()
 }
 
 // broadcastPeers pushes the full roster at everyone — personalized per

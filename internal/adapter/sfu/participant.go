@@ -22,9 +22,10 @@ var (
 // touched from a Pion callback or a WS read loop directly — those marshal onto
 // the room's command channel first.
 type participant struct {
-	userID uuid.UUID
-	role   string
-	muted  bool
+	userID    uuid.UUID
+	role      string
+	muted     bool
+	selfMuted bool
 
 	pc  *webrtc.PeerConnection
 	sig Signaller
@@ -152,7 +153,7 @@ func (p *participant) declareTrackKinds(kinds map[string]string) bool {
 // meaningful for a participant's own entry in their own roster (nobody
 // subscribes to their own tracks), so it's left empty there.
 func (p *participant) info(viewer *participant) PeerInfo {
-	out := PeerInfo{UserID: p.userID.String(), Role: p.role, Muted: p.muted}
+	out := PeerInfo{UserID: p.userID.String(), Role: p.role, Muted: p.muted, SelfMuted: p.selfMuted}
 	for id, local := range p.published {
 		label := p.publishedKind[id]
 		if label == "" {
