@@ -9,9 +9,16 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-KUBECTL="${KUBECTL:-kubectl}"
 NAMESPACE=pet-messenger
 OVERLAY=deploy/kubernetes/overlays/minikube
+
+# An array, not a plain string: KUBECTL is documented (README.md) as
+# overridable to the multi-word "minikube kubectl --" when no standalone
+# kubectl binary is on PATH. Keeping it a string and quoting it below (as
+# "$KUBECTL") would pass that whole phrase as a single argv[0], never split
+# back into separate words - every call would fail with "minikube kubectl
+# --: command not found".
+read -ra KUBECTL <<<"${KUBECTL:-kubectl}"
 
 # Unique on every run, not just on a new commit: a stable tag would leave
 # `kubectl apply -k` with nothing to react to, since a Deployment whose
@@ -40,14 +47,14 @@ sed -i -E "s/newTag: \"?[A-Za-z0-9._-]+\"?/newTag: \"${TAG}\"/g" "$OVERLAY/kusto
 # an already-run migrate Job fails with "field is immutable" instead of
 # picking up the new image — always start it fresh.
 echo "==> re-running migrations"
-"$KUBECTL" delete job -n "$NAMESPACE" migrate --ignore-not-found
+"${KUBECTL[@]}" delete job -n "$NAMESPACE" migrate --ignore-not-found
 
 echo "==> applying $OVERLAY"
-"$KUBECTL" apply -k "$OVERLAY"
+"${KUBECTL[@]}" apply -k "$OVERLAY"
 
-"$KUBECTL" -n "$NAMESPACE" wait --for=condition=complete job/migrate --timeout=120s
-"$KUBECTL" -n "$NAMESPACE" rollout status deployment/api
-"$KUBECTL" -n "$NAMESPACE" rollout status deployment/media
-"$KUBECTL" -n "$NAMESPACE" rollout status deployment/frontend
+"${KUBECTL[@]}" -n "$NAMESPACE" wait --for=condition=complete job/migrate --timeout=120s
+"${KUBECTL[@]}" -n "$NAMESPACE" rollout status deployment/api
+"${KUBECTL[@]}" -n "$NAMESPACE" rollout status deployment/media
+"${KUBECTL[@]}" -n "$NAMESPACE" rollout status deployment/frontend
 
 echo "==> done: cluster now runs $TAG"
