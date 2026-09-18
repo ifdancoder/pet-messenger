@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import type { CSSProperties, MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
 import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
@@ -258,14 +258,23 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
-  useEffect(() => {
+  // requestFullscreen() must run inside the same task as the click that
+  // triggered it, or some browsers silently refuse it once that click's
+  // transient "user activation" has lapsed — calling it from a useEffect,
+  // which only runs after React finishes committing the state update that
+  // mounted the portal, was exactly that kind of deferred call. flushSync
+  // forces the portal to mount synchronously, right here in the click
+  // handler, so requestFullscreen() is still requested inside the original
+  // gesture in every browser instead of only the more lenient ones.
+  const toggleMaximize = () => {
     if (isMaximized) {
-      if (lightbox.current && document.fullscreenElement !== lightbox.current) void lightbox.current.requestFullscreen().catch(() => setIsMaximized(false))
-    } else if (document.fullscreenElement === lightbox.current) {
-      void document.exitFullscreen()
+      setIsMaximized(false)
+      if (document.fullscreenElement === lightbox.current) void document.exitFullscreen()
+      return
     }
-  }, [isMaximized])
-  const toggleMaximize = () => setIsMaximized(current => !current)
+    flushSync(() => setIsMaximized(true))
+    if (lightbox.current) void lightbox.current.requestFullscreen().catch(() => setIsMaximized(false))
+  }
   return <>
     <figure className="call-video" ref={frame} style={ratioStyle} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} onLoadedMetadata={syncRatio} onResize={syncRatio} /><figcaption>{label}</figcaption><button className="call-video__maximize" type="button" aria-label={isMaximized ? 'Свернуть на весь экран' : 'На весь экран'} data-tooltip={isMaximized ? 'Свернуть' : 'На весь экран'} onClick={toggleMaximize}><MaximizeIcon active={isMaximized} /></button><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
     {isMaximized ? createPortal(<figure className="call-video call-video--lightbox" ref={lightbox} style={ratioStyle}><video ref={lightboxVideo} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__maximize" type="button" aria-label="Свернуть на весь экран" data-tooltip="Свернуть" onClick={toggleMaximize}><MaximizeIcon active /></button></figure>, document.body) : null}
@@ -643,10 +652,18 @@ function useCallGrid(orderedKeys: string[]) {
     const track = trackRef.current
     if (!track) return
     const onScroll = () => update()
-    const onResize = () => update()
     track.addEventListener('scroll', onScroll)
-    window.addEventListener('resize', onResize)
-    return () => { track.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize) }
+    // A ResizeObserver on the track itself, not a window 'resize' listener:
+    // the track's own box can change size for reasons that never fire a
+    // window resize at all (docking/undocking swaps --tile-w and the whole
+    // layout; entering/exiting a video tile's own fullscreen repaints
+    // everything behind it) — and even when the window does resize,
+    // measuring on the track's own settled box is more reliable than
+    // re-deriving it from a same-tick window event that can fire while
+    // layout is still mid-transition.
+    const observer = new ResizeObserver(() => update())
+    observer.observe(track)
+    return () => { track.removeEventListener('scroll', onScroll); observer.disconnect() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderedKeysDep])
 
