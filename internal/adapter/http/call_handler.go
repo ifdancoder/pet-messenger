@@ -21,7 +21,7 @@ type callService interface {
 	MuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error
 	UnmuteParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error
 	RemoveParticipant(ctx context.Context, actorID, callID, targetID uuid.UUID) error
-	GetLiveForConversation(ctx context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, error)
+	GetLiveForConversation(ctx context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, []usecasecall.ParticipantInfo, error)
 }
 
 type CallHandler struct{ svc callService }
@@ -58,6 +58,22 @@ func toCallDTO(c *domaincall.Call) callDTO {
 	}
 }
 
+type participantDTO struct {
+	UserID     string   `json:"user_id"`
+	Role       string   `json:"role"`
+	Muted      bool     `json:"muted"`
+	SelfMuted  bool     `json:"self_muted"`
+	TrackKinds []string `json:"track_kinds"`
+}
+
+func toParticipantDTOs(participants []usecasecall.ParticipantInfo) []participantDTO {
+	out := make([]participantDTO, len(participants))
+	for i, p := range participants {
+		out[i] = participantDTO{UserID: p.UserID, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: p.TrackKinds}
+	}
+	return out
+}
+
 func (h *CallHandler) Start(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -86,12 +102,12 @@ func (h *CallHandler) Live(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad conversation id"})
 		return
 	}
-	call, err := h.svc.GetLiveForConversation(c.Request.Context(), actor, convID)
+	call, participants, err := h.svc.GetLiveForConversation(c.Request.Context(), actor, convID)
 	if err != nil {
 		writeCallError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"call": toCallDTO(call)})
+	c.JSON(http.StatusOK, gin.H{"call": toCallDTO(call), "participants": toParticipantDTOs(participants)})
 }
 
 type joinRequest struct {

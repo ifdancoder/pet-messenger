@@ -162,11 +162,23 @@ func (s *Service) JoinCall(ctx context.Context, actorID, callID uuid.UUID, reque
 	return s.joinInfo(c.ID, actorID, role, node)
 }
 
-func (s *Service) GetLiveForConversation(ctx context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, error) {
+func (s *Service) GetLiveForConversation(ctx context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, []ParticipantInfo, error) {
 	if _, err := s.convs.GetMember(ctx, conversationID, actorID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return s.calls.GetLiveForConversation(ctx, conversationID)
+	c, err := s.calls.GetLiveForConversation(ctx, conversationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	node, err := s.nodes.Get(ctx, c.MediaNodeID)
+	if err != nil {
+		return c, []ParticipantInfo{}, nil
+	}
+	participants, err := s.rooms.ListParticipants(ctx, node, c.ID)
+	if err != nil {
+		return c, []ParticipantInfo{}, nil
+	}
+	return c, participants, nil
 }
 
 func (s *Service) authorizeModeration(ctx context.Context, c *domaincall.Call, actorID uuid.UUID) error {

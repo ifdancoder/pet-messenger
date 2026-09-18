@@ -193,6 +193,8 @@ func (f *fakeRegistry) Get(context.Context, string) (Node, error) {
 type fakeRooms struct {
 	createErr                                error
 	created, closed, muted, unmuted, removed []string
+	listParticipants                         []ParticipantInfo
+	listParticipantsErr                      error
 }
 
 func (f *fakeRooms) CreateRoom(_ context.Context, _ Node, id uuid.UUID) error {
@@ -220,7 +222,10 @@ func (f *fakeRooms) RemoveParticipant(_ context.Context, _ Node, id, u uuid.UUID
 	return nil
 }
 func (f *fakeRooms) ListParticipants(_ context.Context, _ Node, _ uuid.UUID) ([]ParticipantInfo, error) {
-	return nil, nil
+	if f.listParticipantsErr != nil {
+		return nil, f.listParticipantsErr
+	}
+	return f.listParticipants, nil
 }
 
 type fakeTickets struct{}
@@ -476,6 +481,94 @@ func TestJoinCall_MediaNodeGone(t *testing.T) {
 
 	if _, err := s.JoinCall(context.Background(), memberID, c.ID, domaincall.RolePublisher); !errors.Is(err, ErrMediaNodeGone) {
 		t.Fatalf("err = %v, want ErrMediaNodeGone", err)
+	}
+}
+
+// ---- GetLiveForConversation ----
+
+func TestGetLiveForConversation_IncludesParticipants(t *testing.T) {
+	s, calls, convs, _, rooms, _, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	want := []ParticipantInfo{
+		{UserID: memberID.String(), Role: "publisher", Muted: false, SelfMuted: true, TrackKinds: []string{"mic"}},
+	}
+	rooms.listParticipants = want
+
+	got, participants, err := s.GetLiveForConversation(context.Background(), memberID, convID)
+	if err != nil {
+		t.Fatalf("GetLiveForConversation: %v", err)
+	}
+	if got != c {
+		t.Fatalf("GetLiveForConversation returned a different call")
+	}
+	if len(participants) != 1 {
+		t.Fatalf("participants = %+v, want 1 entry", participants)
+	}
+	gotP := participants[0]
+	if gotP.UserID != want[0].UserID || gotP.Role != want[0].Role || gotP.Muted != want[0].Muted ||
+		gotP.SelfMuted != want[0].SelfMuted || len(gotP.TrackKinds) != 1 || gotP.TrackKinds[0] != want[0].TrackKinds[0] {
+		t.Fatalf("participants = %+v, want %+v", participants, want)
+	}
+}
+
+func TestGetLiveForConversation_MediaNodeGone_EmptyNotError(t *testing.T) {
+	s, calls, convs, reg, _, _, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	reg.getErr = errors.New("node gone")
+
+	got, participants, err := s.GetLiveForConversation(context.Background(), memberID, convID)
+	if err != nil {
+		t.Fatalf("GetLiveForConversation: %v, want nil (call row is still the source of truth)", err)
+	}
+	if got != c {
+		t.Fatalf("GetLiveForConversation returned a different call")
+	}
+	if participants == nil || len(participants) != 0 {
+		t.Fatalf("participants = %#v, want non-nil empty slice", participants)
+	}
+}
+
+func TestGetLiveForConversation_ListParticipantsFails_EmptyNotError(t *testing.T) {
+	s, calls, convs, _, rooms, _, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	rooms.listParticipantsErr = errors.New("sfu unreachable")
+
+	got, participants, err := s.GetLiveForConversation(context.Background(), memberID, convID)
+	if err != nil {
+		t.Fatalf("GetLiveForConversation: %v, want nil", err)
+	}
+	if got != c {
+		t.Fatalf("GetLiveForConversation returned a different call")
+	}
+	if participants == nil || len(participants) != 0 {
+		t.Fatalf("participants = %#v, want non-nil empty slice", participants)
+	}
+}
+
+func TestGetLiveForConversation_NonMember(t *testing.T) {
+	s, calls, convs, _, _, _, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	stranger := uuid.Must(uuid.NewV7())
+
+	if _, _, err := s.GetLiveForConversation(context.Background(), stranger, convID); !errors.Is(err, conversation.ErrNotMember) {
+		t.Fatalf("err = %v, want ErrNotMember", err)
+	}
+}
+
+func TestGetLiveForConversation_NoLiveCall(t *testing.T) {
+	s, _, convs, _, _, _, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+
+	if _, _, err := s.GetLiveForConversation(context.Background(), memberID, convID); !errors.Is(err, domaincall.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 

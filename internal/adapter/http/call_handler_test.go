@@ -22,7 +22,7 @@ type fakeCallService struct {
 	unmute  func(actorID, callID, targetID uuid.UUID) error
 	mute    func(actorID, callID, targetID uuid.UUID) error
 	remove  func(actorID, callID, targetID uuid.UUID) error
-	getLive func(actorID, conversationID uuid.UUID) (*domaincall.Call, error)
+	getLive func(actorID, conversationID uuid.UUID) (*domaincall.Call, []usecasecall.ParticipantInfo, error)
 }
 
 func (f *fakeCallService) StartCall(_ context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, usecasecall.JoinInfo, error) {
@@ -44,7 +44,7 @@ func (f *fakeCallService) UnmuteParticipant(_ context.Context, actorID, callID, 
 func (f *fakeCallService) RemoveParticipant(_ context.Context, actorID, callID, targetID uuid.UUID) error {
 	return f.remove(actorID, callID, targetID)
 }
-func (f *fakeCallService) GetLiveForConversation(_ context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, error) {
+func (f *fakeCallService) GetLiveForConversation(_ context.Context, actorID, conversationID uuid.UUID) (*domaincall.Call, []usecasecall.ParticipantInfo, error) {
 	return f.getLive(actorID, conversationID)
 }
 
@@ -230,12 +230,91 @@ func TestCallHandler_Live_NotFound(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	convID := uuid.Must(uuid.NewV7())
 	svc := &fakeCallService{
-		getLive: func(uuid.UUID, uuid.UUID) (*domaincall.Call, error) { return nil, domaincall.ErrNotFound },
+		getLive: func(uuid.UUID, uuid.UUID) (*domaincall.Call, []usecasecall.ParticipantInfo, error) {
+			return nil, nil, domaincall.ErrNotFound
+		},
 	}
 	r := callRouter(svc, &me)
 	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+convID.String()+"/calls/live", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestCallHandler_Live_IncludesParticipants(t *testing.T) {
+	me := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	call := sampleCall(convID, me)
+	participants := []usecasecall.ParticipantInfo{
+		{UserID: me.String(), Role: "publisher", Muted: false, SelfMuted: true, TrackKinds: []string{"mic", "camera"}},
+	}
+	svc := &fakeCallService{
+		getLive: func(actorID, conversationID uuid.UUID) (*domaincall.Call, []usecasecall.ParticipantInfo, error) {
+			if actorID != me || conversationID != convID {
+				t.Errorf("GetLiveForConversation(%v,%v), want (%v,%v)", actorID, conversationID, me, convID)
+			}
+			return call, participants, nil
+		},
+	}
+	r := callRouter(svc, &me)
+	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+convID.String()+"/calls/live", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Call struct {
+			ID string `json:"id"`
+		} `json:"call"`
+		Participants []struct {
+			UserID     string   `json:"user_id"`
+			Role       string   `json:"role"`
+			Muted      bool     `json:"muted"`
+			SelfMuted  bool     `json:"self_muted"`
+			TrackKinds []string `json:"track_kinds"`
+		} `json:"participants"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body.Call.ID != call.ID.String() {
+		t.Errorf("call.id = %q, want %q", body.Call.ID, call.ID.String())
+	}
+	if len(body.Participants) != 1 {
+		t.Fatalf("participants = %+v, want 1 entry", body.Participants)
+	}
+	got := body.Participants[0]
+	if got.UserID != me.String() || got.Role != "publisher" || got.Muted || !got.SelfMuted {
+		t.Errorf("participant = %+v", got)
+	}
+	if len(got.TrackKinds) != 2 || got.TrackKinds[0] != "mic" || got.TrackKinds[1] != "camera" {
+		t.Errorf("track_kinds = %v", got.TrackKinds)
+	}
+}
+
+func TestCallHandler_Live_EmptyParticipantsNotNull(t *testing.T) {
+	me := uuid.Must(uuid.NewV7())
+	convID := uuid.Must(uuid.NewV7())
+	call := sampleCall(convID, me)
+	svc := &fakeCallService{
+		getLive: func(uuid.UUID, uuid.UUID) (*domaincall.Call, []usecasecall.ParticipantInfo, error) {
+			return call, []usecasecall.ParticipantInfo{}, nil
+		},
+	}
+	r := callRouter(svc, &me)
+	w := doConvJSON(t, r, http.MethodGet, "/conversations/"+convID.String()+"/calls/live", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	raw, ok := body["participants"]
+	if !ok {
+		t.Fatal("participants key missing from response")
+	}
+	if string(raw) != "[]" {
+		t.Errorf("participants = %s, want []", raw)
 	}
 }
 
