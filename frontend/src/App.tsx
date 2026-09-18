@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AuthScreen } from './components/AuthScreen'
 import { CallAudio, CallOverlay, MiniCallBar } from './components/CallOverlay'
+import { CallPreviewBar } from './components/CallPreviewBar'
 import { IncomingCallDialog } from './components/IncomingCallDialog'
 import { ChatBody, ChatHeader } from './components/ChatPanel'
 import { ConversationSidebar } from './components/ConversationSidebar'
@@ -40,6 +41,11 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   const ringingCallID = useRef<string | null>(null)
   const [dismissedCallID, setDismissedCallID] = useState<string | null>(null)
   const activeLiveCall = liveCalls.find(item => item.conversation.id === messenger.activeConversation?.id)
+  // The preview bar (not yet joined) and the real docked/full call view are
+  // mutually exclusive: once callConversation matches the viewed
+  // conversation, the real CallOverlay (with its own docked mode) takes
+  // over this same visual slot.
+  const showPreviewBar = Boolean(activeLiveCall) && callConversation?.id !== messenger.activeConversation?.id
   const incomingCall = liveCalls.find(item => item.call.initiator_id !== session.user.id && item.call.id !== dismissedCallID)
   // The elapsed-time source of truth is the call record's own started_at
   // (polled every 2.5s by useLiveCalls), not a client-local Date.now()
@@ -114,7 +120,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     body as a sibling of both rather than nested inside either — the
     message body's own <section> is capped to a narrow, centered reading
     width, and the docked call should span the workspace's full width
-    instead of being squeezed into that column. */}<ChatHeader conversation={messenger.activeConversation} token={session.access_token} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} isInCall={onCallChat} onStartCall={openCall} onShowMembers={setMembersConversation} />{callOverlayProps && docked ? <div className="call-docked-wrapper"><CallOverlay {...callOverlayProps} docked /></div> : null}<ChatBody session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => openCall(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallAudio remoteStreams={remoteStreams} peers={peers} volumes={volumes} floating={floating} /> : null}{floating ? <MiniCallBar names={otherCallNames} isMuted={isMuted} onToggleMute={toggleMute} onEnd={() => void endCall()} onExpand={dockCall} connectedSince={connectedSince} /> : null}{callOverlayProps && !floating && !docked ? <CallOverlay {...callOverlayProps} docked={false} /> : null}{settingsOpen ? <SettingsModal session={session} onSessionUpdate={onSessionUpdate} onClose={() => setSettingsOpen(false)} isCallActive={isOpen} switchDevice={switchDevice} setNoiseSuppression={setNoiseSuppression} /> : null}</div></main>
+    instead of being squeezed into that column. */}<ChatHeader conversation={messenger.activeConversation} token={session.access_token} isRealtimeConnected={messenger.isRealtimeConnected} hasLiveCall={Boolean(activeLiveCall)} isInCall={onCallChat} onStartCall={openCall} onShowMembers={setMembersConversation} />{showPreviewBar && activeLiveCall ? <CallPreviewBar liveCall={activeLiveCall} session={session} participantNames={callParticipantNames} participantAvatars={callParticipantAvatars} onJoin={() => openCall(activeLiveCall.conversation)} /> : null}{callOverlayProps && docked ? <div className="call-docked-wrapper"><CallOverlay {...callOverlayProps} docked /></div> : null}<ChatBody session={session} conversation={messenger.activeConversation} messages={messenger.messages} isLoading={messenger.isLoadingMessages} onSend={messenger.sendMessage} />{membersConversation ? <MembersPanel conversation={membersConversation} session={session} onClose={() => setMembersConversation(null)} /> : null}{incomingCall && !callConversation ? <IncomingCallDialog conversation={incomingCall.conversation} onAccept={() => openCall(incomingCall.conversation)} onDismiss={() => setDismissedCallID(incomingCall.call.id)} /> : null}{callConversation ? <CallAudio remoteStreams={remoteStreams} peers={peers} volumes={volumes} floating={floating} /> : null}{floating ? <MiniCallBar names={otherCallNames} isMuted={isMuted} onToggleMute={toggleMute} onEnd={() => void endCall()} onExpand={dockCall} connectedSince={connectedSince} /> : null}{callOverlayProps && !floating && !docked ? <CallOverlay {...callOverlayProps} docked={false} /> : null}{settingsOpen ? <SettingsModal session={session} onSessionUpdate={onSessionUpdate} onClose={() => setSettingsOpen(false)} isCallActive={isOpen} switchDevice={switchDevice} setNoiseSuppression={setNoiseSuppression} /> : null}</div></main>
 }
 
 export default function App() {
