@@ -10,6 +10,7 @@ export class APIError extends Error {
 
 export type CallJoin = { ticket: string; media_ws_url: string; ice_servers: RTCIceServer[] }
 export type Call = { id: string; conversation_id: string; initiator_id: string; status: string; started_at: string }
+export type LiveParticipant = { user_id: string; role: string; muted: boolean; self_muted: boolean; track_kinds: string[] }
 
 // Called whenever a 401 triggers a silent token refresh, so the rest of the
 // app (which holds its own copy of the session in React state) can pick up
@@ -84,8 +85,8 @@ export const api = {
   sendMessage: (conversationID: string, content: string, token: string) => request<Message>(`/conversations/${conversationID}/messages`, token, { method: 'POST', body: JSON.stringify({ content, idempotency_key: crypto.randomUUID() }) }),
   markRead: (conversationID: string, messageID: string, token: string) => request<void>(`/conversations/${conversationID}/read`, token, { method: 'POST', body: JSON.stringify({ message_id: messageID }) }),
   startCall: (conversationID: string, token: string) => request<{ call: Call; join: CallJoin }>(`/conversations/${conversationID}/calls`, token, { method: 'POST' }),
-  liveCall: (conversationID: string, token: string) => request<{ call: Call }>(`/conversations/${conversationID}/calls/live`, token),
-  joinCall: (callID: string, token: string) => request<{ join: CallJoin }>(`/calls/${callID}/join`, token, { method: 'POST' }),
+  liveCall: (conversationID: string, token: string) => request<{ call: Call; participants: LiveParticipant[] }>(`/conversations/${conversationID}/calls/live`, token),
+  joinCall: (callID: string, token: string, role?: 'publisher' | 'viewer') => request<{ join: CallJoin }>(`/calls/${callID}/join`, token, { method: 'POST', body: JSON.stringify({ role: role ?? 'publisher' }) }),
   endCall: (callID: string, token: string) => request<void>(`/calls/${callID}/end`, token, { method: 'POST' }),
   muteCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}/mute`, token, { method: 'POST' }),
   unmuteCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}/unmute`, token, { method: 'POST' }),
