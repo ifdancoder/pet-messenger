@@ -9,6 +9,7 @@ service RoomControl {
   rpc UnmuteParticipant(UnmuteParticipantRequest) returns (UnmuteParticipantResponse);
   rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
   rpc RoomStats(RoomStatsRequest) returns (RoomStatsResponse);
+  rpc ListParticipants(ListParticipantsRequest) returns (ListParticipantsResponse);
 }
 
 message CreateRoomRequest         { string call_id = 1; }
@@ -23,3 +24,12 @@ message RemoveParticipantRequest  { string call_id = 1; string user_id = 2; }
 message RemoveParticipantResponse {}
 message RoomStatsRequest          { string call_id = 1; }
 message RoomStatsResponse         { uint32 participants = 1; bool exists = 2; }
+message ListParticipantsRequest  { string call_id = 1; }
+message ListParticipantsResponse { repeated Participant participants = 1; }
+message Participant {
+  string user_id = 1;
+  string role = 2;
+  bool muted = 3;
+  bool self_muted = 4;
+  repeated string track_kinds = 5;
+}

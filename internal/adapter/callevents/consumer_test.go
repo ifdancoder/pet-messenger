@@ -148,6 +148,9 @@ func (stubRooms) UnmuteParticipant(context.Context, usecasecall.Node, uuid.UUID,
 func (stubRooms) RemoveParticipant(context.Context, usecasecall.Node, uuid.UUID, uuid.UUID) error {
 	return nil
 }
+func (stubRooms) ListParticipants(context.Context, usecasecall.Node, uuid.UUID) ([]usecasecall.ParticipantInfo, error) {
+	return nil, nil
+}
 
 type stubTickets struct{}
 

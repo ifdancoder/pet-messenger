@@ -102,3 +102,29 @@ func (s *RoomControlServer) RoomStats(_ context.Context, r *mediav1.RoomStatsReq
 	st := s.mgr.Stats(id)
 	return &mediav1.RoomStatsResponse{Participants: uint32(st.Participants), Exists: st.Exists}, nil
 }
+
+func (s *RoomControlServer) ListParticipants(_ context.Context, r *mediav1.ListParticipantsRequest) (*mediav1.ListParticipantsResponse, error) {
+	id, err := parseID(r.CallId)
+	if err != nil {
+		return nil, err
+	}
+	peers, ok := s.mgr.ListParticipants(id)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "room not found")
+	}
+	out := make([]*mediav1.Participant, 0, len(peers))
+	for _, p := range peers {
+		kinds := make(map[string]struct{}, len(p.Tracks))
+		for _, tr := range p.Tracks {
+			kinds[tr.Label] = struct{}{}
+		}
+		kindList := make([]string, 0, len(kinds))
+		for k := range kinds {
+			kindList = append(kindList, k)
+		}
+		out = append(out, &mediav1.Participant{
+			UserId: p.UserID, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: kindList,
+		})
+	}
+	return &mediav1.ListParticipantsResponse{Participants: out}, nil
+}

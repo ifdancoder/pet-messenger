@@ -98,6 +98,64 @@ func TestRoomControlServer_Lifecycle(t *testing.T) {
 	}
 }
 
+func TestRoomControlServer_ListParticipants(t *testing.T) {
+	cfg := &config.Config{Media: config.MediaConfig{RPCToken: testRPCToken}}
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	mgr, err := sfu.NewManager(cfg, nopEvents{})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	srv := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerAuthInterceptor(cfg.Media.RPCToken)))
+	mediav1.RegisterRoomControlServer(srv, NewRoomControlServer(mgr))
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(UnaryClientAuthInterceptor(cfg.Media.RPCToken)),
+	)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	c := mediav1.NewRoomControlClient(conn)
+	ctx := context.Background()
+
+	// A room that doesn't exist -> NotFound.
+	callID := uuid.Must(uuid.NewV7())
+	if _, err := c.ListParticipants(ctx, &mediav1.ListParticipantsRequest{CallId: callID.String()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("ListParticipants missing room = %v, want NotFound", err)
+	}
+
+	if err := mgr.CreateRoom(callID); err != nil {
+		t.Fatalf("CreateRoom: %v", err)
+	}
+	userID := uuid.Must(uuid.NewV7())
+	if err := mgr.Join(callID, userID, "publisher", nopSignaller{}); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	resp, err := c.ListParticipants(ctx, &mediav1.ListParticipantsRequest{CallId: callID.String()})
+	if err != nil {
+		t.Fatalf("ListParticipants: %v", err)
+	}
+	if len(resp.Participants) != 1 {
+		t.Fatalf("Participants = %+v, want 1 entry", resp.Participants)
+	}
+	got := resp.Participants[0]
+	if got.UserId != userID.String() || got.Role != "publisher" || got.Muted || got.SelfMuted {
+		t.Fatalf("unexpected participant: %+v", got)
+	}
+}
+
+// nopSignaller is a sfu.Signaller that drops everything on the floor.
+type nopSignaller struct{}
+
+func (nopSignaller) Send([]byte) error { return nil }
+func (nopSignaller) Close()            {}
+
 func TestRoomControlServer_BadID(t *testing.T) {
 	cfg := &config.Config{Media: config.MediaConfig{RPCToken: testRPCToken}}
 	c := startRoomControl(t, cfg)

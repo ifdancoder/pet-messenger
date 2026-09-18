@@ -42,6 +42,17 @@ type RoomControl interface {
 	MuteParticipant(ctx context.Context, node Node, callID, userID uuid.UUID) error
 	UnmuteParticipant(ctx context.Context, node Node, callID, userID uuid.UUID) error
 	RemoveParticipant(ctx context.Context, node Node, callID, userID uuid.UUID) error
+	ListParticipants(ctx context.Context, node Node, callID uuid.UUID) ([]ParticipantInfo, error)
+}
+
+// ParticipantInfo is one entry in a room's live roster, as reported by the
+// media node over gRPC (see RoomControl.ListParticipants).
+type ParticipantInfo struct {
+	UserID     string   `json:"user_id"`
+	Role       string   `json:"role"`
+	Muted      bool     `json:"muted"`
+	SelfMuted  bool     `json:"self_muted"`
+	TrackKinds []string `json:"track_kinds"` // "mic", "camera", "screen" — deduplicated
 }
 
 type JoinTicketIssuer interface {

@@ -219,6 +219,9 @@ func (f *fakeRooms) RemoveParticipant(_ context.Context, _ Node, id, u uuid.UUID
 	f.removed = append(f.removed, id.String()+"/"+u.String())
 	return nil
 }
+func (f *fakeRooms) ListParticipants(_ context.Context, _ Node, _ uuid.UUID) ([]ParticipantInfo, error) {
+	return nil, nil
+}
 
 type fakeTickets struct{}
 

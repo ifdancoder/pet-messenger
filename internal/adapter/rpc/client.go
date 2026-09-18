@@ -111,4 +111,23 @@ func (c *RoomControlClient) RemoveParticipant(ctx context.Context, node usecasec
 	})
 }
 
+// ListParticipants asks the media pod who's currently in callID.
+func (c *RoomControlClient) ListParticipants(ctx context.Context, node usecasecall.Node, callID uuid.UUID) ([]usecasecall.ParticipantInfo, error) {
+	var out []usecasecall.ParticipantInfo
+	err := c.call(ctx, node, func(s mediav1.RoomControlClient, ctx context.Context) error {
+		resp, err := s.ListParticipants(ctx, &mediav1.ListParticipantsRequest{CallId: callID.String()})
+		if err != nil {
+			return err
+		}
+		out = make([]usecasecall.ParticipantInfo, len(resp.Participants))
+		for i, p := range resp.Participants {
+			out[i] = usecasecall.ParticipantInfo{
+				UserID: p.UserId, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: p.TrackKinds,
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
 var _ usecasecall.RoomControl = (*RoomControlClient)(nil)

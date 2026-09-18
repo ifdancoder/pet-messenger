@@ -25,6 +25,7 @@ const (
 	RoomControl_UnmuteParticipant_FullMethodName = "/media.v1.RoomControl/UnmuteParticipant"
 	RoomControl_RemoveParticipant_FullMethodName = "/media.v1.RoomControl/RemoveParticipant"
 	RoomControl_RoomStats_FullMethodName         = "/media.v1.RoomControl/RoomStats"
+	RoomControl_ListParticipants_FullMethodName  = "/media.v1.RoomControl/ListParticipants"
 )
 
 // RoomControlClient is the client API for RoomControl service.
@@ -37,6 +38,7 @@ type RoomControlClient interface {
 	UnmuteParticipant(ctx context.Context, in *UnmuteParticipantRequest, opts ...grpc.CallOption) (*UnmuteParticipantResponse, error)
 	RemoveParticipant(ctx context.Context, in *RemoveParticipantRequest, opts ...grpc.CallOption) (*RemoveParticipantResponse, error)
 	RoomStats(ctx context.Context, in *RoomStatsRequest, opts ...grpc.CallOption) (*RoomStatsResponse, error)
+	ListParticipants(ctx context.Context, in *ListParticipantsRequest, opts ...grpc.CallOption) (*ListParticipantsResponse, error)
 }
 
 type roomControlClient struct {
@@ -107,6 +109,16 @@ func (c *roomControlClient) RoomStats(ctx context.Context, in *RoomStatsRequest,
 	return out, nil
 }
 
+func (c *roomControlClient) ListParticipants(ctx context.Context, in *ListParticipantsRequest, opts ...grpc.CallOption) (*ListParticipantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListParticipantsResponse)
+	err := c.cc.Invoke(ctx, RoomControl_ListParticipants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RoomControlServer is the server API for RoomControl service.
 // All implementations must embed UnimplementedRoomControlServer
 // for forward compatibility.
@@ -117,6 +129,7 @@ type RoomControlServer interface {
 	UnmuteParticipant(context.Context, *UnmuteParticipantRequest) (*UnmuteParticipantResponse, error)
 	RemoveParticipant(context.Context, *RemoveParticipantRequest) (*RemoveParticipantResponse, error)
 	RoomStats(context.Context, *RoomStatsRequest) (*RoomStatsResponse, error)
+	ListParticipants(context.Context, *ListParticipantsRequest) (*ListParticipantsResponse, error)
 	mustEmbedUnimplementedRoomControlServer()
 }
 
@@ -144,6 +157,9 @@ func (UnimplementedRoomControlServer) RemoveParticipant(context.Context, *Remove
 }
 func (UnimplementedRoomControlServer) RoomStats(context.Context, *RoomStatsRequest) (*RoomStatsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RoomStats not implemented")
+}
+func (UnimplementedRoomControlServer) ListParticipants(context.Context, *ListParticipantsRequest) (*ListParticipantsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListParticipants not implemented")
 }
 func (UnimplementedRoomControlServer) mustEmbedUnimplementedRoomControlServer() {}
 func (UnimplementedRoomControlServer) testEmbeddedByValue()                     {}
@@ -274,6 +290,24 @@ func _RoomControl_RoomStats_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RoomControl_ListParticipants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListParticipantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RoomControlServer).ListParticipants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RoomControl_ListParticipants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RoomControlServer).ListParticipants(ctx, req.(*ListParticipantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RoomControl_ServiceDesc is the grpc.ServiceDesc for RoomControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -304,6 +338,10 @@ var RoomControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RoomStats",
 			Handler:    _RoomControl_RoomStats_Handler,
+		},
+		{
+			MethodName: "ListParticipants",
+			Handler:    _RoomControl_ListParticipants_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

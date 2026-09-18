@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"net"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -18,6 +19,7 @@ import (
 type fakeRoomServer struct {
 	mediav1.UnimplementedRoomControlServer
 	created, closed, muted, unmuted, removed []string
+	participants                             []*mediav1.Participant
 }
 
 func (f *fakeRoomServer) CreateRoom(_ context.Context, r *mediav1.CreateRoomRequest) (*mediav1.CreateRoomResponse, error) {
@@ -43,6 +45,10 @@ func (f *fakeRoomServer) UnmuteParticipant(_ context.Context, r *mediav1.UnmuteP
 func (f *fakeRoomServer) RemoveParticipant(_ context.Context, r *mediav1.RemoveParticipantRequest) (*mediav1.RemoveParticipantResponse, error) {
 	f.removed = append(f.removed, r.CallId+"/"+r.UserId)
 	return &mediav1.RemoveParticipantResponse{}, nil
+}
+
+func (f *fakeRoomServer) ListParticipants(_ context.Context, _ *mediav1.ListParticipantsRequest) (*mediav1.ListParticipantsResponse, error) {
+	return &mediav1.ListParticipantsResponse{Participants: f.participants}, nil
 }
 
 func startServer(t *testing.T, token string, impl mediav1.RoomControlServer) string {
@@ -80,6 +86,28 @@ func TestRoomControlClient_BadToken(t *testing.T) {
 	err := c.CreateRoom(context.Background(), usecasecall.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("want Unauthenticated, got %v", err)
+	}
+}
+
+func TestRoomControlClient_ListParticipants(t *testing.T) {
+	fake := &fakeRoomServer{participants: []*mediav1.Participant{
+		{UserId: "u1", Role: "publisher", Muted: true, SelfMuted: false, TrackKinds: []string{"mic", "camera"}},
+	}}
+	addr := startServer(t, "sekret", fake)
+	c := NewRoomControlClient(&config.Config{Media: config.MediaConfig{RPCToken: "sekret"}})
+	t.Cleanup(c.Close)
+
+	callID := uuid.Must(uuid.NewV7())
+	got, err := c.ListParticipants(context.Background(), usecasecall.Node{GRPCAddr: addr}, callID)
+	if err != nil {
+		t.Fatalf("ListParticipants: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ListParticipants = %+v, want 1 entry", got)
+	}
+	want := usecasecall.ParticipantInfo{UserID: "u1", Role: "publisher", Muted: true, SelfMuted: false, TrackKinds: []string{"mic", "camera"}}
+	if got[0].UserID != want.UserID || got[0].Role != want.Role || got[0].Muted != want.Muted || got[0].SelfMuted != want.SelfMuted || !slices.Equal(got[0].TrackKinds, want.TrackKinds) {
+		t.Fatalf("ListParticipants[0] = %+v, want %+v", got[0], want)
 	}
 }
 

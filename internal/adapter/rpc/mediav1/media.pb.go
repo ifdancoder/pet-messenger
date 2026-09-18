@@ -541,6 +541,170 @@ func (x *RoomStatsResponse) GetExists() bool {
 	return false
 }
 
+type ListParticipantsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CallId        string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListParticipantsRequest) Reset() {
+	*x = ListParticipantsRequest{}
+	mi := &file_media_v1_media_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListParticipantsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListParticipantsRequest) ProtoMessage() {}
+
+func (x *ListParticipantsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_media_v1_media_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListParticipantsRequest.ProtoReflect.Descriptor instead.
+func (*ListParticipantsRequest) Descriptor() ([]byte, []int) {
+	return file_media_v1_media_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListParticipantsRequest) GetCallId() string {
+	if x != nil {
+		return x.CallId
+	}
+	return ""
+}
+
+type ListParticipantsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Participants  []*Participant         `protobuf:"bytes,1,rep,name=participants,proto3" json:"participants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListParticipantsResponse) Reset() {
+	*x = ListParticipantsResponse{}
+	mi := &file_media_v1_media_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListParticipantsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListParticipantsResponse) ProtoMessage() {}
+
+func (x *ListParticipantsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_media_v1_media_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListParticipantsResponse.ProtoReflect.Descriptor instead.
+func (*ListParticipantsResponse) Descriptor() ([]byte, []int) {
+	return file_media_v1_media_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListParticipantsResponse) GetParticipants() []*Participant {
+	if x != nil {
+		return x.Participants
+	}
+	return nil
+}
+
+type Participant struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	Muted         bool                   `protobuf:"varint,3,opt,name=muted,proto3" json:"muted,omitempty"`
+	SelfMuted     bool                   `protobuf:"varint,4,opt,name=self_muted,json=selfMuted,proto3" json:"self_muted,omitempty"`
+	TrackKinds    []string               `protobuf:"bytes,5,rep,name=track_kinds,json=trackKinds,proto3" json:"track_kinds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Participant) Reset() {
+	*x = Participant{}
+	mi := &file_media_v1_media_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Participant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Participant) ProtoMessage() {}
+
+func (x *Participant) ProtoReflect() protoreflect.Message {
+	mi := &file_media_v1_media_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Participant.ProtoReflect.Descriptor instead.
+func (*Participant) Descriptor() ([]byte, []int) {
+	return file_media_v1_media_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *Participant) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *Participant) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *Participant) GetMuted() bool {
+	if x != nil {
+		return x.Muted
+	}
+	return false
+}
+
+func (x *Participant) GetSelfMuted() bool {
+	if x != nil {
+		return x.SelfMuted
+	}
+	return false
+}
+
+func (x *Participant) GetTrackKinds() []string {
+	if x != nil {
+		return x.TrackKinds
+	}
+	return nil
+}
+
 var File_media_v1_media_proto protoreflect.FileDescriptor
 
 const file_media_v1_media_proto_rawDesc = "" +
@@ -568,7 +732,19 @@ const file_media_v1_media_proto_rawDesc = "" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\"O\n" +
 	"\x11RoomStatsResponse\x12\"\n" +
 	"\fparticipants\x18\x01 \x01(\rR\fparticipants\x12\x16\n" +
-	"\x06exists\x18\x02 \x01(\bR\x06exists2\xf6\x03\n" +
+	"\x06exists\x18\x02 \x01(\bR\x06exists\"2\n" +
+	"\x17ListParticipantsRequest\x12\x17\n" +
+	"\acall_id\x18\x01 \x01(\tR\x06callId\"U\n" +
+	"\x18ListParticipantsResponse\x129\n" +
+	"\fparticipants\x18\x01 \x03(\v2\x15.media.v1.ParticipantR\fparticipants\"\x90\x01\n" +
+	"\vParticipant\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\x12\x14\n" +
+	"\x05muted\x18\x03 \x01(\bR\x05muted\x12\x1d\n" +
+	"\n" +
+	"self_muted\x18\x04 \x01(\bR\tselfMuted\x12\x1f\n" +
+	"\vtrack_kinds\x18\x05 \x03(\tR\n" +
+	"trackKinds2\xd1\x04\n" +
 	"\vRoomControl\x12G\n" +
 	"\n" +
 	"CreateRoom\x12\x1b.media.v1.CreateRoomRequest\x1a\x1c.media.v1.CreateRoomResponse\x12D\n" +
@@ -576,7 +752,8 @@ const file_media_v1_media_proto_rawDesc = "" +
 	"\x0fMuteParticipant\x12 .media.v1.MuteParticipantRequest\x1a!.media.v1.MuteParticipantResponse\x12\\\n" +
 	"\x11UnmuteParticipant\x12\".media.v1.UnmuteParticipantRequest\x1a#.media.v1.UnmuteParticipantResponse\x12\\\n" +
 	"\x11RemoveParticipant\x12\".media.v1.RemoveParticipantRequest\x1a#.media.v1.RemoveParticipantResponse\x12D\n" +
-	"\tRoomStats\x12\x1a.media.v1.RoomStatsRequest\x1a\x1b.media.v1.RoomStatsResponseB4Z2pet-messenger/internal/adapter/rpc/mediav1;mediav1b\x06proto3"
+	"\tRoomStats\x12\x1a.media.v1.RoomStatsRequest\x1a\x1b.media.v1.RoomStatsResponse\x12Y\n" +
+	"\x10ListParticipants\x12!.media.v1.ListParticipantsRequest\x1a\".media.v1.ListParticipantsResponseB4Z2pet-messenger/internal/adapter/rpc/mediav1;mediav1b\x06proto3"
 
 var (
 	file_media_v1_media_proto_rawDescOnce sync.Once
@@ -590,7 +767,7 @@ func file_media_v1_media_proto_rawDescGZIP() []byte {
 	return file_media_v1_media_proto_rawDescData
 }
 
-var file_media_v1_media_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_media_v1_media_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_media_v1_media_proto_goTypes = []any{
 	(*CreateRoomRequest)(nil),         // 0: media.v1.CreateRoomRequest
 	(*CreateRoomResponse)(nil),        // 1: media.v1.CreateRoomResponse
@@ -604,25 +781,31 @@ var file_media_v1_media_proto_goTypes = []any{
 	(*RemoveParticipantResponse)(nil), // 9: media.v1.RemoveParticipantResponse
 	(*RoomStatsRequest)(nil),          // 10: media.v1.RoomStatsRequest
 	(*RoomStatsResponse)(nil),         // 11: media.v1.RoomStatsResponse
+	(*ListParticipantsRequest)(nil),   // 12: media.v1.ListParticipantsRequest
+	(*ListParticipantsResponse)(nil),  // 13: media.v1.ListParticipantsResponse
+	(*Participant)(nil),               // 14: media.v1.Participant
 }
 var file_media_v1_media_proto_depIdxs = []int32{
-	0,  // 0: media.v1.RoomControl.CreateRoom:input_type -> media.v1.CreateRoomRequest
-	2,  // 1: media.v1.RoomControl.CloseRoom:input_type -> media.v1.CloseRoomRequest
-	4,  // 2: media.v1.RoomControl.MuteParticipant:input_type -> media.v1.MuteParticipantRequest
-	6,  // 3: media.v1.RoomControl.UnmuteParticipant:input_type -> media.v1.UnmuteParticipantRequest
-	8,  // 4: media.v1.RoomControl.RemoveParticipant:input_type -> media.v1.RemoveParticipantRequest
-	10, // 5: media.v1.RoomControl.RoomStats:input_type -> media.v1.RoomStatsRequest
-	1,  // 6: media.v1.RoomControl.CreateRoom:output_type -> media.v1.CreateRoomResponse
-	3,  // 7: media.v1.RoomControl.CloseRoom:output_type -> media.v1.CloseRoomResponse
-	5,  // 8: media.v1.RoomControl.MuteParticipant:output_type -> media.v1.MuteParticipantResponse
-	7,  // 9: media.v1.RoomControl.UnmuteParticipant:output_type -> media.v1.UnmuteParticipantResponse
-	9,  // 10: media.v1.RoomControl.RemoveParticipant:output_type -> media.v1.RemoveParticipantResponse
-	11, // 11: media.v1.RoomControl.RoomStats:output_type -> media.v1.RoomStatsResponse
-	6,  // [6:12] is the sub-list for method output_type
-	0,  // [0:6] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	14, // 0: media.v1.ListParticipantsResponse.participants:type_name -> media.v1.Participant
+	0,  // 1: media.v1.RoomControl.CreateRoom:input_type -> media.v1.CreateRoomRequest
+	2,  // 2: media.v1.RoomControl.CloseRoom:input_type -> media.v1.CloseRoomRequest
+	4,  // 3: media.v1.RoomControl.MuteParticipant:input_type -> media.v1.MuteParticipantRequest
+	6,  // 4: media.v1.RoomControl.UnmuteParticipant:input_type -> media.v1.UnmuteParticipantRequest
+	8,  // 5: media.v1.RoomControl.RemoveParticipant:input_type -> media.v1.RemoveParticipantRequest
+	10, // 6: media.v1.RoomControl.RoomStats:input_type -> media.v1.RoomStatsRequest
+	12, // 7: media.v1.RoomControl.ListParticipants:input_type -> media.v1.ListParticipantsRequest
+	1,  // 8: media.v1.RoomControl.CreateRoom:output_type -> media.v1.CreateRoomResponse
+	3,  // 9: media.v1.RoomControl.CloseRoom:output_type -> media.v1.CloseRoomResponse
+	5,  // 10: media.v1.RoomControl.MuteParticipant:output_type -> media.v1.MuteParticipantResponse
+	7,  // 11: media.v1.RoomControl.UnmuteParticipant:output_type -> media.v1.UnmuteParticipantResponse
+	9,  // 12: media.v1.RoomControl.RemoveParticipant:output_type -> media.v1.RemoveParticipantResponse
+	11, // 13: media.v1.RoomControl.RoomStats:output_type -> media.v1.RoomStatsResponse
+	13, // 14: media.v1.RoomControl.ListParticipants:output_type -> media.v1.ListParticipantsResponse
+	8,  // [8:15] is the sub-list for method output_type
+	1,  // [1:8] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_media_v1_media_proto_init() }
@@ -636,7 +819,7 @@ func file_media_v1_media_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_media_v1_media_proto_rawDesc), len(file_media_v1_media_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
