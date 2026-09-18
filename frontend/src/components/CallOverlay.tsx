@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, MouseEvent, MouseEventHandler, PointerEvent as ReactPointerEvent } from 'react'
 import type { CallPeer, RemoteStream, ScreenShareOptions } from '../hooks/useCall'
 import { entryMatchesTrack, screenFrameRates, screenResolutions } from '../hooks/useCall'
 import { Avatar } from './Avatar'
@@ -220,38 +220,56 @@ function VideoTile({ stream, audioStream, muted, label, focused, onFocus, onCont
   // ParticipantSection) — a camera tile gets none, so its outline just
   // never lights up, no separate code path needed.
   const frame = useAudioLevelRef<HTMLElement>(audioStream, onSpeakingChange)
-  // The tile's aspect ratio should match what's actually being captured
-  // (a phone camera's 9:16, an ultrawide screen share's 21:9, ...) rather
-  // than a fixed guess — read it straight off the video element once its
-  // real dimensions are known, and again on 'resize' since a shared
-  // window can change size mid-call. A bare number (width ÷ height), not the
-  // "W / H" string aspect-ratio itself accepts: the fullscreen sizing below
-  // needs to multiply/divide by it, and calc()/min() can't parse "W / H" as
-  // a value. --video-ratio has no default value: the CSS falls back to 1.6
-  // (== 16/10) for the brief window before metadata arrives.
+  // The tile's aspect ratio should match what's actually being captured (a
+  // phone camera's 9:16, an ultrawide screen share's 21:9, ...) rather than
+  // a fixed guess — read it straight off the video element once its real
+  // dimensions are known, and again on 'resize' since a shared window can
+  // change size mid-call. Kept as state (not just an imperative style write
+  // on the inline figure) because the maximized lightbox below is a second,
+  // separate figure that needs the same ratio and can't reach into this
+  // one's ref for it.
+  const [ratio, setRatio] = useState<number>()
   const syncRatio = () => {
     const el = video.current
-    if (el?.videoWidth && el.videoHeight) frame.current?.style.setProperty('--video-ratio', String(el.videoWidth / el.videoHeight))
+    if (el?.videoWidth && el.videoHeight) setRatio(el.videoWidth / el.videoHeight)
   }
-  // Real screen-filling maximize (the Fullscreen API on this tile's own
-  // figure, not another in-app layout), independent of the focus toggle
-  // above — focus rearranges the grid, this actually fills the display, and
-  // a screen share in particular is worth seeing at native size. isMaximized
-  // tracks document.fullscreenElement rather than a plain click flag so
-  // pressing Escape (the browser's own exit gesture) also flips the icon
-  // back correctly.
+  const ratioStyle = ratio ? ({ '--video-ratio': ratio } as CSSProperties) : undefined
+  // Maximize opens a *separate* fullscreen element portaled straight to
+  // document.body, rather than fullscreening this tile's own figure in
+  // place. That figure sits inside .call-participant, which the coverflow
+  // grow/shrink effect (useCallGrid) keeps a live `transform: scale(...)`
+  // on — fullscreening a descendant of a transformed ancestor is a known
+  // cross-browser hazard (the element can render at the wrong size/position,
+  // or just get corrupted at the CSS-cascade/paint level), and the resize
+  // firing on enter/exit was also feeding useCallGrid's own update() bad
+  // measurements, which then stuck around after exiting since nothing else
+  // re-triggers a recompute — surfacing as the pager arrows and card
+  // centering drifting wrong after a maximize/minimize round-trip. A portal
+  // to document.body has no transformed ancestors and never touches the
+  // grid's own DOM, so neither problem can happen; the lightbox gets its
+  // own <video> bound to the same stream rather than moving this one, so
+  // the grid tile keeps occupying its normal space the whole time.
   const [isMaximized, setIsMaximized] = useState(false)
+  const lightbox = useRef<HTMLElement>(null)
+  const lightboxVideo = useRef<HTMLVideoElement>(null)
+  useEffect(() => { if (isMaximized && lightboxVideo.current) lightboxVideo.current.srcObject = stream }, [isMaximized, stream])
   useEffect(() => {
-    const onChange = () => setIsMaximized(document.fullscreenElement === frame.current)
+    const onChange = () => { if (document.fullscreenElement !== lightbox.current) setIsMaximized(false) }
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const toggleMaximize = () => {
-    if (document.fullscreenElement === frame.current) void document.exitFullscreen()
-    else void frame.current?.requestFullscreen()
-  }
-  return <figure className="call-video" ref={frame} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} onLoadedMetadata={syncRatio} onResize={syncRatio} /><figcaption>{label}</figcaption><button className="call-video__maximize" type="button" aria-label={isMaximized ? 'Свернуть на весь экран' : 'На весь экран'} data-tooltip={isMaximized ? 'Свернуть' : 'На весь экран'} onClick={toggleMaximize}><MaximizeIcon active={isMaximized} /></button><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
+  useEffect(() => {
+    if (isMaximized) {
+      if (lightbox.current && document.fullscreenElement !== lightbox.current) void lightbox.current.requestFullscreen().catch(() => setIsMaximized(false))
+    } else if (document.fullscreenElement === lightbox.current) {
+      void document.exitFullscreen()
+    }
+  }, [isMaximized])
+  const toggleMaximize = () => setIsMaximized(current => !current)
+  return <>
+    <figure className="call-video" ref={frame} style={ratioStyle} onContextMenu={onContextMenu}><video ref={video} autoPlay playsInline muted={muted} onLoadedMetadata={syncRatio} onResize={syncRatio} /><figcaption>{label}</figcaption><button className="call-video__maximize" type="button" aria-label={isMaximized ? 'Свернуть на весь экран' : 'На весь экран'} data-tooltip={isMaximized ? 'Свернуть' : 'На весь экран'} onClick={toggleMaximize}><MaximizeIcon active={isMaximized} /></button><button className="call-video__focus" type="button" aria-label={focused ? 'Свернуть видео' : 'Развернуть видео'} data-tooltip={focused ? 'Свернуть' : 'Развернуть'} onClick={onFocus}><FocusIcon focused={focused} /></button></figure>
+    {isMaximized ? createPortal(<figure className="call-video call-video--lightbox" ref={lightbox} style={ratioStyle}><video ref={lightboxVideo} autoPlay playsInline muted={muted} /><figcaption>{label}</figcaption><button className="call-video__maximize" type="button" aria-label="Свернуть на весь экран" data-tooltip="Свернуть" onClick={toggleMaximize}><MaximizeIcon active /></button></figure>, document.body) : null}
+  </>
 }
 // gridRef attaches the pager/reorder hook's per-card element ref straight
 // to this card's own root — see useCallGrid below; onSpeakingChange is
