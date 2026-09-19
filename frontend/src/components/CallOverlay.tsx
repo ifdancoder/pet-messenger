@@ -34,6 +34,14 @@ function findMicStream(streams: StreamEntry[], tracks?: CallPeer['tracks']) {
 function ownerOf(entry: Pick<RemoteStream, 'ownerID' | 'mid' | 'sourceStreamID'>, peers: CallPeer[]) {
   return entry.ownerID ?? peers.find(peer => peer.tracks?.some(track => entryMatchesTrack(entry, track)))?.user_id
 }
+// A MediaStream can outlive both its RTP and the roster frame that removed
+// its publisher.  ownerID is deliberately kept on the stream for matching,
+// but it must never by itself make an old stream renderable: the current
+// roster is the authority on who is still in the call.
+function belongsToRoster(entry: Pick<RemoteStream, 'ownerID' | 'mid' | 'sourceStreamID'>, peers: CallPeer[]) {
+  const owner = ownerOf(entry, peers)
+  return owner !== undefined && peers.some(peer => peer.user_id === owner)
+}
 // streamVolumeKey is the one key both playback (CallAudio, always mounted)
 // and the right-click volume menu (only ever opened from the full view) key
 // a participant's volume choice by — computed once here so the two can never
@@ -394,12 +402,13 @@ export function CallAudio({ remoteStreams, peers, volumes, floating }: { remoteS
   // The PiP candidate: the first remote video going, screen share preferred
   // over camera — an audio-only call (or every remote camera off) has none,
   // so PiP is never attempted.
-  const remoteVideoStreams = remoteStreams.filter(entry => entry.stream.getVideoTracks().length > 0)
+  const rosterStreams = remoteStreams.filter(entry => belongsToRoster(entry, peers))
+  const remoteVideoStreams = rosterStreams.filter(entry => entry.stream.getVideoTracks().length > 0)
     .sort((left, right) => Number(isScreenShare(right, peers.find(peer => peer.user_id === ownerOf(right, peers))?.tracks)) - Number(isScreenShare(left, peers.find(peer => peer.user_id === ownerOf(left, peers))?.tracks)))
   const pipStream = remoteVideoStreams[0]?.stream ?? null
   const pipActive = floating && !pipDismissed && pipStream !== null
   return <>
-    {remoteStreams.filter(entry => entry.stream.getAudioTracks().length > 0).map(entry =>
+    {rosterStreams.filter(entry => entry.stream.getAudioTracks().length > 0).map(entry =>
       <AudioSink key={entry.id} stream={entry.stream} volume={volumes[streamVolumeKey(entry, peers)] ?? 1} />)}
     <PipVideoSink stream={pipStream} active={pipActive} onExit={() => setPipDismissed(true)} />
   </>
@@ -799,6 +808,10 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     setVolumeMenu({ x: event.clientX, y: event.clientY, key, label })
   }
   const otherPeers = peers.filter(peer => peer.user_id !== currentUserID)
+  // Do not let a stale browser MediaStream create a participant section.
+  // The SFU's roster frame removes an exited participant before WebRTC has
+  // necessarily fired `ended` for their old tracks.
+  const liveRemoteStreams = remoteStreams.filter(entry => belongsToRoster(entry, otherPeers))
   const title = isConnected ? 'Соединение установлено' : isConnecting ? 'Подключаемся…' : reconnectExhausted ? 'Не удалось переподключиться' : 'Соединение потеряно'
   const statusClass = isConnected ? 'is-connected' : isConnecting ? 'is-connecting' : 'is-lost'
   // Camera and screen are two independent slots here, exactly like a remote
@@ -818,7 +831,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   const nameFor = (userID: string, fallback: string) => participantNames[userID] ?? fallback
   const avatarFor = (userID: string) => participantAvatars[userID]
   const sections = new Map<string, StreamEntry[]>()
-  for (const stream of remoteStreams) {
+  for (const stream of liveRemoteStreams) {
     const owner = ownerOf(stream, otherPeers)
     const key = owner ?? `unknown:${stream.id}`
     sections.set(key, [...(sections.get(key) ?? []), stream])
