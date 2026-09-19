@@ -766,6 +766,10 @@ function useCallGrid(orderedKeys: string[]) {
       dragMoved = false
       startX = event.clientX
       startScroll = track.scrollLeft
+      // Native scroll snap fights a direct drag by pulling the track back on
+      // every small scroll update. Suspend it for the gesture; on release the
+      // explicit center operation below chooses the nearest card once.
+      track.dataset.dragging = 'true'
       track.setPointerCapture(event.pointerId)
     }
     const onMove = (event: PointerEvent) => {
@@ -775,8 +779,10 @@ function useCallGrid(orderedKeys: string[]) {
       track.scrollLeft = startScroll - dx
     }
     const onUp = () => {
-      if (dragging && dragMoved) requestAnimationFrame(() => scrollToIndex(closestIndex()))
+      const shouldSnap = dragging && dragMoved
       dragging = false
+      delete track.dataset.dragging
+      if (shouldSnap) requestAnimationFrame(() => scrollToIndex(closestIndex()))
     }
     // globalThis.MouseEvent, not the bare name: MouseEvent is shadowed at
     // this file's top by React's own synthetic event type, which a native
@@ -788,6 +794,7 @@ function useCallGrid(orderedKeys: string[]) {
     track.addEventListener('pointercancel', onUp)
     track.addEventListener('click', onClickCapture, true)
     return () => {
+      delete track.dataset.dragging
       track.removeEventListener('pointerdown', onDown)
       track.removeEventListener('pointermove', onMove)
       track.removeEventListener('pointerup', onUp)
