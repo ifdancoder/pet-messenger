@@ -40,7 +40,6 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // resetting whenever the visible view unmounts.
   const [volumes, setVolumes] = useState<Record<string, number>>({})
   const { calls: liveCalls, hasLoadedOnce: liveCallsLoaded } = useLiveCalls(session, messenger.conversations, messenger.isLoadingConversations)
-  const ringingCallID = useRef<string | null>(null)
   const [dismissedCallID, setDismissedCallID] = useState<string | null>(null)
   const activeLiveCall = liveCalls.find(item => item.conversation.id === messenger.activeConversation?.id)
   // The preview bar (not yet joined) and the real docked/full call view are
@@ -103,11 +102,12 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   const currentLiveCall = callConversation ? liveCalls.find(item => item.conversation.id === callConversation.id) : undefined
   const acceptedParticipantIDs = new Set(currentLiveCall?.participants.filter(participant => participant.accepted).map(participant => participant.user_id) ?? [])
   const connectedSince = currentLiveCall ? new Date(currentLiveCall.call.started_at).getTime() : null
+  // Polling replaces the live-call object every few seconds. Key the ringtone
+  // to the stable call ID so React does not clean it up between poll results.
   useEffect(() => {
-    if (!incomingCall || callConversation || ringingCallID.current === incomingCall.call.id) return
-    ringingCallID.current = incomingCall.call.id
+    if (!incomingCallID || callConversation) return
     return startIncomingRingtone()
-  }, [callConversation, incomingCall])
+  }, [callConversation, incomingCallID])
   useEffect(() => { if (callConversation) void Promise.resolve().then(() => start(callConversation, joinWithCamera)) }, [callConversation, joinWithCamera, start])
   useEffect(() => {
     if (!callConversation) return
