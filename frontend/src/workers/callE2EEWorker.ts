@@ -1,4 +1,8 @@
-type EncodedFrame = { data: ArrayBuffer; type?: 'key' | 'delta' }
+type EncodedFrame = {
+  data: ArrayBuffer
+  type?: 'key' | 'delta'
+  getMetadata?: () => { mimeType?: string }
+}
 type TransformEvent = Event & {
   transformer: {
     readable: ReadableStream<EncodedFrame>
@@ -19,13 +23,51 @@ function fromBase64url(value: string) {
   return bytes
 }
 
-function cryptoOffset(frame: EncodedFrame, byteLength: number) {
-  // The WebRTC packetizer/depacketizer consumes a small codec header before
-  // the script transform runs on the other side. Opus needs its one-byte TOC;
-  // VP8 needs its uncompressed key/delta header. Encrypting those bytes makes
-  // the browser infer the wrong frame shape and produces audible corruption.
-  const wanted = frame.type === 'key' ? 10 : frame.type === 'delta' ? 3 : 1
-  return Math.min(wanted, byteLength)
+function opusSizeFieldLength(data: Uint8Array, offset: number) {
+  if (offset >= data.length) return 0
+  return data[offset] < 252 || offset + 1 >= data.length ? 1 : 2
+}
+
+// Opus packets can contain several frames. In that case the framing header
+// extends beyond the TOC byte and carries a frame count, padding length and
+// (for VBR) individual frame sizes. The browser packetizer reads this after
+// the script transform, before RTP is produced, so encrypting any part of it
+// makes otherwise valid audio intermittently sound like digital crackle.
+function opusHeaderLength(data: Uint8Array) {
+  if (!data.length) return 0
+  const code = data[0] & 0x03
+  if (code < 2) return 1
+  if (code === 2) return Math.min(data.length, 1 + opusSizeFieldLength(data, 1))
+  if (data.length < 2) return data.length
+
+  const frameCountByte = data[1]
+  const frameCount = frameCountByte & 0x3f
+  const hasPadding = (frameCountByte & 0x40) !== 0
+  const isVBR = (frameCountByte & 0x80) !== 0
+  let offset = 2
+  if (hasPadding) {
+    while (offset < data.length) {
+      const paddingByte = data[offset++]
+      if (paddingByte !== 255) break
+    }
+  }
+  if (isVBR) {
+    for (let index = 0; index < frameCount - 1 && offset < data.length; index += 1) {
+      offset += opusSizeFieldLength(data, offset)
+    }
+  }
+  return Math.min(offset, data.length)
+}
+
+function cryptoOffset(frame: EncodedFrame, data: Uint8Array) {
+  const mimeType = frame.getMetadata?.().mimeType?.toLowerCase()
+  if (mimeType === 'audio/opus' || (!mimeType && frame.type === undefined)) return opusHeaderLength(data)
+  // This SFU deliberately negotiates VP8 as its sole video codec. Preserve
+  // the bytes the packetizer needs to retain key/delta frame structure.
+  if (mimeType === 'video/vp8' || frame.type !== undefined) {
+    return Math.min(frame.type === 'key' ? 10 : 3, data.length)
+  }
+  return 0
 }
 
 function startsWithMarker(data: Uint8Array, offset: number) {
@@ -49,7 +91,7 @@ workerScope.onrtctransform = event => {
       try {
         if (operation === 'encrypt') {
           const input = new Uint8Array(frame.data)
-          const offset = cryptoOffset(frame, input.length)
+          const offset = cryptoOffset(frame, input)
           const clearPrefix = input.slice(0, offset)
           const nonce = crypto.getRandomValues(new Uint8Array(12))
           const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
@@ -67,7 +109,7 @@ workerScope.onrtctransform = event => {
           return
         }
         const input = new Uint8Array(frame.data)
-        const offset = cryptoOffset(frame, input.length)
+        const offset = cryptoOffset(frame, input)
         if (!startsWithMarker(input, offset) || input.length < offset + marker.length + 12 + 16) return
         const clearPrefix = input.slice(0, offset)
         const nonceStart = offset + marker.length

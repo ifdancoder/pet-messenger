@@ -582,8 +582,8 @@ function useCallGrid(orderedKeys: string[]) {
     if (list.length && leadSpacerRef.current && trailSpacerRef.current) {
       const firstW = naturalWidth(list[0])
       const lastW = naturalWidth(list[list.length - 1])
-      leadSpacerRef.current.style.width = Math.max(0, clientW / 2 - padLeft - firstW / 2 - firstW * 0.135) + 'px'
-      trailSpacerRef.current.style.width = Math.max(0, clientW / 2 - padRight - lastW / 2 - lastW * 0.135) + 'px'
+      leadSpacerRef.current.style.width = Math.max(0, clientW / 2 - padLeft - firstW / 2) + 'px'
+      trailSpacerRef.current.style.width = Math.max(0, clientW / 2 - padRight - lastW / 2) + 'px'
     }
     // Disabled state is "is the edge card already centered", not "is
     // scrollLeft near the scrollable max" — the two disagree once the lead/
@@ -607,9 +607,10 @@ function useCallGrid(orderedKeys: string[]) {
       const rect = card.getBoundingClientRect()
       const cardCenter = rect.left + rect.width / 2
       const distance = Math.min(Math.abs(cardCenter - centerX) / halfSpan, 1)
-      const cardW = naturalWidth(card)
-      const growthPx = cardW * 0.27 * (1 - distance) - cardW * 0.155 * distance
-      const scale = (1 + growthPx / rect.width).toFixed(4)
+      // A fixed scale curve avoids feeding the previous frame's transformed
+      // width back into the next one. Its 18% center growth fits inside the
+      // track's reserved gap even for the widest supported participant card.
+      const scale = (1.18 - 0.28 * distance).toFixed(4)
       card.dataset.scale = scale
       card.style.transform = `scale(${scale})`
       // Scaling is visual only. Changing margins here moved the target on
