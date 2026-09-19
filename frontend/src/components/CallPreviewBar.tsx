@@ -44,21 +44,25 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
   }, [liveCall.conversation.id, liveCall.conversation.kind, session.access_token])
 
   // A viewer session itself appears in the room roster after preview.start.
-  // Direct calls show their initiator only; group calls show every actual
-  // participant except the recipient's own transient viewer session.
-  const participantIDs = liveCall.conversation.kind === 'direct'
-    ? new Set([liveCall.call.initiator_id])
-    : new Set(liveCall.participants.filter(participant => participant.user_id !== session.user.id).map(participant => participant.user_id))
+  // Show every real participant still in the room, never the current user.
+  // In particular, this must not be tied to the original initiator: after
+  // they leave, either side still needs a docked way back into the live room
+  // for as long as its solo timeout has not ended it.
+  const visibleParticipants = liveCall.participants.filter(participant => participant.user_id !== session.user.id)
+  const participantIDs = new Set(visibleParticipants.map(participant => participant.user_id))
   const peers = liveCall.participants
     .filter(participant => participantIDs.has(participant.user_id))
     .map(participant => ({ ...participant, tracks: [] }))
   const conversation = liveCall.conversation
-  const initiatorName = conversation.kind === 'direct'
+  const directPeerID = visibleParticipants[0]?.user_id
+  const directPeerName = conversation.kind === 'direct'
     ? `@${conversation.direct_username || conversation.direct_display_name || 'Собеседник'} · ${conversation.direct_display_name || conversation.direct_username || 'Собеседник'}`
-    : memberNames[liveCall.call.initiator_id] ?? participantNames[liveCall.call.initiator_id] ?? 'Инициатор звонка'
-  const names = { ...participantNames, ...memberNames, [liveCall.call.initiator_id]: initiatorName }
+    : undefined
+  const names = directPeerID && directPeerName
+    ? { ...participantNames, ...memberNames, [directPeerID]: directPeerName }
+    : { ...participantNames, ...memberNames }
   const avatars = conversation.kind === 'direct' && conversation.direct_avatar_url
-    ? { ...participantAvatars, ...memberAvatars, [liveCall.call.initiator_id]: conversation.direct_avatar_url }
+    ? { ...participantAvatars, ...memberAvatars, ...(directPeerID ? { [directPeerID]: conversation.direct_avatar_url } : {}) }
     : { ...participantAvatars, ...memberAvatars }
   const participantStreams = preview.remoteStreams.filter(stream => stream.ownerID !== undefined && participantIDs.has(stream.ownerID))
 
