@@ -24,6 +24,11 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
   return {
     encrypt(sender) {
       if (encrypted.has(sender)) return
+      // Custom encoded transforms currently corrupt Opus on some browser/SFU
+      // combinations even when the frame is restored byte-for-byte. Keep
+      // audio on WebRTC's native DTLS-SRTP path until native SFrame audio
+      // packetization is available; video still uses app-level E2EE below.
+      if (sender.track?.kind === 'audio') return
       ;(sender as TransformableSender).transform = new Constructor(worker, {
         operation: 'encrypt', key: encodedKey, callID, mediaKind: sender.track?.kind ?? '',
       })
@@ -31,6 +36,7 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
     },
     decrypt(receiver, mediaKind = receiver.track?.kind ?? '') {
       if (decrypted.has(receiver)) return
+      if (mediaKind === 'audio' || receiver.track?.kind === 'audio') return
       ;(receiver as TransformableReceiver).transform = new Constructor(worker, {
         operation: 'decrypt', key: encodedKey, callID, mediaKind,
       })
