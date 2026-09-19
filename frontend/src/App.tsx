@@ -14,6 +14,7 @@ import { useLiveCalls } from './hooks/useLiveCall'
 import { clearSession, readSession, saveSession } from './lib/session'
 import { startIncomingRingtone } from './lib/sounds'
 import { api, setSessionRefreshHandler } from './lib/api'
+import { ensureE2EEIdentity } from './lib/e2ee'
 import type { Conversation, MemberProfile, Session } from './types'
 import './App.css'
 
@@ -21,6 +22,11 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   const messenger = useMessenger(session, onLogout)
   const { start, close, shareScreen, stopScreenShare, toggleMute, toggleCamera, switchDevice, setNoiseSuppression, moderate, reconnectNow, localStream, localScreenStream, remoteStreams, peers, error: callError, isConnecting, isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted } = useCall(session)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Key generation is local and non-extractable. A failure is deliberately
+  // non-fatal here: the E2EE settings flow surfaces it before protected chats
+  // become available, while the rest of the messenger remains usable.
+  useEffect(() => { void ensureE2EEIdentity(session.access_token).catch(() => undefined) }, [session.access_token])
   const [callConversation, setCallConversation] = useState<Conversation | null>(null)
   const [joinWithCamera, setJoinWithCamera] = useState(false)
   const [callMembers, setCallMembers] = useState<MemberProfile[]>([])
