@@ -91,7 +91,10 @@ func (r *room) loop() {
 			if r.closed {
 				return
 			}
-			switch len(r.peers) {
+			// Preview clients join as viewers so they can receive media without
+			// opening a microphone. They are not people who have accepted the
+			// call, so they must not keep an otherwise empty call alive forever.
+			switch r.publisherCount() {
 			case 0:
 				solo.Stop()
 				idle.Reset(r.idleTimeout)
@@ -103,17 +106,31 @@ func (r *room) loop() {
 				solo.Stop()
 			}
 		case <-idle.C:
-			if len(r.peers) == 0 {
+			if r.publisherCount() == 0 {
 				r.drain()
 				return
 			}
 		case <-solo.C:
-			if len(r.peers) == 1 {
+			if r.publisherCount() == 1 {
 				r.drain()
 				return
 			}
 		}
 	}
+}
+
+// publisherCount is actor-owned, like peers. A viewer is deliberately
+// excluded from call lifetime: incoming docked previews use this role and
+// should expire with the unanswered/empty call instead of becoming an
+// accidental permanent participant.
+func (r *room) publisherCount() int {
+	count := 0
+	for _, p := range r.peers {
+		if p.role != "viewer" {
+			count++
+		}
+	}
+	return count
 }
 
 // do enqueues fn on the actor. It is a no-op once the room has shut down.
