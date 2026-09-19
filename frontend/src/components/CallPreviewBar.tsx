@@ -14,7 +14,11 @@ function PhoneIcon() {
 // it — i.e. we have no evidence they've actually connected media yet, only
 // that the join endpoint accepted them into the roster.
 function isStillRinging(participant: LiveParticipant) {
-  return participant.track_kinds.length === 0
+  // Defense-in-depth: the type says track_kinds is always string[], but a
+  // zero-track participant's protobuf round-trip on the backend can still
+  // produce a JSON `null` here (see internal/adapter/rpc/client.go) — guard
+  // against it so a malformed/legacy response never crashes the tile.
+  return (participant.track_kinds ?? []).length === 0
 }
 
 // A tiny local hook, kept out of the tile's own render logic, purely for the
