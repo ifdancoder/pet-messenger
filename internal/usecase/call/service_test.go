@@ -551,6 +551,25 @@ func TestGetLiveForConversation_ListParticipantsFails_EmptyNotError(t *testing.T
 	}
 }
 
+func TestGetLiveForConversation_MissingRoomEndsCall(t *testing.T) {
+	s, calls, convs, _, rooms, events, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	rooms.listParticipantsErr = ErrRoomNotFound
+
+	_, _, err := s.GetLiveForConversation(context.Background(), memberID, convID)
+	if !errors.Is(err, domaincall.ErrNotFound) {
+		t.Fatalf("GetLiveForConversation error = %v, want not found", err)
+	}
+	if c.IsLive() {
+		t.Fatal("missing media room left call live")
+	}
+	if len(events.events) != 1 || events.events[0] != message.SystemCallEnded {
+		t.Fatalf("events = %v, want one call_ended", events.events)
+	}
+}
+
 func TestGetLiveForConversation_NonMember(t *testing.T) {
 	s, calls, convs, _, _, _, _ := newSvc(t)
 	convID, memberID := groupChat(t, convs)
@@ -790,6 +809,25 @@ func TestReapStaleCalls(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("ReapStaleCalls (2nd) = %d, want 0", n)
+	}
+}
+
+func TestReapStaleCalls_MissingRoom(t *testing.T) {
+	s, calls, convs, _, rooms, events, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	rooms.listParticipantsErr = ErrRoomNotFound
+
+	n, err := s.ReapStaleCalls(context.Background())
+	if err != nil {
+		t.Fatalf("ReapStaleCalls: %v", err)
+	}
+	if n != 1 || c.IsLive() {
+		t.Fatalf("ReapStaleCalls = %d, call live = %v; want 1, false", n, c.IsLive())
+	}
+	if len(events.events) != 1 || events.events[0] != message.SystemCallEnded {
+		t.Fatalf("events = %v, want one call_ended", events.events)
 	}
 }
 

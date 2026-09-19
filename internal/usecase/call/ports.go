@@ -23,6 +23,10 @@ var (
 	ErrMediaUnavailable       = errors.New("call: no media capacity right now")
 	ErrMediaNodeGone          = errors.New("call: the media node for this call is gone")
 	ErrNoMediaNodes           = errors.New("call: no media nodes registered")
+	// ErrRoomNotFound means the media node is reachable but has no state for
+	// this call. It is distinct from a transport failure: the call can safely
+	// be finished rather than merely retried later.
+	ErrRoomNotFound = errors.New("call: media room not found")
 )
 
 type Node struct {

@@ -176,6 +176,12 @@ func (s *Service) GetLiveForConversation(ctx context.Context, actorID, conversat
 	}
 	participants, err := s.rooms.ListParticipants(ctx, node, c.ID)
 	if err != nil {
+		if errors.Is(err, ErrRoomNotFound) {
+			if ferr := s.finishCall(ctx, c, nil); ferr != nil {
+				return nil, nil, ferr
+			}
+			return nil, nil, domaincall.ErrNotFound
+		}
 		return c, []ParticipantInfo{}, nil
 	}
 	return c, participants, nil
@@ -252,9 +258,18 @@ func (s *Service) ReapStaleCalls(ctx context.Context) (int, error) {
 	}
 	ended := 0
 	for _, c := range live {
-		if _, gerr := s.nodes.Get(ctx, c.MediaNodeID); gerr != nil {
+		node, gerr := s.nodes.Get(ctx, c.MediaNodeID)
+		if gerr != nil {
 			if err := s.finishCall(ctx, c, nil); err != nil {
 				log.Printf("call: reap %s: %v", c.ID, err)
+				continue
+			}
+			ended++
+			continue
+		}
+		if _, rerr := s.rooms.ListParticipants(ctx, node, c.ID); errors.Is(rerr, ErrRoomNotFound) {
+			if err := s.finishCall(ctx, c, nil); err != nil {
+				log.Printf("call: reap missing room %s: %v", c.ID, err)
 				continue
 			}
 			ended++

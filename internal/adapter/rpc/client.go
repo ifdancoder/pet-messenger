@@ -12,7 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"pet-messenger/internal/adapter/rpc/mediav1"
 	"pet-messenger/internal/config"
@@ -137,6 +139,9 @@ func (c *RoomControlClient) ListParticipants(ctx context.Context, node usecaseca
 		}
 		return nil
 	})
+	if status.Code(err) == codes.NotFound {
+		err = fmt.Errorf("%w: %v", usecasecall.ErrRoomNotFound, err)
+	}
 	return out, err
 }
 
