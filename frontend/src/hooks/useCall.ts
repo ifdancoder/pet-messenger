@@ -22,6 +22,13 @@ export type RemoteStream = { id: string; stream: MediaStream; trackIDs: string[]
 // was created. Only prune an entry the roster no longer mentions once it has
 // existed longer than this.
 const staleStreamGraceMs = 1_500
+// reconcileGraceMs is deliberately longer than staleStreamGraceMs: that one
+// exists for the opposite direction (a stream that disappeared from the
+// roster, pruned once it's been gone this long), while this one bounds how
+// long the roster can list a track that has never once produced a matching
+// remoteStreams entry (see the reconciliation effect below) before treating
+// it as stuck rather than merely still in flight.
+const reconcileGraceMs = 5_000
 // muted is the moderator-driven flag (the SFU has actually stopped
 // forwarding this participant's audio); self_muted is their own
 // self-reported mic state and carries no media effect of its own — see
@@ -444,6 +451,36 @@ export function useCall(session: Session) {
     await connection.setLocalDescription(offer)
     socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, track_kinds: buildTrackKinds(connection, knownKinds.current) }))
   }), [enqueueNegotiation])
+
+  // Defensive reconciliation for a rejoin/reconnect that can otherwise leave
+  // a peer's already-live video permanently invisible: the SFU's own
+  // follow-up renegotiation for an already-published track isn't always
+  // sent immediately, and if that follow-up offer is ever lost or delayed,
+  // nothing else ever retries it — the roster (peers) will happily go on
+  // listing the track forever with no corresponding ontrack ever firing.
+  // Rather than trust the SFU to always get its own retry right, treat a
+  // roster track that has gone unmatched for longer than reconcileGraceMs as
+  // a signal to force a fresh offer ourselves. The condition is checked
+  // twice — once here to arm the timeout, once inside it right before
+  // calling renegotiate — since the gap is exactly long enough for the
+  // SFU's own follow-up to have already arrived and resolved this on its
+  // own; re-checking avoids an unnecessary renegotiation in that case.
+  const reconcileTimer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    // The SFU includes the viewer's own published tracks in every roster,
+    // but a client never receives its own media back as an ontrack event.
+    // Reconciliation concerns only tracks we should be receiving from other
+    // participants; considering our own roster entry would make every
+    // healthy local mic/camera look permanently missing and renegotiate it
+    // every five seconds.
+    const missingLiveTrack = () => peers.some(peer => peer.user_id !== session.user.id && peer.tracks?.some(track => !remoteStreams.some(entry => entry.kind === track.kind && entryMatchesTrack(entry, track))))
+    if (reconcileTimer.current) { window.clearTimeout(reconcileTimer.current); reconcileTimer.current = undefined }
+    if (!missingLiveTrack()) return
+    reconcileTimer.current = window.setTimeout(() => {
+      if (missingLiveTrack()) void renegotiate()
+    }, reconcileGraceMs)
+    return () => { if (reconcileTimer.current) { window.clearTimeout(reconcileTimer.current); reconcileTimer.current = undefined } }
+  }, [peers, remoteStreams, renegotiate, session.user.id])
 
   // stopScreenShare tears down publishing, not just the local preview: a
   // disabled-but-still-attached sender would keep sending nothing to a
