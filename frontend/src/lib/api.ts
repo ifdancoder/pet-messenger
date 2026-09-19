@@ -88,6 +88,8 @@ export const api = {
   startCall: (conversationID: string, token: string) => request<{ call: Call; join: CallJoin }>(`/conversations/${conversationID}/calls`, token, { method: 'POST' }),
   liveCall: (conversationID: string, token: string) => request<{ call: Call; participants: LiveParticipant[] }>(`/conversations/${conversationID}/calls/live`, token),
   joinCall: (callID: string, token: string, role?: 'publisher' | 'viewer') => request<{ join: CallJoin }>(`/calls/${callID}/join`, token, { method: 'POST', body: JSON.stringify({ role: role ?? 'publisher' }) }),
+  putCallKeyEnvelopes: (callID: string, token: string, ownerDeviceID: string, envelopes: { recipient_device_id: string; ciphertext: string }[]) => request<void>(`/calls/${callID}/e2ee/key-envelopes`, token, { method: 'PUT', body: JSON.stringify({ owner_device_id: ownerDeviceID, envelopes }) }),
+  callKeyEnvelope: (callID: string, token: string, deviceID: string) => request<{ owner_device_id: string; owner_public_key: string; ciphertext: string }>(`/calls/${callID}/e2ee/key-envelope?device_id=${encodeURIComponent(deviceID)}`, token),
   endCall: (callID: string, token: string) => request<void>(`/calls/${callID}/end`, token, { method: 'POST' }),
   muteCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}/mute`, token, { method: 'POST' }),
   unmuteCallParticipant: (callID: string, userID: string, token: string) => request<void>(`/calls/${callID}/participants/${userID}/unmute`, token, { method: 'POST' }),

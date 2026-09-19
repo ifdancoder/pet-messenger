@@ -1,5 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
 import { api } from '../lib/api'
+import type { Call } from '../lib/api'
+import { createCallE2EETransforms, type CallE2EETransforms } from '../lib/callE2EE'
+import { prepareCallE2EE } from '../lib/e2ee'
 import type { RemoteStream } from './useCall'
 import { entryMatchesTrack, ownerIDFromForwardedStream } from './useCall'
 import type { Session } from '../types'
@@ -16,6 +19,7 @@ export function useCallPreview(session: Session) {
   const peer = useRef<RTCPeerConnection | null>(null)
   const signal = useRef<WebSocket | null>(null)
   const startedFor = useRef<string | null>(null)
+  const mediaE2EE = useRef<CallE2EETransforms | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([])
 
   const stop = useCallback(() => {
@@ -24,26 +28,32 @@ export function useCallPreview(session: Session) {
     signal.current = null
     peer.current?.close()
     peer.current = null
+    mediaE2EE.current?.close()
+    mediaE2EE.current = null
     setRemoteStreams([])
   }, [])
 
-  const start = useCallback((callID: string) => {
-    if (startedFor.current === callID) return
+  const start = useCallback((call: Call, conversationID: string) => {
+    if (startedFor.current === call.id) return
     stop()
-    startedFor.current = callID
+    startedFor.current = call.id
     void (async () => {
       try {
-        const { join } = await api.joinCall(callID, session.access_token, 'viewer')
-        if (startedFor.current !== callID) return // stop() ran while the request was in flight
+        const callKey = await prepareCallE2EE(call, conversationID, session.access_token, session.user.id)
+        if (startedFor.current !== call.id) return
+        mediaE2EE.current = createCallE2EETransforms(call.id, callKey)
+        const { join } = await api.joinCall(call.id, session.access_token, 'viewer')
+        if (startedFor.current !== call.id) return // stop() ran while the request was in flight
         const connection = new RTCPeerConnection({ iceServers: join.ice_servers })
         peer.current = connection
         // Receive-only: no local tracks, so the SFU only ever forwards
         // publishers' media to this connection, never the other way.
-        connection.addTransceiver('audio', { direction: 'recvonly' })
-        connection.addTransceiver('video', { direction: 'recvonly' })
+        mediaE2EE.current.decrypt(connection.addTransceiver('audio', { direction: 'recvonly' }).receiver)
+        mediaE2EE.current.decrypt(connection.addTransceiver('video', { direction: 'recvonly' }).receiver)
         const pendingCandidates: RTCIceCandidateInit[] = []
         connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
         connection.ontrack = event => {
+          mediaE2EE.current?.decrypt(event.receiver)
           const stream = new MediaStream([event.track])
           const mid = event.transceiver?.mid ?? undefined
           const sourceStreamID = event.streams[0]?.id
@@ -77,7 +87,7 @@ export function useCallPreview(session: Session) {
         stop()
       }
     })()
-  }, [session.access_token, stop])
+  }, [session.access_token, session.user.id, stop])
 
   return { start, stop, remoteStreams }
 }

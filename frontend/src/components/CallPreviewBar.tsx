@@ -22,7 +22,7 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
   const [memberNames, setMemberNames] = useState<Record<string, string>>({})
   const [memberAvatars, setMemberAvatars] = useState<Record<string, string>>({})
   useEffect(() => {
-    preview.start(liveCall.call.id)
+    preview.start(liveCall.call, liveCall.conversation.id)
     return () => preview.stop()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveCall.call.id])

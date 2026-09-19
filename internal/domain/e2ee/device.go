@@ -35,6 +35,14 @@ type Device struct {
 	ApprovedAt, RevokedAt *time.Time
 }
 
+type KeyEnvelope struct {
+	OwnerDeviceID     uuid.UUID
+	RecipientDeviceID uuid.UUID
+	Scope             string
+	Ciphertext        []byte
+	CreatedAt         time.Time
+}
+
 type Repository interface {
 	Register(context.Context, *Device) error
 	Get(context.Context, uuid.UUID) (*Device, error)
@@ -42,4 +50,6 @@ type Repository interface {
 	ListTrusted(context.Context, uuid.UUID) ([]*Device, error)
 	ListTrustedForConversation(context.Context, uuid.UUID) ([]*Device, error)
 	Approve(context.Context, uuid.UUID, uuid.UUID) error
+	PutKeyEnvelopes(context.Context, []*KeyEnvelope) error
+	GetKeyEnvelope(context.Context, uuid.UUID, string) (*KeyEnvelope, error)
 }

@@ -1,4 +1,4 @@
-import { api, type E2EEDevice } from './api'
+import { APIError, api, type Call, type E2EEDevice } from './api'
 import type { Message } from '../types'
 
 const DB_NAME = 'pet-messenger-e2ee'
@@ -148,6 +148,90 @@ export async function approveE2EEDevice(target: E2EEDevice, token: string, userI
   const statement = encoder.encode(`pet-messenger:approve-device:v1:${identity.deviceID}:${target.id}:${target.fingerprint}`)
   const signature = await crypto.subtle.sign({ name: 'Ed25519' }, identity.signingKeyPair.privateKey, statement)
   await api.approveE2EEDevice(target.id, token, identity.deviceID, base64url(signature))
+}
+
+function callKeyAAD(callID: string, ownerDeviceID: string) {
+  return encoder.encode(`pet-messenger:call-key:v1:${callID}:${ownerDeviceID}`)
+}
+
+function callWrappingContext(callID: string, ownerDeviceID: string, recipientDeviceID: string) {
+  return `pet-messenger:call-key-wrap:v1:${callID}:${ownerDeviceID}:${recipientDeviceID}`
+}
+
+async function createCallKey(call: Call, conversationID: string, token: string, identity: StoredIdentity) {
+  const [{ devices }, { members }] = await Promise.all([
+    api.conversationE2EEDevices(conversationID, token),
+    api.members(conversationID, token),
+  ])
+  const trusted = trustedDeviceMap(devices)
+  if (!trusted.has(identity.deviceID)) throw new Error('Подтвердите это устройство перед звонком')
+  const usersWithKeys = new Set(devices.map(device => device.user_id))
+  if (members.some(member => !usersWithKeys.has(member.user_id))) {
+    throw new Error('Нельзя начать защищённый звонок: не у всех участников настроено E2EE')
+  }
+  const rawCallKey = randomBytes(32)
+  const salt = randomBytes(32)
+  const envelopes = await Promise.all([...trusted.values()].map(async device => {
+    const wrappingKey = await deriveWrappingKey(
+      identity.keyPair.privateKey,
+      fromBase64url(device.public_key!),
+      salt,
+      callWrappingContext(call.id, identity.deviceID, device.id),
+    )
+    const nonce = randomBytes(12)
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: nonce, additionalData: callKeyAAD(call.id, identity.deviceID) },
+      wrappingKey,
+      rawCallKey,
+    )
+    const envelope = encoder.encode(JSON.stringify({ s: base64url(salt), n: base64url(nonce), c: base64url(ciphertext) }))
+    return { recipient_device_id: device.id, ciphertext: base64url(envelope) }
+  }))
+  await api.putCallKeyEnvelopes(call.id, token, identity.deviceID, envelopes)
+  return rawCallKey
+}
+
+async function readCallKey(call: Call, conversationID: string, token: string, identity: StoredIdentity, attempts: number) {
+  let result: Awaited<ReturnType<typeof api.callKeyEnvelope>> | undefined
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      result = await api.callKeyEnvelope(call.id, token, identity.deviceID)
+      break
+    } catch (error) {
+      if (!(error instanceof APIError) || error.status !== 404 || attempt === attempts - 1) throw error
+      await new Promise(resolve => window.setTimeout(resolve, 250))
+    }
+  }
+  if (!result) throw new Error('Ключ защищённого звонка не получен')
+  const { devices } = await api.conversationE2EEDevices(conversationID, token)
+  const owner = trustedDeviceMap(devices).get(result.owner_device_id)
+  if (!owner?.public_key || !equalBytes(fromBase64url(owner.public_key), fromBase64url(result.owner_public_key))) {
+    throw new Error('Ключ инициатора звонка не является доверенным')
+  }
+  const envelope = JSON.parse(decoder.decode(fromBase64url(result.ciphertext))) as { s: string; n: string; c: string }
+  const wrappingKey = await deriveWrappingKey(
+    identity.keyPair.privateKey,
+    fromBase64url(result.owner_public_key),
+    fromBase64url(envelope.s),
+    callWrappingContext(call.id, result.owner_device_id, identity.deviceID),
+  )
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: fromBase64url(envelope.n), additionalData: callKeyAAD(call.id, result.owner_device_id) },
+    wrappingKey,
+    fromBase64url(envelope.c),
+  )
+  return new Uint8Array(plaintext)
+}
+
+export async function prepareCallE2EE(call: Call, conversationID: string, token: string, userID: string) {
+  if (!('RTCRtpScriptTransform' in window)) throw new Error('Браузер не поддерживает E2EE медиапотоков')
+  const identity = await ensureE2EEIdentity(token, userID)
+  try {
+    return await readCallKey(call, conversationID, token, identity, call.initiator_id === userID ? 1 : 20)
+  } catch (error) {
+    if (call.initiator_id !== userID || !(error instanceof APIError) || error.status !== 404) throw error
+    return createCallKey(call, conversationID, token, identity)
+  }
 }
 
 async function deriveWrappingKey(privateKey: CryptoKey, publicKey: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, info: string) {

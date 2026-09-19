@@ -40,6 +40,10 @@ func (f *fakeE2EERepository) Approve(_ context.Context, approver, target uuid.UU
 	f.approved = true
 	return nil
 }
+func (f *fakeE2EERepository) PutKeyEnvelopes(context.Context, []*e2ee.KeyEnvelope) error { return nil }
+func (f *fakeE2EERepository) GetKeyEnvelope(context.Context, uuid.UUID, string) (*e2ee.KeyEnvelope, error) {
+	return nil, e2ee.ErrNotFound
+}
 
 func e2eeRouter(handler *E2EEDeviceHandler, actor uuid.UUID) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -63,7 +67,7 @@ func TestE2EEDeviceHandlerApproveRequiresValidDeviceSignature(t *testing.T) {
 		approverID: {ID: approverID, UserID: actor, Status: e2ee.StatusTrusted, SigningPublicKey: publicKey},
 		targetID:   target,
 	}}
-	router := e2eeRouter(NewE2EEDeviceHandler(repo, nil), actor)
+	router := e2eeRouter(NewE2EEDeviceHandler(repo, nil, nil), actor)
 
 	invalid := doMsg(t, router, http.MethodPost, "/users/me/e2ee/devices/"+targetID.String()+"/approve",
 		`{"approver_id":"`+approverID.String()+`","signature":"`+base64.RawURLEncoding.EncodeToString(make([]byte, ed25519.SignatureSize))+`"}`)

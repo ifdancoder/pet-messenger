@@ -78,4 +78,20 @@ func TestE2EEDeviceRepositoryTrustLifecycleAndConversationDiscovery(t *testing.T
 	if !seen[first.ID] || !seen[pending.ID] || !seen[other.ID] {
 		t.Fatalf("conversation device set = %v, missing a trusted device", seen)
 	}
+
+	scope := "call:" + uuid.NewString()
+	wantCiphertext := []byte("opaque call key")
+	if err := devices.PutKeyEnvelopes(ctx, []*e2ee.KeyEnvelope{{
+		OwnerDeviceID: first.ID, RecipientDeviceID: other.ID, Scope: scope,
+		Ciphertext: wantCiphertext, CreatedAt: time.Now().UTC(),
+	}}); err != nil {
+		t.Fatalf("put call key envelope: %v", err)
+	}
+	envelope, err := devices.GetKeyEnvelope(ctx, other.ID, scope)
+	if err != nil {
+		t.Fatalf("get call key envelope: %v", err)
+	}
+	if envelope.OwnerDeviceID != first.ID || string(envelope.Ciphertext) != string(wantCiphertext) {
+		t.Fatalf("key envelope = %#v, want owner %s ciphertext %q", envelope, first.ID, wantCiphertext)
+	}
 }

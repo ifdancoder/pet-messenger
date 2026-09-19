@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	domaincall "pet-messenger/internal/domain/call"
 	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/e2ee"
 )
@@ -20,10 +21,16 @@ import (
 type E2EEDeviceHandler struct {
 	repo          e2ee.Repository
 	conversations conversation.Repository
+	calls         domaincall.Repository
 }
 
-func NewE2EEDeviceHandler(repo e2ee.Repository, conversations conversation.Repository) *E2EEDeviceHandler {
-	return &E2EEDeviceHandler{repo: repo, conversations: conversations}
+func NewE2EEDeviceHandler(repo e2ee.Repository, conversations conversation.Repository, calls domaincall.Repository) *E2EEDeviceHandler {
+	return &E2EEDeviceHandler{repo: repo, conversations: conversations, calls: calls}
+}
+
+func (h *E2EEDeviceHandler) RegisterCallRoutes(rg *gin.RouterGroup) {
+	rg.PUT("/:id/e2ee/key-envelopes", h.PutCallKeyEnvelopes)
+	rg.GET("/:id/e2ee/key-envelope", h.GetCallKeyEnvelope)
 }
 
 func (h *E2EEDeviceHandler) RegisterConversationRoutes(rg *gin.RouterGroup) {
@@ -211,4 +218,137 @@ func (h *E2EEDeviceHandler) Approve(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+type putCallKeyEnvelope struct {
+	RecipientDeviceID string `json:"recipient_device_id" binding:"required"`
+	Ciphertext        string `json:"ciphertext" binding:"required"`
+}
+
+type putCallKeyEnvelopesRequest struct {
+	OwnerDeviceID string               `json:"owner_device_id" binding:"required"`
+	Envelopes     []putCallKeyEnvelope `json:"envelopes" binding:"required,max=500,dive"`
+}
+
+func callKeyScope(callID uuid.UUID) string { return "call:" + callID.String() }
+
+func (h *E2EEDeviceHandler) callForMember(c *gin.Context, actor uuid.UUID) (*domaincall.Call, bool) {
+	callID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid call id"})
+		return nil, false
+	}
+	call, err := h.calls.GetByID(c.Request.Context(), callID)
+	if err != nil || call.Status != domaincall.StatusActive {
+		c.JSON(http.StatusNotFound, gin.H{"error": "active call not found"})
+		return nil, false
+	}
+	if _, err := h.conversations.GetMember(c.Request.Context(), call.ConversationID, actor); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not a conversation member"})
+		return nil, false
+	}
+	return call, true
+}
+
+func (h *E2EEDeviceHandler) PutCallKeyEnvelopes(c *gin.Context) {
+	actor, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	call, ok := h.callForMember(c, actor)
+	if !ok {
+		return
+	}
+	if call.InitiatorID != actor {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the call initiator can publish its key"})
+		return
+	}
+	var req putCallKeyEnvelopesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ownerID, err := uuid.Parse(req.OwnerDeviceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid owner device id"})
+		return
+	}
+	owner, err := h.repo.Get(c.Request.Context(), ownerID)
+	if err != nil || owner.UserID != actor || owner.Status != e2ee.StatusTrusted {
+		c.JSON(http.StatusForbidden, gin.H{"error": "owner device is not trusted"})
+		return
+	}
+	trusted, err := h.repo.ListTrustedForConversation(c.Request.Context(), call.ConversationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	allowed := make(map[uuid.UUID]bool, len(trusted))
+	for _, device := range trusted {
+		allowed[device.ID] = true
+	}
+	now := time.Now().UTC()
+	envelopes := make([]*e2ee.KeyEnvelope, 0, len(req.Envelopes))
+	seen := make(map[uuid.UUID]bool, len(req.Envelopes))
+	for _, item := range req.Envelopes {
+		recipientID, err := uuid.Parse(item.RecipientDeviceID)
+		ciphertext, decodeErr := base64.RawURLEncoding.DecodeString(item.Ciphertext)
+		if err != nil || decodeErr != nil || len(ciphertext) == 0 || len(ciphertext) > 4096 || !allowed[recipientID] || seen[recipientID] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid call key envelope"})
+			return
+		}
+		seen[recipientID] = true
+		envelopes = append(envelopes, &e2ee.KeyEnvelope{OwnerDeviceID: ownerID, RecipientDeviceID: recipientID, Scope: callKeyScope(call.ID), Ciphertext: ciphertext, CreatedAt: now})
+	}
+	if len(envelopes) != len(allowed) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a call key envelope is required for every trusted device"})
+		return
+	}
+	if err := h.repo.PutKeyEnvelopes(c.Request.Context(), envelopes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *E2EEDeviceHandler) GetCallKeyEnvelope(c *gin.Context) {
+	actor, ok := actorID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	call, ok := h.callForMember(c, actor)
+	if !ok {
+		return
+	}
+	recipientID, err := uuid.Parse(c.Query("device_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
+		return
+	}
+	recipient, err := h.repo.Get(c.Request.Context(), recipientID)
+	if err != nil || recipient.UserID != actor || recipient.Status != e2ee.StatusTrusted {
+		c.JSON(http.StatusForbidden, gin.H{"error": "device is not trusted"})
+		return
+	}
+	envelope, err := h.repo.GetKeyEnvelope(c.Request.Context(), recipientID, callKeyScope(call.ID))
+	if errors.Is(err, e2ee.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "call key is not ready"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	owner, err := h.repo.Get(c.Request.Context(), envelope.OwnerDeviceID)
+	if err != nil || owner.Status != e2ee.StatusTrusted || owner.UserID != call.InitiatorID {
+		c.JSON(http.StatusConflict, gin.H{"error": "call key owner is no longer trusted"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"owner_device_id":  envelope.OwnerDeviceID.String(),
+		"owner_public_key": base64.RawURLEncoding.EncodeToString(owner.PublicKey),
+		"ciphertext":       base64.RawURLEncoding.EncodeToString(envelope.Ciphertext),
+	})
 }

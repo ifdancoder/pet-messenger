@@ -3,6 +3,8 @@ import { api } from '../lib/api'
 import { getAudioContext } from '../components/CallOverlay'
 import { loadDevicePrefs, saveDevicePrefs } from '../lib/devicePrefs'
 import { applyNoiseSuppression } from '../lib/noiseSuppressor'
+import { createCallE2EETransforms, type CallE2EETransforms } from '../lib/callE2EE'
+import { prepareCallE2EE } from '../lib/e2ee'
 import type { Conversation, Session } from '../types'
 
 type Signal = { type: string; sdp?: string; candidate?: RTCIceCandidateInit; message?: string; peers?: CallPeer[] }
@@ -151,6 +153,7 @@ export function useCall(session: Session) {
   const screen = useRef<MediaStream | null>(null)
   const noiseCleanup = useRef<() => void>(() => {})
   const callID = useRef<string | null>(null)
+  const mediaE2EE = useRef<CallE2EETransforms | null>(null)
   const sessionRef = useRef(session)
   useEffect(() => { sessionRef.current = session }, [session])
   const closedByClient = useRef(true)
@@ -227,6 +230,7 @@ export function useCall(session: Session) {
     }
     signal.current?.close(); signal.current = null
     peer.current?.close(); peer.current = null
+    mediaE2EE.current?.close(); mediaE2EE.current = null
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
     local.current?.getTracks().forEach(track => track.stop()); local.current = null
     noiseCleanup.current()
@@ -278,6 +282,7 @@ export function useCall(session: Session) {
     }
     connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
     connection.ontrack = event => {
+      mediaE2EE.current?.decrypt(event.receiver)
       // A browser may put camera and screen tracks into one remote MediaStream.
       // Keep a stream per track so each tile retains its own SFU label.
       const stream = new MediaStream([event.track])
@@ -299,13 +304,13 @@ export function useCall(session: Session) {
       })
     }
 
-    if (local.current) local.current.getTracks().forEach(track => connection.addTrack(track, local.current!))
+    if (local.current) local.current.getTracks().forEach(track => mediaE2EE.current?.encrypt(connection.addTrack(track, local.current!)))
     if (screen.current) {
       // Both tracks, not just video: a screen share's own tab/system audio
       // needs republishing after a reconnect exactly as much as its video
       // does — this used to only re-attach the video half, silently
       // dropping the audio half on every reconnect during an active share.
-      screen.current.getTracks().forEach(track => connection.addTrack(track, screen.current!))
+      screen.current.getTracks().forEach(track => mediaE2EE.current?.encrypt(connection.addTrack(track, screen.current!)))
     }
 
     const socket = new WebSocket(`${join.media_ws_url}?ticket=${encodeURIComponent(join.ticket)}`)
@@ -326,6 +331,7 @@ export function useCall(session: Session) {
       const frame = JSON.parse(String(event.data)) as Signal
       if (frame.type === 'offer' && frame.sdp) {
         await connection.setRemoteDescription({ type: 'offer', sdp: frame.sdp })
+        connection.getReceivers().forEach(receiver => mediaE2EE.current?.decrypt(receiver))
         const answer = await connection.createAnswer(); await connection.setLocalDescription(answer)
         socket.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }))
       } else if (frame.type === 'answer' && frame.sdp) await connection.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
@@ -433,6 +439,9 @@ export function useCall(session: Session) {
     try {
       const { call, join } = await api.startCall(conversation.id, sessionRef.current.access_token)
       callID.current = call.id
+      const callKey = await prepareCallE2EE(call, conversation.id, sessionRef.current.access_token, sessionRef.current.user.id)
+      mediaE2EE.current?.close()
+      mediaE2EE.current = createCallE2EETransforms(call.id, callKey)
       const prefs = loadDevicePrefs()
       const { stream: audio, cleanup } = await localAudio(prefs.audioInputId, prefs.noiseSuppression, prefs.noiseSuppression ? getAudioContext() : undefined)
       noiseCleanup.current = cleanup
@@ -540,14 +549,14 @@ export function useCall(session: Session) {
       if (!track) return
       screen.current?.getTracks().forEach(previous => previous.stop())
       screen.current = display
-      peer.current.addTrack(track, display)
+      mediaE2EE.current?.encrypt(peer.current.addTrack(track, display))
       // Recorded in the same tick as addTrack, never inside the queued
       // renegotiate task that follows — see renegotiate's own comment for
       // why that ordering specifically is what keeps this race-free.
       knownKinds.current.set(track, 'screen')
       const audioTrack = display.getAudioTracks()[0]
       if (audioTrack) {
-        peer.current.addTrack(audioTrack, display)
+        mediaE2EE.current?.encrypt(peer.current.addTrack(audioTrack, display))
         // The tab/system audio track, when present, shares the screen's own
         // stream id (same source MediaStream), so it gets the same label.
         knownKinds.current.set(audioTrack, 'screen')
@@ -589,7 +598,7 @@ export function useCall(session: Session) {
         const track = media.getVideoTracks()[0]
         if (!track) return
         local.current?.addTrack(track)
-        peer.current.addTrack(track, local.current ?? media)
+        mediaE2EE.current?.encrypt(peer.current.addTrack(track, local.current ?? media))
         knownKinds.current.set(track, 'camera')
         setIsCameraOff(false)
         setLocalStream(local.current)
@@ -671,7 +680,7 @@ export function useCall(session: Session) {
         // toggleCamera() call (still seeing isCameraOff === true) would
         // acquire and publish a second, duplicate video track.
         local.current.addTrack(newTrack)
-        peer.current.addTrack(newTrack, local.current)
+        mediaE2EE.current?.encrypt(peer.current.addTrack(newTrack, local.current))
         knownKinds.current.set(newTrack, isAudio ? 'mic' : 'camera')
         if (!isAudio) setIsCameraOff(false)
         await renegotiate()
@@ -720,7 +729,7 @@ export function useCall(session: Session) {
         // onnegotiationneeded listener, so peer.current.addTrack alone
         // never reaches the peer.
         local.current.addTrack(newTrack)
-        peer.current.addTrack(newTrack, local.current)
+        mediaE2EE.current?.encrypt(peer.current.addTrack(newTrack, local.current))
         knownKinds.current.set(newTrack, 'mic')
         await renegotiate()
       }

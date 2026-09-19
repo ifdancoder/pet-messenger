@@ -133,3 +133,46 @@ func (r *E2EEDeviceRepository) Approve(ctx context.Context, approverID, targetID
 	}
 	return tx.Commit()
 }
+
+func (r *E2EEDeviceRepository) PutKeyEnvelopes(ctx context.Context, envelopes []*e2ee.KeyEnvelope) error {
+	if len(envelopes) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin put e2ee key envelopes: %w", err)
+	}
+	defer tx.Rollback()
+	for _, envelope := range envelopes {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO e2ee_key_envelopes (id,owner_device_id,recipient_device_id,scope,ciphertext,created_at)
+			VALUES ($1,$2,$3,$4,$5,$6)
+			ON CONFLICT (owner_device_id,recipient_device_id,scope)
+			DO UPDATE SET ciphertext=EXCLUDED.ciphertext,created_at=EXCLUDED.created_at`,
+			uuid.New(), envelope.OwnerDeviceID, envelope.RecipientDeviceID, envelope.Scope, envelope.Ciphertext, envelope.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("put e2ee key envelope: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit e2ee key envelopes: %w", err)
+	}
+	return nil
+}
+
+func (r *E2EEDeviceRepository) GetKeyEnvelope(ctx context.Context, recipientID uuid.UUID, scope string) (*e2ee.KeyEnvelope, error) {
+	var envelope e2ee.KeyEnvelope
+	err := r.db.QueryRowContext(ctx, `
+		SELECT owner_device_id,recipient_device_id,scope,ciphertext,created_at
+		FROM e2ee_key_envelopes
+		WHERE recipient_device_id=$1 AND scope=$2
+		ORDER BY created_at DESC LIMIT 1`, recipientID, scope).
+		Scan(&envelope.OwnerDeviceID, &envelope.RecipientDeviceID, &envelope.Scope, &envelope.Ciphertext, &envelope.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, e2ee.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get e2ee key envelope: %w", err)
+	}
+	return &envelope, nil
+}
