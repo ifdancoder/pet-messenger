@@ -24,15 +24,18 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
   return {
     encrypt(sender) {
       if (encrypted.has(sender)) return
-      ;(sender as TransformableSender).transform = new Constructor(worker, { operation: 'encrypt', key: encodedKey, callID })
+      ;(sender as TransformableSender).transform = new Constructor(worker, {
+        operation: 'encrypt', key: encodedKey, callID, mediaKind: sender.track?.kind ?? '',
+      })
       encrypted.add(sender)
     },
     decrypt(receiver) {
       if (decrypted.has(receiver)) return
-      ;(receiver as TransformableReceiver).transform = new Constructor(worker, { operation: 'decrypt', key: encodedKey, callID })
+      ;(receiver as TransformableReceiver).transform = new Constructor(worker, {
+        operation: 'decrypt', key: encodedKey, callID, mediaKind: receiver.track?.kind ?? '',
+      })
       decrypted.add(receiver)
     },
     close() { worker.terminate() },
   }
 }
-

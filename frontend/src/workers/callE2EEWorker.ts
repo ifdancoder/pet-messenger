@@ -7,7 +7,7 @@ type TransformEvent = Event & {
   transformer: {
     readable: ReadableStream<EncodedFrame>
     writable: WritableStream<EncodedFrame>
-    options: { operation: 'encrypt' | 'decrypt'; key: string; callID: string }
+    options: { operation: 'encrypt' | 'decrypt'; key: string; callID: string; mediaKind?: string }
   }
 }
 
@@ -59,9 +59,14 @@ function opusHeaderLength(data: Uint8Array) {
   return Math.min(offset, data.length)
 }
 
-function cryptoOffset(frame: EncodedFrame, data: Uint8Array) {
+function cryptoOffset(frame: EncodedFrame, data: Uint8Array, mediaKind?: string) {
   const mimeType = frame.getMetadata?.().mimeType?.toLowerCase()
-  if (mimeType === 'audio/opus' || (!mimeType && frame.type === undefined)) return opusHeaderLength(data)
+  // The transform is installed on a concrete RTCRtpSender/Receiver, so its
+  // media kind is authoritative. Do not infer audio from frame.type: audio
+  // frames have no key/delta type in the API, but some browser versions still
+  // expose a legacy value there, which made one receive direction use VP8's
+  // ten-byte header and turn valid Opus into noise.
+  if (mediaKind === 'audio' || mimeType === 'audio/opus' || (!mediaKind && !mimeType && frame.type === undefined)) return opusHeaderLength(data)
   // This SFU deliberately negotiates VP8 as its sole video codec. Preserve
   // the bytes the packetizer needs to retain key/delta frame structure.
   if (mimeType === 'video/vp8' || frame.type !== undefined) {
@@ -84,14 +89,14 @@ function authenticatedData(callID: string, clearPrefix: Uint8Array) {
 
 const workerScope = self as typeof self & { onrtctransform: ((event: TransformEvent) => void) | null }
 workerScope.onrtctransform = event => {
-  const { operation, key, callID } = event.transformer.options
+  const { operation, key, callID, mediaKind } = event.transformer.options
   const cryptoKey = crypto.subtle.importKey('raw', fromBase64url(key), { name: 'AES-GCM' }, false, operation === 'encrypt' ? ['encrypt'] : ['decrypt'])
   const transform = new TransformStream<EncodedFrame, EncodedFrame>({
     async transform(frame, controller) {
       try {
         if (operation === 'encrypt') {
           const input = new Uint8Array(frame.data)
-          const offset = cryptoOffset(frame, input)
+          const offset = cryptoOffset(frame, input, mediaKind)
           const clearPrefix = input.slice(0, offset)
           const nonce = crypto.getRandomValues(new Uint8Array(12))
           const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
@@ -109,7 +114,7 @@ workerScope.onrtctransform = event => {
           return
         }
         const input = new Uint8Array(frame.data)
-        const offset = cryptoOffset(frame, input)
+        const offset = cryptoOffset(frame, input, mediaKind)
         if (!startsWithMarker(input, offset) || input.length < offset + marker.length + 12 + 16) return
         const clearPrefix = input.slice(0, offset)
         const nonceStart = offset + marker.length
