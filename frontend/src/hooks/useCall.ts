@@ -415,7 +415,7 @@ export function useCall(session: Session) {
     })()
   }, [connectSignaling])
 
-  const start = useCallback(async (conversation: Conversation) => {
+  const start = useCallback(async (conversation: Conversation, withCamera = false) => {
     closedByClient.current = false
     reconnectAttempt.current = 0
     reconnectDeadline.current = null
@@ -428,6 +428,24 @@ export function useCall(session: Session) {
       const { stream: audio, cleanup } = await localAudio(prefs.audioInputId, prefs.noiseSuppression, prefs.noiseSuppression ? getAudioContext() : undefined)
       noiseCleanup.current = cleanup
       audio.getAudioTracks().forEach(track => knownKinds.current.set(track, 'mic'))
+      if (withCamera) {
+        try {
+          const camera = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: prefs.videoInputId ? { exact: prefs.videoInputId } : undefined },
+          })
+          const track = camera.getVideoTracks()[0]
+          if (track) {
+            audio.addTrack(track)
+            knownKinds.current.set(track, 'camera')
+            setIsCameraOff(false)
+          }
+        } catch (error) {
+          // Joining is still useful if camera permission was denied; retain
+          // the audio connection and show the same explicit failure the
+          // regular camera control would show for a real device error.
+          if (error instanceof Error && error.name !== 'NotAllowedError') setError(error.message)
+        }
+      }
       local.current = audio; setLocalStream(audio)
       connectSignaling(join)
     } catch (error) { setError(error instanceof Error ? error.message : 'Не удалось начать звонок'); await close(false) }
