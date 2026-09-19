@@ -37,7 +37,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // volume tweak survives switching between them instead of silently
   // resetting whenever the visible view unmounts.
   const [volumes, setVolumes] = useState<Record<string, number>>({})
-  const liveCalls = useLiveCalls(session, messenger.conversations)
+  const { calls: liveCalls, hasLoadedOnce: liveCallsLoaded } = useLiveCalls(session, messenger.conversations, messenger.isLoadingConversations)
   const ringingCallID = useRef<string | null>(null)
   const [dismissedCallID, setDismissedCallID] = useState<string | null>(null)
   const activeLiveCall = liveCalls.find(item => item.conversation.id === messenger.activeConversation?.id)
@@ -54,44 +54,27 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // level check (just "is there a live call I haven't dismissed") used to
   // resurrect the dialog for an already-ongoing call on every reload.
   //
-  // "Very first REAL poll" deliberately isn't the same as "the first time
-  // this effect runs". Two things make an early liveCalls snapshot
-  // unreliable to seed from:
-  //  1. While messenger.isLoadingConversations is still true, useLiveCalls
-  //     has nothing to poll yet (it maps over messenger.conversations,
-  //     which is still []) — its "no calls" is meaningless, not a real
-  //     answer, so those ticks are ignored outright.
-  //  2. Even on the very first tick after conversations finish loading,
-  //     useLiveCalls' own refresh (which reacts to that same conversations
-  //     change) hasn't had a chance to run yet — it's a separate effect
-  //     that fires after this commit and resolves its fetch afterward — so
-  //     that tick can still be one cycle stale. It's treated as a
-  //     placeholder, not the baseline.
-  // Only the NEXT tick after that (the first liveCalls snapshot guaranteed
-  // to have been fetched against the settled conversation list) becomes
-  // the real baseline. Skipping either of the two leading ticks would let
-  // an already-live call look "newly appeared" moments after mount/reload
-  // — ringing for a couple of seconds — the very bug this is fixing, just
-  // with a shorter fuse.
+  // "Very first REAL poll" needs its own readiness signal, not tick
+  // counting: useLiveCalls itself is told to skip fetching entirely while
+  // messenger.isLoadingConversations is true (see its `skip` param), so it
+  // never runs a placeholder fetch against a not-yet-real conversations
+  // list. liveCallsLoaded flips true exactly once, at the hook's first real
+  // fetch — so there's exactly one unambiguous "first snapshot" here to
+  // seed from, and no risk of a genuinely new call that starts during the
+  // loading window being silently folded into the baseline.
   const knownCallIDs = useRef<Set<string> | null>(null)
-  const hasSeededBaseline = useRef(false)
   const [justStartedCallID, setJustStartedCallID] = useState<string | null>(null)
   useEffect(() => {
-    if (messenger.isLoadingConversations) return
+    if (!liveCallsLoaded) return
     const currentIDs = new Set(liveCalls.map(item => item.call.id))
     if (knownCallIDs.current === null) {
-      knownCallIDs.current = currentIDs
-      return
-    }
-    if (!hasSeededBaseline.current) {
-      hasSeededBaseline.current = true
       knownCallIDs.current = currentIDs
       return
     }
     const newlyAppeared = liveCalls.find(item => item.call.initiator_id !== session.user.id && !knownCallIDs.current!.has(item.call.id))
     if (newlyAppeared) setJustStartedCallID(newlyAppeared.call.id)
     knownCallIDs.current = currentIDs
-  }, [liveCalls, session.user.id, messenger.isLoadingConversations])
+  }, [liveCalls, session.user.id, liveCallsLoaded])
   const incomingCall = liveCalls.find(item => item.call.id === justStartedCallID && item.call.id !== dismissedCallID)
   // The elapsed-time source of truth is the call record's own started_at
   // (polled every 2.5s by useLiveCalls), not a client-local Date.now()
