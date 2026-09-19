@@ -184,7 +184,38 @@ func (s *Service) GetLiveForConversation(ctx context.Context, actorID, conversat
 		}
 		return c, []ParticipantInfo{}, nil
 	}
-	return c, participants, nil
+	return c, s.withParticipationHistory(ctx, c.ID, participants), nil
+}
+
+// withParticipationHistory keeps the live roster useful for call UI after a
+// participant leaves. A publisher who already accepted must not become a
+// fresh ringing invitation merely because their current SFU session ended.
+// Viewer rows are intentionally excluded: opening a docked preview is not
+// accepting the call.
+func (s *Service) withParticipationHistory(ctx context.Context, callID uuid.UUID, live []ParticipantInfo) []ParticipantInfo {
+	history, err := s.calls.ListParticipants(ctx, callID)
+	if err != nil {
+		log.Printf("call: list participation history %s: %v", callID, err)
+		return live
+	}
+	accepted := make(map[string]bool, len(history))
+	for _, participant := range history {
+		if participant.Role == domaincall.RolePublisher {
+			accepted[participant.UserID.String()] = true
+		}
+	}
+	connected := make(map[string]bool, len(live))
+	for i := range live {
+		live[i].Connected = true
+		live[i].Accepted = accepted[live[i].UserID]
+		connected[live[i].UserID] = true
+	}
+	for userID := range accepted {
+		if !connected[userID] {
+			live = append(live, ParticipantInfo{UserID: userID, Role: string(domaincall.RolePublisher), TrackKinds: []string{}, Accepted: true})
+		}
+	}
+	return live
 }
 
 func (s *Service) authorizeModeration(ctx context.Context, c *domaincall.Call, actorID uuid.UUID) error {

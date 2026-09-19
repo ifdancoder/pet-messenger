@@ -57,6 +57,8 @@ type ParticipantInfo struct {
 	Muted      bool     `json:"muted"`
 	SelfMuted  bool     `json:"self_muted"`
 	TrackKinds []string `json:"track_kinds"` // "mic", "camera", "screen" — deduplicated
+	Connected  bool     `json:"connected"`
+	Accepted   bool     `json:"accepted"`
 }
 
 type JoinTicketIssuer interface {

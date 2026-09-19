@@ -77,18 +77,22 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     if (newlyAppeared) setJustStartedCallID(newlyAppeared.call.id)
     knownCallIDs.current = currentIDs
   }, [liveCalls, session.user.id, liveCallsLoaded])
-  const incomingCall = liveCalls.find(item => item.call.id === justStartedCallID && item.call.id !== dismissedCallID)
+  const incomingCall = liveCalls.find(item => item.call.id === justStartedCallID && item.call.id !== dismissedCallID && !item.participants.some(participant => participant.user_id === session.user.id && participant.accepted))
   const incomingCallID = incomingCall?.call.id
+  const incomingCallStartedAt = incomingCall?.call.started_at
 
   // Ringing is an invitation, not a persistent modal. Leaving it up after
   // the receiver has had time to notice it blocks the chat unnecessarily;
   // the docked preview remains available for joining while the call itself
   // is still live.
   useEffect(() => {
-    if (!incomingCallID || callConversation) return
-    const timeout = window.setTimeout(() => setDismissedCallID(incomingCallID), 30_000)
+    if (!incomingCallID || !incomingCallStartedAt || callConversation) return
+    // The invitation window belongs to the call event, not to an arbitrary
+    // later poll that happened to notice it.
+    const remaining = Math.max(0, new Date(incomingCallStartedAt).getTime() + 30_000 - Date.now())
+    const timeout = window.setTimeout(() => setDismissedCallID(incomingCallID), remaining)
     return () => window.clearTimeout(timeout)
-  }, [callConversation, incomingCallID])
+  }, [callConversation, incomingCallID, incomingCallStartedAt])
   // The elapsed-time source of truth is the call record's own started_at
   // (polled every 2.5s by useLiveCalls), not a client-local Date.now()
   // snapshot: a local snapshot made each participant's timer start from
@@ -97,6 +101,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // itself kept running. Looked up via callConversation rather than
   // messenger.activeConversation so it stays correct while floating.
   const currentLiveCall = callConversation ? liveCalls.find(item => item.conversation.id === callConversation.id) : undefined
+  const acceptedParticipantIDs = new Set(currentLiveCall?.participants.filter(participant => participant.accepted).map(participant => participant.user_id) ?? [])
   const connectedSince = currentLiveCall ? new Date(currentLiveCall.call.started_at).getTime() : null
   useEffect(() => {
     if (!incomingCall || callConversation || ringingCallID.current === incomingCall.call.id) return
@@ -160,7 +165,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     // A docked preview joins the SFU as a receive-only viewer. Viewing an
     // invitation is not accepting it: only a publisher removes the ringing
     // card from the caller's view.
-    waitingParticipants: callMembers.filter(member => member.user_id !== session.user.id && !peers.some(peer => peer.user_id === member.user_id && peer.role !== 'viewer')).map(member => ({ userID: member.user_id, name: `@${member.username} · ${member.display_name || member.username}`, avatarUrl: member.avatar_url })),
+    waitingParticipants: callMembers.filter(member => member.user_id !== session.user.id && !acceptedParticipantIDs.has(member.user_id) && !peers.some(peer => peer.user_id === member.user_id && peer.role !== 'viewer')).map(member => ({ userID: member.user_id, name: `@${member.username} · ${member.display_name || member.username}`, avatarUrl: member.avatar_url })),
     error: callError, isConnecting, isConnected: isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince,
     volumes, onVolumeChange: setVolume, onToggleDock: toggleDock,
     onReconnect: reconnectNow, onShare: shareScreen, onStopShare: stopScreenShare,

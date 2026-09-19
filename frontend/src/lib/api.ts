@@ -10,7 +10,7 @@ export class APIError extends Error {
 
 export type CallJoin = { ticket: string; media_ws_url: string; ice_servers: RTCIceServer[] }
 export type Call = { id: string; conversation_id: string; initiator_id: string; status: string; started_at: string }
-export type LiveParticipant = { user_id: string; role: string; muted: boolean; self_muted: boolean; track_kinds: string[] }
+export type LiveParticipant = { user_id: string; role: string; muted: boolean; self_muted: boolean; track_kinds: string[]; connected: boolean; accepted: boolean }
 
 // Called whenever a 401 triggers a silent token refresh, so the rest of the
 // app (which holds its own copy of the session in React state) can pick up

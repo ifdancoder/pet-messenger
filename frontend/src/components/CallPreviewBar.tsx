@@ -51,7 +51,7 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
   // Preview sockets are intentionally visible to the SFU roster for media
   // delivery, but they are not accepted call participants and must never be
   // rendered as one in another person's incoming docked preview.
-  const visibleParticipants = liveCall.participants.filter(participant => participant.user_id !== session.user.id && participant.role !== 'viewer')
+  const visibleParticipants = liveCall.participants.filter(participant => participant.connected && participant.user_id !== session.user.id && participant.role !== 'viewer')
   const participantIDs = new Set(visibleParticipants.map(participant => participant.user_id))
   const peers = liveCall.participants
     .filter(participant => participantIDs.has(participant.user_id))

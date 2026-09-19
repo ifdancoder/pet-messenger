@@ -64,12 +64,14 @@ type participantDTO struct {
 	Muted      bool     `json:"muted"`
 	SelfMuted  bool     `json:"self_muted"`
 	TrackKinds []string `json:"track_kinds"`
+	Connected  bool     `json:"connected"`
+	Accepted   bool     `json:"accepted"`
 }
 
 func toParticipantDTOs(participants []usecasecall.ParticipantInfo) []participantDTO {
 	out := make([]participantDTO, len(participants))
 	for i, p := range participants {
-		out[i] = participantDTO{UserID: p.UserID, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: p.TrackKinds}
+		out[i] = participantDTO{UserID: p.UserID, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: p.TrackKinds, Connected: p.Connected, Accepted: p.Accepted}
 	}
 	return out
 }

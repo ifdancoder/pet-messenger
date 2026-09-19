@@ -513,6 +513,25 @@ func TestGetLiveForConversation_IncludesParticipants(t *testing.T) {
 	}
 }
 
+func TestGetLiveForConversation_RemembersDepartedPublisher(t *testing.T) {
+	s, calls, convs, _, rooms, _, _ := newSvc(t)
+	convID, memberID := groupChat(t, convs)
+	c := mustCall(t, convID, memberID)
+	calls.seedLive(c)
+	joinedAt := time.Now().UTC()
+	leftAt := joinedAt.Add(time.Minute)
+	calls.parts[c.ID] = []*domaincall.Participant{{CallID: c.ID, UserID: memberID, Role: domaincall.RolePublisher, JoinedAt: joinedAt, LeftAt: &leftAt}}
+	rooms.listParticipants = []ParticipantInfo{}
+
+	_, participants, err := s.GetLiveForConversation(context.Background(), memberID, convID)
+	if err != nil {
+		t.Fatalf("GetLiveForConversation: %v", err)
+	}
+	if len(participants) != 1 || participants[0].UserID != memberID.String() || participants[0].Connected || !participants[0].Accepted {
+		t.Fatalf("participants = %+v, want departed accepted publisher", participants)
+	}
+}
+
 func TestGetLiveForConversation_MediaNodeGone_EmptyNotError(t *testing.T) {
 	s, calls, convs, reg, _, _, _ := newSvc(t)
 	convID, memberID := groupChat(t, convs)
