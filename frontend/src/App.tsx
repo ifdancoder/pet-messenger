@@ -12,7 +12,7 @@ import { useMessenger } from './hooks/useMessenger'
 import { useCall } from './hooks/useCall'
 import { useLiveCalls } from './hooks/useLiveCall'
 import { clearSession, readSession, saveSession } from './lib/session'
-import { startIncomingRingtone } from './lib/sounds'
+import { startIncomingRingtone, stopIncomingRingtone } from './lib/sounds'
 import { api, setSessionRefreshHandler } from './lib/api'
 import { ensureE2EEIdentity } from './lib/e2ee'
 import type { Conversation, MemberProfile, Session } from './types'
@@ -128,7 +128,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
       .catch(() => { if (current) { setCallMembers([]); setCallParticipantNames({}); setCallParticipantAvatars({}) } })
     return () => { current = false; setCallMembers([]) }
   }, [callConversation, session.access_token])
-  const openCall = useCallback((conversation: Conversation, withCamera = false) => { setCallMembers([]); setCallParticipantNames({}); setCallParticipantAvatars({}); setJoinWithCamera(withCamera); setFullScreen(true); setCallConversation(conversation) }, [])
+  const openCall = useCallback((conversation: Conversation, withCamera = false) => { stopIncomingRingtone(); setCallMembers([]); setCallParticipantNames({}); setCallParticipantAvatars({}); setJoinWithCamera(withCamera); setFullScreen(true); setCallConversation(conversation) }, [])
   // Leaving a call only closes this participant's media session. The room is
   // still live for everyone else, so useLiveCalls can immediately replace
   // this view with its docked incoming preview instead of making the call

@@ -1,6 +1,8 @@
 type Tone = 'message' | 'member' | 'call'
 
 let context: AudioContext | null = null
+let incomingRingtoneTimer: number | null = null
+const incomingRingtoneOscillators = new Set<OscillatorNode>()
 
 function audioContext() {
   if (!context) context = new AudioContext()
@@ -47,18 +49,32 @@ function scheduleRing(audio: AudioContext, startAt: number) {
     gain.gain.exponentialRampToValueAtTime(0.065, at + 0.018)
     gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.15)
     oscillator.connect(gain).connect(audio.destination)
+    incomingRingtoneOscillators.add(oscillator)
+    oscillator.addEventListener('ended', () => incomingRingtoneOscillators.delete(oscillator), { once: true })
     oscillator.start(at)
     oscillator.stop(at + 0.17)
   })
 }
 
+export function stopIncomingRingtone() {
+  if (incomingRingtoneTimer !== null) {
+    window.clearInterval(incomingRingtoneTimer)
+    incomingRingtoneTimer = null
+  }
+  for (const oscillator of incomingRingtoneOscillators) {
+    try { oscillator.stop() } catch { /* already stopped */ }
+  }
+  incomingRingtoneOscillators.clear()
+}
+
 export function startIncomingRingtone() {
   try {
+    stopIncomingRingtone()
     const audio = audioContext()
     const play = () => scheduleRing(audio, audio.currentTime + 0.02)
     play()
-    const timer = window.setInterval(play, RING_INTERVAL_MS)
-    return () => window.clearInterval(timer)
+    incomingRingtoneTimer = window.setInterval(play, RING_INTERVAL_MS)
+    return stopIncomingRingtone
   } catch {
     return () => undefined
   }
