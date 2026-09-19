@@ -17,9 +17,32 @@ type E2EEDeviceRepository struct{ db *sql.DB }
 func NewE2EEDeviceRepository(db *sql.DB) e2ee.Repository { return &E2EEDeviceRepository{db: db} }
 
 func (r *E2EEDeviceRepository) Register(ctx context.Context, d *e2ee.Device) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO e2ee_devices (id,user_id,public_key,fingerprint,label,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, d.ID, d.UserID, d.PublicKey, d.Fingerprint, d.Label, d.Status, d.CreatedAt)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin register e2ee device: %w", err)
+	}
+	defer tx.Rollback()
+	// Serialize the account's first-device decision. Without this row lock two
+	// simultaneous registrations could both observe zero trusted devices.
+	var lockedUser uuid.UUID
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE`, d.UserID).Scan(&lockedUser); err != nil {
+		return fmt.Errorf("lock e2ee device owner: %w", err)
+	}
+	var hasTrusted bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM e2ee_devices WHERE user_id=$1 AND status='trusted' AND revoked_at IS NULL)`, d.UserID).Scan(&hasTrusted); err != nil {
+		return fmt.Errorf("check trusted e2ee device: %w", err)
+	}
+	if hasTrusted {
+		d.Status = e2ee.StatusPending
+	} else {
+		d.Status = e2ee.StatusTrusted
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO e2ee_devices (id,user_id,public_key,fingerprint,label,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, d.ID, d.UserID, d.PublicKey, d.Fingerprint, d.Label, d.Status, d.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert e2ee device: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit e2ee device: %w", err)
 	}
 	return nil
 }
@@ -53,7 +76,19 @@ func (r *E2EEDeviceRepository) Get(ctx context.Context, id uuid.UUID) (*e2ee.Dev
 }
 
 func (r *E2EEDeviceRepository) ListTrusted(ctx context.Context, userID uuid.UUID) ([]*e2ee.Device, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,user_id,public_key,fingerprint,label,status,created_at FROM e2ee_devices WHERE user_id=$1 AND status='trusted' AND revoked_at IS NULL ORDER BY created_at`, userID)
+	return r.list(ctx, `SELECT id,user_id,public_key,fingerprint,label,status,created_at FROM e2ee_devices WHERE user_id=$1 AND status='trusted' AND revoked_at IS NULL ORDER BY created_at`, userID)
+}
+
+func (r *E2EEDeviceRepository) ListForUser(ctx context.Context, userID uuid.UUID) ([]*e2ee.Device, error) {
+	return r.list(ctx, `SELECT id,user_id,public_key,fingerprint,label,status,created_at FROM e2ee_devices WHERE user_id=$1 AND revoked_at IS NULL ORDER BY created_at`, userID)
+}
+
+func (r *E2EEDeviceRepository) ListTrustedForConversation(ctx context.Context, conversationID uuid.UUID) ([]*e2ee.Device, error) {
+	return r.list(ctx, `SELECT d.id,d.user_id,d.public_key,d.fingerprint,d.label,d.status,d.created_at FROM e2ee_devices d JOIN conversation_members m ON m.user_id=d.user_id WHERE m.conversation_id=$1 AND d.status='trusted' AND d.revoked_at IS NULL ORDER BY d.user_id,d.created_at`, conversationID)
+}
+
+func (r *E2EEDeviceRepository) list(ctx context.Context, query string, id uuid.UUID) ([]*e2ee.Device, error) {
+	rows, err := r.db.QueryContext(ctx, query, id)
 	if err != nil {
 		return nil, err
 	}

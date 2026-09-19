@@ -37,6 +37,8 @@ type Device struct {
 type Repository interface {
 	Register(context.Context, *Device) error
 	Get(context.Context, uuid.UUID) (*Device, error)
+	ListForUser(context.Context, uuid.UUID) ([]*Device, error)
 	ListTrusted(context.Context, uuid.UUID) ([]*Device, error)
+	ListTrustedForConversation(context.Context, uuid.UUID) ([]*Device, error)
 	Approve(context.Context, uuid.UUID, uuid.UUID) error
 }

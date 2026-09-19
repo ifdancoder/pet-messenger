@@ -156,6 +156,22 @@ func TestNewTextContentBoundary(t *testing.T) {
 	}
 }
 
+func TestNewTextAllowsOpaqueEncryptedEnvelopeOverPlaintextLimit(t *testing.T) {
+	content := "e2ee:v1:" + strings.Repeat("x", 8_000)
+	m, err := message.NewText(uuid.New(), uuid.New(), content, nil)
+	if err != nil {
+		t.Fatalf("encrypted envelope should use its own wire-size limit: %v", err)
+	}
+	if m.Content != content {
+		t.Fatal("encrypted envelope was changed")
+	}
+
+	tooLarge := "e2ee:v1:" + strings.Repeat("x", 256*1024)
+	if _, err := message.NewText(uuid.New(), uuid.New(), tooLarge, nil); !errors.Is(err, message.ErrContentTooLong) {
+		t.Fatalf("oversized encrypted envelope error = %v, want ErrContentTooLong", err)
+	}
+}
+
 func TestNewSystem(t *testing.T) {
 	conv := uuid.New()
 

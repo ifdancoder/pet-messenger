@@ -68,6 +68,15 @@ func (e SystemEvent) Valid() bool {
 // maxContentRunes bounds message content length, measured in runes.
 const maxContentRunes = 4096
 
+// Encrypted messages carry one wrapped content key per trusted recipient
+// device. Their wire representation is consequently larger than the original
+// plaintext, especially in group chats. The server treats it as opaque data
+// but still applies a hard bound to protect storage and realtime fan-out.
+const (
+	encryptedContentPrefix   = "e2ee:v1:"
+	maxEncryptedContentBytes = 256 * 1024
+)
+
 // Domain errors.
 var (
 	ErrEmptyContent        = errors.New("message: content must not be empty")
@@ -136,7 +145,9 @@ func validateContent(raw string) (string, error) {
 	switch {
 	case c == "":
 		return "", ErrEmptyContent
-	case utf8.RuneCountInString(c) > maxContentRunes:
+	case strings.HasPrefix(c, encryptedContentPrefix) && len(c) > maxEncryptedContentBytes:
+		return "", ErrContentTooLong
+	case !strings.HasPrefix(c, encryptedContentPrefix) && utf8.RuneCountInString(c) > maxContentRunes:
 		return "", ErrContentTooLong
 	default:
 		return c, nil

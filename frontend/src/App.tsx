@@ -26,7 +26,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // Key generation is local and non-extractable. A failure is deliberately
   // non-fatal here: the E2EE settings flow surfaces it before protected chats
   // become available, while the rest of the messenger remains usable.
-  useEffect(() => { void ensureE2EEIdentity(session.access_token).catch(() => undefined) }, [session.access_token])
+  useEffect(() => { void ensureE2EEIdentity(session.access_token, session.user.id).catch(() => undefined) }, [session.access_token, session.user.id])
   const [callConversation, setCallConversation] = useState<Conversation | null>(null)
   const [joinWithCamera, setJoinWithCamera] = useState(false)
   const [callMembers, setCallMembers] = useState<MemberProfile[]>([])

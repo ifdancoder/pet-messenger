@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { APIError, api } from '../lib/api'
+import { decryptMessages, encryptMessage } from '../lib/e2ee'
 import { clearSession } from '../lib/session'
 import { playTone } from '../lib/sounds'
 import type { Conversation, Message, Session } from '../types'
@@ -58,7 +59,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     try {
       const result = await api.messages(conversation.id, session.access_token)
       if (requestID === messageRequestID.current) {
-        const ordered = chronological(result.messages)
+        const ordered = chronological(await decryptMessages(result.messages, conversation.id, session.access_token, session.user.id))
         setMessages(ordered)
         const latest = ordered.at(-1)
         if (latest && markedRead.current[conversation.id] !== latest.id) {
@@ -69,7 +70,7 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
     }
     catch (error) { handleError(error) }
     finally { if (showLoading && requestID === messageRequestID.current) setIsLoadingMessages(false) }
-  }, [handleError, session.access_token])
+  }, [handleError, session.access_token, session.user.id])
 
   useEffect(() => { void Promise.resolve().then(loadConversations); void Promise.resolve().then(loadNotifications) }, [loadConversations, loadNotifications])
   useEffect(() => { if (activeConversation) void Promise.resolve().then(() => loadMessages(activeConversation)) }, [activeConversation, loadMessages])
@@ -100,24 +101,25 @@ export function useMessenger(session: Session, onSessionExpired: () => void) {
   const sendMessage = useCallback(async (content: string) => {
     if (!activeConversation) return false
     try {
-      const message = await api.sendMessage(activeConversation.id, content, session.access_token)
-      setMessages(previous => chronological([...previous, message])); void loadConversations(); setError('')
+      const encrypted = await encryptMessage(activeConversation.id, content, session.access_token, session.user.id)
+      const message = await api.sendMessage(activeConversation.id, encrypted, session.access_token)
+      setMessages(previous => chronological([...previous, { ...message, content }])); void loadConversations(); setError('')
       return true
     } catch (error) { handleError(error); return false }
-  }, [activeConversation, handleError, loadConversations, session.access_token])
+  }, [activeConversation, handleError, loadConversations, session.access_token, session.user.id])
 
   const receiveRealtimeFrame = useCallback((frame: { type: string; conversation_id?: string; message?: Message }) => {
     if (!frame.conversation_id || frame.conversation_id !== activeConversation?.id) return
     if (frame.type === 'message.created' && frame.message) {
-      const message = frame.message
-      if (message.sender_id !== session.user.id) {
+      const wireMessage = frame.message
+      if (wireMessage.sender_id !== session.user.id) void decryptMessages([wireMessage], activeConversation.id, session.access_token, session.user.id).then(([message]) => {
         setMessages(previous => chronological([...previous, message]))
         playTone(message.type === 'system' ? 'member' : 'message')
         if (markedRead.current[activeConversation.id] !== message.id) {
           markedRead.current[activeConversation.id] = message.id
           void api.markRead(activeConversation.id, message.id, session.access_token).catch(handleError)
         }
-      }
+      }).catch(handleError)
       void loadConversations()
     } else if (frame.type === 'message.updated' || frame.type === 'message.deleted') void loadMessages(activeConversation, false)
   }, [activeConversation, handleError, loadConversations, loadMessages, session.access_token, session.user.id])

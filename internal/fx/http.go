@@ -38,7 +38,7 @@ func newGinEngine(
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORS.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowHeaders:     []string{"Accept", "Authorization", "Content-Type"},
+		AllowHeaders:     []string{"Accept", "Authorization", "Content-Type", "X-E2EE-Device-ID"},
 		ExposeHeaders:    []string{"Location"},
 		AllowCredentials: true,
 	}))
@@ -58,6 +58,7 @@ func newGinEngine(
 	convHandler.RegisterRoutes(conversations)
 	msgHandler.RegisterRoutes(conversations)
 	callHandler.RegisterConversationRoutes(conversations)
+	e2eeDeviceHandler.RegisterConversationRoutes(conversations)
 
 	calls := r.Group("/calls")
 	calls.Use(httpadapter.AuthMiddleware(verifier))

@@ -11,7 +11,7 @@ export class APIError extends Error {
 export type CallJoin = { ticket: string; media_ws_url: string; ice_servers: RTCIceServer[] }
 export type Call = { id: string; conversation_id: string; initiator_id: string; status: string; started_at: string }
 export type LiveParticipant = { user_id: string; role: string; muted: boolean; self_muted: boolean; track_kinds: string[]; connected: boolean; accepted: boolean }
-export type E2EEDevice = { id: string; fingerprint: string; label: string; status: 'pending' | 'trusted' | 'revoked'; created_at: string }
+export type E2EEDevice = { id: string; user_id: string; public_key?: string; fingerprint: string; label: string; status: 'pending' | 'trusted' | 'revoked'; created_at: string }
 
 // Called whenever a 401 triggers a silent token refresh, so the rest of the
 // app (which holds its own copy of the session in React state) can pick up
@@ -96,5 +96,6 @@ export const api = {
   uploadAvatar: (file: File, token: string) => { const form = new FormData(); form.append('avatar', file); return request<User>('/users/me/avatar', token, { method: 'POST', body: form }) },
   registerE2EEDevice: (device: { id: string; public_key: string; label: string }, token: string) => request<E2EEDevice>('/users/me/e2ee/devices', token, { method: 'POST', body: JSON.stringify(device) }),
   e2eeDevices: (token: string) => request<{ devices: E2EEDevice[] }>('/users/me/e2ee/devices', token),
+  conversationE2EEDevices: (conversationID: string, token: string) => request<{ devices: E2EEDevice[] }>(`/conversations/${conversationID}/e2ee/devices`, token),
   approveE2EEDevice: (id: string, token: string, approverID: string) => request<void>(`/users/me/e2ee/devices/${id}/approve`, token, { method: 'POST', headers: { 'X-E2EE-Device-ID': approverID } }),
 }
