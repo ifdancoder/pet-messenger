@@ -78,6 +78,17 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     knownCallIDs.current = currentIDs
   }, [liveCalls, session.user.id, liveCallsLoaded])
   const incomingCall = liveCalls.find(item => item.call.id === justStartedCallID && item.call.id !== dismissedCallID)
+  const incomingCallID = incomingCall?.call.id
+
+  // Ringing is an invitation, not a persistent modal. Leaving it up after
+  // the receiver has had time to notice it blocks the chat unnecessarily;
+  // the docked preview remains available for joining while the call itself
+  // is still live.
+  useEffect(() => {
+    if (!incomingCallID || callConversation) return
+    const timeout = window.setTimeout(() => setDismissedCallID(incomingCallID), 30_000)
+    return () => window.clearTimeout(timeout)
+  }, [callConversation, incomingCallID])
   // The elapsed-time source of truth is the call record's own started_at
   // (polled every 2.5s by useLiveCalls), not a client-local Date.now()
   // snapshot: a local snapshot made each participant's timer start from

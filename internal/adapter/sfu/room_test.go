@@ -43,6 +43,12 @@ func TestRoomDrainsAfterSoloTimeout(t *testing.T) {
 	}
 }
 
+func TestDefaultSoloTimeoutIsTwoMinutes(t *testing.T) {
+	if defaultSoloTimeout != 2*time.Minute {
+		t.Fatalf("defaultSoloTimeout = %s, want 2m", defaultSoloTimeout)
+	}
+}
+
 func TestRoomDoesNotDrainWithTwoParticipants(t *testing.T) {
 	api, err := newWebRTCAPI()
 	if err != nil {

@@ -20,12 +20,12 @@ const (
 	// the caller's own JoinSession completes — a real, if short, window
 	// where a brand-new call legitimately has 0 participants.
 	defaultIdleTimeout = 30 * time.Second
-	// defaultSoloTimeout is how long a room with exactly one participant
-	// (nobody answered yet, or everyone else already left) lingers before
+	// defaultSoloTimeout is how long a room with exactly one accepted
+	// participant (nobody answered yet, or everyone else already left) lingers before
 	// it closes itself the same way. A room with 2+ participants never
 	// times out at all — only these two counts (0 and 1) ever start a
 	// timer.
-	defaultSoloTimeout = 60 * time.Second
+	defaultSoloTimeout = 2 * time.Minute
 	// cmdBuffer sizes the actor's command channel. Pion callbacks and WS reads
 	// enqueue here, so it is generous enough that a burst of trickled
 	// candidates never blocks a callback goroutine.
