@@ -23,50 +23,14 @@ function fromBase64url(value: string) {
   return bytes
 }
 
-function opusSizeFieldLength(data: Uint8Array, offset: number) {
-  if (offset >= data.length) return 0
-  return data[offset] < 252 || offset + 1 >= data.length ? 1 : 2
-}
-
-// Opus packets can contain several frames. In that case the framing header
-// extends beyond the TOC byte and carries a frame count, padding length and
-// (for VBR) individual frame sizes. The browser packetizer reads this after
-// the script transform, before RTP is produced, so encrypting any part of it
-// makes otherwise valid audio intermittently sound like digital crackle.
-function opusHeaderLength(data: Uint8Array) {
-  if (!data.length) return 0
-  const code = data[0] & 0x03
-  if (code < 2) return 1
-  if (code === 2) return Math.min(data.length, 1 + opusSizeFieldLength(data, 1))
-  if (data.length < 2) return data.length
-
-  const frameCountByte = data[1]
-  const frameCount = frameCountByte & 0x3f
-  const hasPadding = (frameCountByte & 0x40) !== 0
-  const isVBR = (frameCountByte & 0x80) !== 0
-  let offset = 2
-  if (hasPadding) {
-    while (offset < data.length) {
-      const paddingByte = data[offset++]
-      if (paddingByte !== 255) break
-    }
-  }
-  if (isVBR) {
-    for (let index = 0; index < frameCount - 1 && offset < data.length; index += 1) {
-      offset += opusSizeFieldLength(data, offset)
-    }
-  }
-  return Math.min(offset, data.length)
-}
-
 function cryptoOffset(frame: EncodedFrame, data: Uint8Array, mediaKind?: string) {
   const mimeType = frame.getMetadata?.().mimeType?.toLowerCase()
   // The transform is installed on a concrete RTCRtpSender/Receiver, so its
-  // media kind is authoritative. Do not infer audio from frame.type: audio
-  // frames have no key/delta type in the API, but some browser versions still
-  // expose a legacy value there, which made one receive direction use VP8's
-  // ten-byte header and turn valid Opus into noise.
-  if (mediaKind === 'audio' || mimeType === 'audio/opus' || (!mediaKind && !mimeType && frame.type === undefined)) return opusHeaderLength(data)
+  // media kind is authoritative. Audio encoded frames must stay opaque: a
+  // marker/nonce/tag changes their length, so retaining Opus framing bytes
+  // would leave stale frame-size fields in aggregated packets and produce
+  // audible corruption. The WebRTC packetizer owns the codec framing here.
+  if (mediaKind === 'audio' || mimeType?.startsWith('audio/')) return 0
   // This SFU deliberately negotiates VP8 as its sole video codec. Preserve
   // the bytes the packetizer needs to retain key/delta frame structure.
   if (mimeType === 'video/vp8' || frame.type !== undefined) {
