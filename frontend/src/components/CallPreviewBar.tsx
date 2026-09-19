@@ -80,6 +80,7 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
       waitingParticipants={[]}
       incomingActions={{ onAcceptAudio: () => onJoin(false), onAcceptCamera: () => onJoin(true) }}
       showLocal={false}
+      showSpeaking={false}
       error=""
       isConnecting={false}
       isConnected

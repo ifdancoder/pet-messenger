@@ -216,6 +216,15 @@ export function useCall(session: Session) {
     reconnectDeadline.current = null
     setReconnectExhausted(false)
     const id = callID.current
+    // Tell the room explicitly before closing the transport.  A normal
+    // WebSocket close is also handled server-side, but its delivery is
+    // asynchronous; the bye frame removes this participant from the roster
+    // before the UI on other accounts next polls the live call.  Without it
+    // a recently-left caller could remain visible in an incoming preview.
+    const socket = signal.current
+    if (socket?.readyState === WebSocket.OPEN) {
+      try { socket.send(JSON.stringify({ type: 'bye' })) } catch { /* close still releases the server session */ }
+    }
     signal.current?.close(); signal.current = null
     peer.current?.close(); peer.current = null
     screen.current?.getTracks().forEach(track => track.stop()); screen.current = null
