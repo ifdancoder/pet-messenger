@@ -35,8 +35,8 @@ function ParticipantPreviewTile({ name, avatarUrl, token, videoStream }: { name:
     <header><span className="call-participant__identity-text">{name}</span></header>
     <div className="call-participant__media">
       {videoStream
-        ? <video ref={video} autoPlay playsInline muted className="call-preview__video" />
-        : <Avatar subject={{ avatarUrl, displayName: name }} token={token} className="call-preview__avatar" />}
+        ? <figure className="call-video"><video ref={video} autoPlay playsInline muted /></figure>
+        : <figure className="call-video call-video--identity"><Avatar subject={{ avatarUrl, displayName: name }} token={token} className="identity-tile__mark" /></figure>}
     </div>
   </article>
 }
@@ -78,7 +78,6 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
       </div>
     </div>
     <footer>
-      <span className="call-preview__hint">Выберите, как войти</span>
       <div className="call-overlay__controls">
         <button type="button" className="call-preview__accept" aria-label="Принять аудиозвонок" data-tooltip="Принять аудиозвонок" onClick={() => onJoin(false)}><PhoneIcon /></button>
         <button type="button" className="call-preview__accept" aria-label="Принять с камерой" data-tooltip="Принять с камерой" onClick={() => onJoin(true)}><CameraIcon /></button>
