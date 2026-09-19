@@ -185,10 +185,11 @@
    geometry and participant tiles identical to the joined docked view; the
    two green join buttons are the only intentional control difference. */
 .call-preview-bar{height:auto;max-height:45vh}.call-preview__tiles{height:auto;min-height:0}.call-preview__tiles .call-tile-track{padding:20px 30px}.call-preview__participant{min-height:0}.call-preview__participant .call-participant__media{min-height:0}.call-preview__participant .call-video{width:100%;min-height:0}.call-preview__participant .call-video video{width:100%;height:100%;object-fit:cover}.call-preview-bar>footer{min-height:0}
-/* An invitation should feel like a live presence, not an alarm: a slow
-   breathing lift, tiny turn and soft glow make the caller's waiting card
-   noticeable without the harsh side-to-side jitter. */
-.call-participant--ringing{animation:call-waiting-breathe 2.1s cubic-bezier(.45,.05,.55,.95) infinite;box-shadow:0 0 0 1px rgb(94 197 130 / 15%)}@keyframes call-waiting-breathe{0%,100%{transform:translate3d(0,0,0) rotate(0) scale(1);box-shadow:0 0 0 1px rgb(94 197 130 / 12%),0 0 0 rgb(94 197 130 / 0%)}35%{transform:translate3d(1px,-3px,0) rotate(.35deg) scale(1.012);box-shadow:0 0 0 4px rgb(94 197 130 / 8%),0 12px 26px rgb(59 165 92 / 16%)}65%{transform:translate3d(-1px,-1px,0) rotate(-.2deg) scale(1.006);box-shadow:0 0 0 2px rgb(94 197 130 / 10%),0 7px 18px rgb(59 165 92 / 10%)}}
+/* An unanswered participant needs one unmistakable, contained cue: a quick
+   orbiting nudge plus a green beacon around their card. It is deliberately
+   stronger than normal call motion, while reduced-motion users keep a still
+   outline below. */
+.call-participant--ringing{animation:call-waiting-beacon .82s cubic-bezier(.36,.07,.2,1) infinite;box-shadow:0 0 0 2px rgb(94 197 130 / 42%),0 0 18px rgb(59 165 92 / 24%)}@keyframes call-waiting-beacon{0%,100%{transform:translate3d(0,0,0) rotate(0) scale(1);box-shadow:0 0 0 2px rgb(94 197 130 / 34%),0 0 10px rgb(59 165 92 / 12%)}24%{transform:translate3d(3px,-5px,0) rotate(.7deg) scale(1.022);box-shadow:0 0 0 5px rgb(94 197 130 / 25%),0 14px 32px rgb(59 165 92 / 28%)}52%{transform:translate3d(-3px,1px,0) rotate(-.55deg) scale(1.014);box-shadow:0 0 0 7px rgb(94 197 130 / 14%),0 8px 24px rgb(59 165 92 / 20%)}76%{transform:translate3d(2px,-2px,0) rotate(.3deg) scale(1.018);box-shadow:0 0 0 4px rgb(94 197 130 / 30%),0 12px 28px rgb(59 165 92 / 26%)}}
 @media (prefers-reduced-motion:reduce){.call-participant--ringing{animation:none}}
 .settings-modal-backdrop{position:fixed;inset:0;z-index:21;display:grid;place-items:center;padding:20px;background:rgb(8 6 4 / 55%);backdrop-filter:blur(3px)}
 .settings-modal{display:grid;gap:18px;width:min(480px,100%);max-height:min(600px,90vh);overflow:auto;padding:30px 28px;border:1px solid rgb(255 255 255 / 18%);border-radius:var(--radius-lg);background:repeating-linear-gradient(135deg,rgb(255 255 255 / 2.5%) 0 2px,transparent 2px 6px),rgb(28 25 21 / 97%);box-shadow:var(--shadow-lg);color:var(--ink)}

@@ -91,7 +91,10 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
       isCameraOff
       isSharingScreen={false}
       reconnectExhausted={false}
-      connectedSince={new Date(liveCall.call.started_at).getTime()}
+      // This is an invitation, not a joined call for this account. Showing
+      // the global call clock here made it look as if the recipient had
+      // already connected.
+      connectedSince={null}
       volumes={{}}
       onVolumeChange={() => {}}
       docked

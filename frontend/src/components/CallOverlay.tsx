@@ -803,6 +803,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   // share has two independent audio sources, either of which should count
   // toward them being "currently speaking" for ordering below.
   const [speaking, setSpeaking] = useState<Record<string, boolean>>({})
+  const isIncomingPreview = incomingActions !== undefined
   const openVolumeMenu = (event: MouseEvent, key: string, label: string) => {
     event.preventDefault()
     setVolumeMenu({ x: event.clientX, y: event.clientY, key, label })
@@ -960,7 +961,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
             <div className="call-tile-spacer" ref={trailSpacerRef} />
           </div>
           <button type="button" className="call-pager-btn call-pager-next" disabled={nextDisabled} onClick={pageNext} aria-label="Следующие участники"><PagerIcon direction="next" /></button>
-          {isConnected && otherPeers.length === 0 && waitingParticipants.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}
+          {!isIncomingPreview && isConnected && otherPeers.length === 0 && waitingParticipants.length === 0 ? <div className="call-waiting">Ожидаем собеседника</div> : null}
         </div>}
     <footer>
       {/* The status icon lives here, not floating over the whole overlay,
