@@ -24,15 +24,27 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveCall.call.id])
 
-  const peers = liveCall.participants.map(participant => ({ ...participant, tracks: [] }))
-  const names = { ...participantNames, [session.user.id]: `@${session.user.username} · ${session.user.display_name || session.user.username}` }
-  const avatars = session.user.avatar_url ? { ...participantAvatars, [session.user.id]: session.user.avatar_url } : participantAvatars
+  // A viewer session itself appears in the room roster after preview.start.
+  // The pre-accept dock must show who initiated the call, not the recipient
+  // or a transient viewer/observer entry that happens to share the room.
+  const peers = liveCall.participants
+    .filter(participant => participant.user_id === liveCall.call.initiator_id)
+    .map(participant => ({ ...participant, tracks: [] }))
+  const conversation = liveCall.conversation
+  const initiatorName = conversation.kind === 'direct'
+    ? `@${conversation.direct_username || conversation.direct_display_name || 'Собеседник'} · ${conversation.direct_display_name || conversation.direct_username || 'Собеседник'}`
+    : participantNames[liveCall.call.initiator_id] ?? 'Инициатор звонка'
+  const names = { ...participantNames, [liveCall.call.initiator_id]: initiatorName }
+  const avatars = conversation.kind === 'direct' && conversation.direct_avatar_url
+    ? { ...participantAvatars, [liveCall.call.initiator_id]: conversation.direct_avatar_url }
+    : participantAvatars
+  const initiatorStreams = preview.remoteStreams.filter(stream => stream.ownerID === liveCall.call.initiator_id)
 
   return <div className="call-docked-wrapper call-preview-bar">
     <CallOverlay
       localStream={null}
       localScreenStream={null}
-      remoteStreams={preview.remoteStreams}
+      remoteStreams={initiatorStreams}
       peers={peers}
       currentUserID={session.user.id}
       token={session.access_token}
@@ -41,6 +53,7 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
       canModerate={false}
       waitingParticipants={[]}
       incomingActions={{ onAcceptAudio: () => onJoin(false), onAcceptCamera: () => onJoin(true) }}
+      showLocal={false}
       error=""
       isConnecting={false}
       isConnected

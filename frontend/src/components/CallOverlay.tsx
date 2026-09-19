@@ -775,7 +775,7 @@ function useCallGrid(orderedKeys: string[]) {
 }
 type WaitingParticipant = { userID: string; name: string; avatarUrl?: string }
 type IncomingActions = { onAcceptAudio: () => void; onAcceptCamera: () => void }
-type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; token: string; participantNames: Record<string, string>; participantAvatars: Record<string, string>; canModerate: boolean; waitingParticipants: WaitingParticipant[]; incomingActions?: IncomingActions; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; token: string; participantNames: Record<string, string>; participantAvatars: Record<string, string>; canModerate: boolean; waitingParticipants: WaitingParticipant[]; incomingActions?: IncomingActions; showLocal?: boolean; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
 // CallOverlay is the one call view for both full-screen and docked — docked
 // is the exact same component and behavior, just laid out at its own
 // smaller, dedicated scale (its own --tile-w and control sizes, see
@@ -785,7 +785,7 @@ type Props = { localStream: MediaStream | null; localScreenStream: MediaStream |
 // whichever of the three views (this, docked or full; or the floating
 // MiniCallBar) is current, is what keeps audio and PiP alive across
 // switches between them — this component never touches either itself.
-export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, token, participantNames, participantAvatars, canModerate, waitingParticipants, incomingActions, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, token, participantNames, participantAvatars, canModerate, waitingParticipants, incomingActions, showLocal = true, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const elapsed = useElapsed(connectedSince)
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
@@ -840,7 +840,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
   // actually starting or stopping speaking moves them past a neighbor.
   const orderedRemoteKeys = [...sectionKeys].sort((a, b) => Number(isSpeakingKey(b)) - Number(isSpeakingKey(a)))
   const waitingKeys = waitingParticipants.map(participant => `waiting:${participant.userID}`)
-  const { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, requestScrollToKey } = useCallGrid(['local', ...orderedRemoteKeys, ...waitingKeys])
+  const { trackRef, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, requestScrollToKey } = useCallGrid([...(showLocal ? ['local'] : []), ...orderedRemoteKeys, ...waitingKeys])
   const allStreams = [...local, ...[...sections.values()].flat()]
   const focused = focusedStreamID ? allStreams.find(stream => stream.id === focusedStreamID) : undefined
   const isLocal = (id: string) => id === 'local-camera' || id === 'local-screen'
@@ -905,7 +905,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
           <button type="button" className="call-pager-btn call-pager-prev" disabled={prevDisabled} onClick={pagePrev} aria-label="Предыдущие участники"><PagerIcon direction="prev" /></button>
           <div className="call-tile-track" ref={trackRef}>
             <div className="call-tile-spacer" ref={leadSpacerRef} />
-            <ParticipantSection gridRef={registerCard('local')} title={nameFor(currentUserID, 'Вы')} avatarUrl={avatarFor(currentUserID)} token={token} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} />
+            {showLocal ? <ParticipantSection gridRef={registerCard('local')} title={nameFor(currentUserID, 'Вы')} avatarUrl={avatarFor(currentUserID)} token={token} streams={local} tracks={localTracks} muted micMuted={isMuted} focusedID={focusedStreamID} onFocus={toggleFocus} /> : null}
             {orderedRemoteKeys.map(userID => {
               const streams = sections.get(userID) ?? []
               const label = nameFor(userID, `Собеседник ${(fallbackIndex.get(userID) ?? 0) + 1}`)
