@@ -40,28 +40,31 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
   const encrypted = new WeakSet<RTCRtpSender>()
   const decrypted = new WeakSet<RTCRtpReceiver>()
   const installNativeAudioSender = (sender: RTCRtpSender) => {
-    if (!NativeEncryptor) return
+    if (!NativeEncryptor) return false
     try {
       const transform = new NativeEncryptor({ cipherSuite: 'AES_256_GCM_SHA512_128', type: 'per-frame' })
       ;(sender as TransformableSender).transform = transform
       void nativeKey.then(keyValue => transform.setEncryptionKey(keyValue, 0)).catch(() => undefined)
-    } catch { /* unsupported implementation: leave native DTLS-SRTP audio untouched */ }
+      return true
+    } catch { return false }
   }
   const installNativeAudioReceiver = (receiver: RTCRtpReceiver) => {
-    if (!NativeDecryptor) return
+    if (!NativeDecryptor) return false
     try {
       const transform = new NativeDecryptor({ cipherSuite: 'AES_256_GCM_SHA512_128' })
       ;(receiver as TransformableReceiver).transform = transform
       void nativeKey.then(keyValue => transform.addDecryptionKey(keyValue, 0)).catch(() => undefined)
-    } catch { /* unsupported implementation: leave native DTLS-SRTP audio untouched */ }
+      return true
+    } catch { return false }
   }
   return {
     encrypt(sender) {
       if (encrypted.has(sender)) return
-      if (sender.track?.kind === 'audio') {
-        installNativeAudioSender(sender)
-        encrypted.add(sender)
-        return
+      if (sender.track?.kind === 'audio' && NativeEncryptor) {
+        if (installNativeAudioSender(sender)) {
+          encrypted.add(sender)
+          return
+        }
       }
       if (!Constructor || !worker) return
       ;(sender as TransformableSender).transform = new Constructor(worker, {
@@ -71,10 +74,11 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
     },
     decrypt(receiver, mediaKind = receiver.track?.kind ?? '') {
       if (decrypted.has(receiver)) return
-      if (mediaKind === 'audio' || receiver.track?.kind === 'audio') {
-        installNativeAudioReceiver(receiver)
-        decrypted.add(receiver)
-        return
+      if ((mediaKind === 'audio' || receiver.track?.kind === 'audio') && NativeDecryptor) {
+        if (installNativeAudioReceiver(receiver)) {
+          decrypted.add(receiver)
+          return
+        }
       }
       if (!Constructor || !worker) return
       ;(receiver as TransformableReceiver).transform = new Constructor(worker, {
