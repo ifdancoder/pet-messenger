@@ -12,7 +12,7 @@ import { useMessenger } from './hooks/useMessenger'
 import { useCall } from './hooks/useCall'
 import { useLiveCalls } from './hooks/useLiveCall'
 import { clearSession, readSession, saveSession } from './lib/session'
-import { playTone } from './lib/sounds'
+import { startIncomingRingtone } from './lib/sounds'
 import { api, setSessionRefreshHandler } from './lib/api'
 import type { Conversation, MemberProfile, Session } from './types'
 import './App.css'
@@ -106,7 +106,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   useEffect(() => {
     if (!incomingCall || callConversation || ringingCallID.current === incomingCall.call.id) return
     ringingCallID.current = incomingCall.call.id
-    playTone('call')
+    return startIncomingRingtone()
   }, [callConversation, incomingCall])
   useEffect(() => { if (callConversation) void Promise.resolve().then(() => start(callConversation, joinWithCamera)) }, [callConversation, joinWithCamera, start])
   useEffect(() => {

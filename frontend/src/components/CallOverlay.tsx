@@ -648,7 +648,18 @@ function useCallGrid(orderedKeys: string[]) {
     const step = (now: number) => {
       if (runId !== animRef.current) return
       const d = delta()
-      if (Math.abs(d) < 0.4 || now - start > 900) { track.scrollLeft += d; return }
+      if (Math.abs(d) < 0.4 || now - start > 900) {
+        track.scrollLeft += d
+        // The card margins are recomputed from the live center position.
+        // Let that layout pass complete, then make one exact correction so a
+        // released drag cannot stop between the nearest card and the center.
+        requestAnimationFrame(() => {
+          if (runId !== animRef.current) return
+          const finalDelta = delta()
+          if (Math.abs(finalDelta) >= 0.1) track.scrollLeft += finalDelta
+        })
+        return
+      }
       track.scrollLeft += d * 0.22
       requestAnimationFrame(step)
     }
@@ -783,7 +794,11 @@ function useCallGrid(orderedKeys: string[]) {
       track.removeEventListener('pointercancel', onUp)
       track.removeEventListener('click', onClickCapture, true)
     }
-  }, [track])
+    // The visible card list can be reordered by speaking priority while the
+    // track remains mounted. Rebind so drop always measures that current list,
+    // rather than an older ordering captured by the drag listener.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track, orderedKeysDep])
 
   return { trackRef: setTrack, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, requestScrollToKey: setPendingScrollKey }
 }
