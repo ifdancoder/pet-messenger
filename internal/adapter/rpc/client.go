@@ -121,8 +121,18 @@ func (c *RoomControlClient) ListParticipants(ctx context.Context, node usecaseca
 		}
 		out = make([]usecasecall.ParticipantInfo, len(resp.Participants))
 		for i, p := range resp.Participants {
+			// protobuf has no wire representation for "empty repeated field"
+			// distinct from "absent" — a zero-track participant always
+			// unmarshals TrackKinds as nil, never []string{}. Normalize here,
+			// at the protobuf-to-domain boundary, so no downstream consumer
+			// (including JSON marshaling, where a nil slice serializes as
+			// `null` rather than `[]`) ever sees a nil TrackKinds.
+			trackKinds := p.TrackKinds
+			if trackKinds == nil {
+				trackKinds = []string{}
+			}
 			out[i] = usecasecall.ParticipantInfo{
-				UserID: p.UserId, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: p.TrackKinds,
+				UserID: p.UserId, Role: p.Role, Muted: p.Muted, SelfMuted: p.SelfMuted, TrackKinds: trackKinds,
 			}
 		}
 		return nil

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"pet-messenger/internal/adapter/rpc/mediav1"
 	"pet-messenger/internal/config"
@@ -108,6 +109,52 @@ func TestRoomControlClient_ListParticipants(t *testing.T) {
 	want := usecasecall.ParticipantInfo{UserID: "u1", Role: "publisher", Muted: true, SelfMuted: false, TrackKinds: []string{"mic", "camera"}}
 	if got[0].UserID != want.UserID || got[0].Role != want.Role || got[0].Muted != want.Muted || got[0].SelfMuted != want.SelfMuted || !slices.Equal(got[0].TrackKinds, want.TrackKinds) {
 		t.Fatalf("ListParticipants[0] = %+v, want %+v", got[0], want)
+	}
+}
+
+// TestRoomControlClient_ListParticipants_NilTrackKinds proves the client
+// normalizes a nil TrackKinds — the shape protobuf always produces for a
+// zero-track participant after a real marshal/unmarshal round-trip, since
+// the wire format cannot distinguish an empty repeated field from an absent
+// one — into a non-nil, empty slice. Without the fix, this nil would flow
+// straight through to the HTTP layer and serialize as JSON `null`, which is
+// exactly what crashed the frontend's CallPreviewBar.
+func TestRoomControlClient_ListParticipants_NilTrackKinds(t *testing.T) {
+	participant := &mediav1.Participant{UserId: "u2", Role: "publisher", Muted: false, SelfMuted: true}
+	// Force a real protobuf wire round-trip rather than trusting the Go
+	// struct literal's zero value: marshal then unmarshal, so TrackKinds
+	// reflects exactly what protoc-gen-go produces for a zero-length
+	// repeated field on the decode side (nil), not just an unset field the
+	// test happened to construct that way.
+	wire, err := proto.Marshal(participant)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	roundTripped := &mediav1.Participant{}
+	if err := proto.Unmarshal(wire, roundTripped); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+	if roundTripped.TrackKinds != nil {
+		t.Fatalf("test fixture invalid: want TrackKinds nil after wire round-trip, got %#v", roundTripped.TrackKinds)
+	}
+
+	fake := &fakeRoomServer{participants: []*mediav1.Participant{roundTripped}}
+	addr := startServer(t, "sekret", fake)
+	c := NewRoomControlClient(&config.Config{Media: config.MediaConfig{RPCToken: "sekret"}})
+	t.Cleanup(c.Close)
+
+	got, err := c.ListParticipants(context.Background(), usecasecall.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
+	if err != nil {
+		t.Fatalf("ListParticipants: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ListParticipants = %+v, want 1 entry", got)
+	}
+	if got[0].TrackKinds == nil {
+		t.Fatalf("ListParticipants[0].TrackKinds = nil, want non-nil empty slice")
+	}
+	if len(got[0].TrackKinds) != 0 {
+		t.Fatalf("ListParticipants[0].TrackKinds = %#v, want empty", got[0].TrackKinds)
 	}
 }
 
