@@ -763,7 +763,10 @@ function useCallGrid(orderedKeys: string[]) {
       if (Math.abs(dx) > 4) dragMoved = true
       track.scrollLeft = startScroll - dx
     }
-    const onUp = () => { dragging = false }
+    const onUp = () => {
+      if (dragging && dragMoved) requestAnimationFrame(() => scrollToIndex(closestIndex()))
+      dragging = false
+    }
     // globalThis.MouseEvent, not the bare name: MouseEvent is shadowed at
     // this file's top by React's own synthetic event type, which a native
     // addEventListener('click', ...) below can't accept.
@@ -771,11 +774,13 @@ function useCallGrid(orderedKeys: string[]) {
     track.addEventListener('pointerdown', onDown)
     track.addEventListener('pointermove', onMove)
     track.addEventListener('pointerup', onUp)
+    track.addEventListener('pointercancel', onUp)
     track.addEventListener('click', onClickCapture, true)
     return () => {
       track.removeEventListener('pointerdown', onDown)
       track.removeEventListener('pointermove', onMove)
       track.removeEventListener('pointerup', onUp)
+      track.removeEventListener('pointercancel', onUp)
       track.removeEventListener('click', onClickCapture, true)
     }
   }, [track])
