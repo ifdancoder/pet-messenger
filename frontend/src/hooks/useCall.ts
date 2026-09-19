@@ -282,7 +282,10 @@ export function useCall(session: Session) {
     }
     connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
     connection.ontrack = event => {
-      mediaE2EE.current?.decrypt(event.receiver)
+      // ontrack is the first point where the receiver's concrete media kind
+      // is guaranteed; do not let a placeholder receiver install an audio
+      // transform with video-shaped options.
+      mediaE2EE.current?.decrypt(event.receiver, event.track.kind)
       // A browser may put camera and screen tracks into one remote MediaStream.
       // Keep a stream per track so each tile retains its own SFU label.
       const stream = new MediaStream([event.track])
@@ -331,7 +334,6 @@ export function useCall(session: Session) {
       const frame = JSON.parse(String(event.data)) as Signal
       if (frame.type === 'offer' && frame.sdp) {
         await connection.setRemoteDescription({ type: 'offer', sdp: frame.sdp })
-        connection.getReceivers().forEach(receiver => mediaE2EE.current?.decrypt(receiver))
         const answer = await connection.createAnswer(); await connection.setLocalDescription(answer)
         socket.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }))
       } else if (frame.type === 'answer' && frame.sdp) await connection.setRemoteDescription({ type: 'answer', sdp: frame.sdp })

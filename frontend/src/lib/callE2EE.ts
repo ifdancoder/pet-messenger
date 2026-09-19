@@ -10,7 +10,7 @@ function base64url(data: Uint8Array) {
 
 export type CallE2EETransforms = {
   encrypt: (sender: RTCRtpSender) => void
-  decrypt: (receiver: RTCRtpReceiver) => void
+  decrypt: (receiver: RTCRtpReceiver, mediaKind?: string) => void
   close: () => void
 }
 
@@ -29,10 +29,10 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
       })
       encrypted.add(sender)
     },
-    decrypt(receiver) {
+    decrypt(receiver, mediaKind = receiver.track?.kind ?? '') {
       if (decrypted.has(receiver)) return
       ;(receiver as TransformableReceiver).transform = new Constructor(worker, {
-        operation: 'decrypt', key: encodedKey, callID, mediaKind: receiver.track?.kind ?? '',
+        operation: 'decrypt', key: encodedKey, callID, mediaKind,
       })
       decrypted.add(receiver)
     },

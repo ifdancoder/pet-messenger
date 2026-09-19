@@ -48,12 +48,12 @@ export function useCallPreview(session: Session) {
         peer.current = connection
         // Receive-only: no local tracks, so the SFU only ever forwards
         // publishers' media to this connection, never the other way.
-        mediaE2EE.current.decrypt(connection.addTransceiver('audio', { direction: 'recvonly' }).receiver)
-        mediaE2EE.current.decrypt(connection.addTransceiver('video', { direction: 'recvonly' }).receiver)
+        mediaE2EE.current.decrypt(connection.addTransceiver('audio', { direction: 'recvonly' }).receiver, 'audio')
+        mediaE2EE.current.decrypt(connection.addTransceiver('video', { direction: 'recvonly' }).receiver, 'video')
         const pendingCandidates: RTCIceCandidateInit[] = []
         connection.onicecandidate = event => { if (event.candidate) signal.current?.send(JSON.stringify({ type: 'candidate', candidate: event.candidate.toJSON() })) }
         connection.ontrack = event => {
-          mediaE2EE.current?.decrypt(event.receiver)
+          mediaE2EE.current?.decrypt(event.receiver, event.track.kind)
           const stream = new MediaStream([event.track])
           const mid = event.transceiver?.mid ?? undefined
           const sourceStreamID = event.streams[0]?.id
