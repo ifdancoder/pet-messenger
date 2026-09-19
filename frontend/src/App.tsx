@@ -46,7 +46,53 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // conversation, the real CallOverlay (with its own docked mode) takes
   // over this same visual slot.
   const showPreviewBar = Boolean(activeLiveCall) && callConversation?.id !== messenger.activeConversation?.id
-  const incomingCall = liveCalls.find(item => item.call.initiator_id !== session.user.id && item.call.id !== dismissedCallID)
+  // Edge-triggered, not level-triggered: knownCallIDs is seeded from the
+  // very first REAL poll (whatever's already live when this component
+  // mounts — including right after a reload — never rings), and only a
+  // call ID that appears on a LATER poll without having been in the
+  // previous one counts as "just started ringing for me". A poll-derived
+  // level check (just "is there a live call I haven't dismissed") used to
+  // resurrect the dialog for an already-ongoing call on every reload.
+  //
+  // "Very first REAL poll" deliberately isn't the same as "the first time
+  // this effect runs". Two things make an early liveCalls snapshot
+  // unreliable to seed from:
+  //  1. While messenger.isLoadingConversations is still true, useLiveCalls
+  //     has nothing to poll yet (it maps over messenger.conversations,
+  //     which is still []) — its "no calls" is meaningless, not a real
+  //     answer, so those ticks are ignored outright.
+  //  2. Even on the very first tick after conversations finish loading,
+  //     useLiveCalls' own refresh (which reacts to that same conversations
+  //     change) hasn't had a chance to run yet — it's a separate effect
+  //     that fires after this commit and resolves its fetch afterward — so
+  //     that tick can still be one cycle stale. It's treated as a
+  //     placeholder, not the baseline.
+  // Only the NEXT tick after that (the first liveCalls snapshot guaranteed
+  // to have been fetched against the settled conversation list) becomes
+  // the real baseline. Skipping either of the two leading ticks would let
+  // an already-live call look "newly appeared" moments after mount/reload
+  // — ringing for a couple of seconds — the very bug this is fixing, just
+  // with a shorter fuse.
+  const knownCallIDs = useRef<Set<string> | null>(null)
+  const hasSeededBaseline = useRef(false)
+  const [justStartedCallID, setJustStartedCallID] = useState<string | null>(null)
+  useEffect(() => {
+    if (messenger.isLoadingConversations) return
+    const currentIDs = new Set(liveCalls.map(item => item.call.id))
+    if (knownCallIDs.current === null) {
+      knownCallIDs.current = currentIDs
+      return
+    }
+    if (!hasSeededBaseline.current) {
+      hasSeededBaseline.current = true
+      knownCallIDs.current = currentIDs
+      return
+    }
+    const newlyAppeared = liveCalls.find(item => item.call.initiator_id !== session.user.id && !knownCallIDs.current!.has(item.call.id))
+    if (newlyAppeared) setJustStartedCallID(newlyAppeared.call.id)
+    knownCallIDs.current = currentIDs
+  }, [liveCalls, session.user.id, messenger.isLoadingConversations])
+  const incomingCall = liveCalls.find(item => item.call.id === justStartedCallID && item.call.id !== dismissedCallID)
   // The elapsed-time source of truth is the call record's own started_at
   // (polled every 2.5s by useLiveCalls), not a client-local Date.now()
   // snapshot: a local snapshot made each participant's timer start from
