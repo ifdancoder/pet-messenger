@@ -127,6 +127,9 @@ function CameraIcon({ off }: { off: boolean }) {
     {off ? <line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /> : null}
   </svg>
 }
+function AcceptCallIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 3.5 4.7 4.8c-.8.4-1.2 1.3-.9 2.2 1.9 6.3 6.8 11.2 13.1 13.1.9.3 1.8-.1 2.2-.9l1.3-2.5c.3-.7.1-1.5-.5-1.9l-3-1.7a1.6 1.6 0 0 0-1.8.1l-1.4 1.1a12.8 12.8 0 0 1-4-4l1.1-1.4c.5-.5.5-1.3.1-1.8l-1.7-3a1.5 1.5 0 0 0-2-.6Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
 // Screen share has no "off" slash: unlike mic/camera, off is its default,
 // unremarkable state — being active is what deserves visual weight, given
 // via the is-active class on its IconButton (see App.css) instead.
@@ -771,7 +774,8 @@ function useCallGrid(orderedKeys: string[]) {
   return { trackRef: setTrack, leadSpacerRef, trailSpacerRef, registerCard, pagePrev, pageNext, prevDisabled, nextDisabled, requestScrollToKey: setPendingScrollKey }
 }
 type WaitingParticipant = { userID: string; name: string; avatarUrl?: string }
-type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; token: string; participantNames: Record<string, string>; participantAvatars: Record<string, string>; canModerate: boolean; waitingParticipants: WaitingParticipant[]; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
+type IncomingActions = { onAcceptAudio: () => void; onAcceptCamera: () => void }
+type Props = { localStream: MediaStream | null; localScreenStream: MediaStream | null; remoteStreams: RemoteStream[]; peers: CallPeer[]; currentUserID: string; token: string; participantNames: Record<string, string>; participantAvatars: Record<string, string>; canModerate: boolean; waitingParticipants: WaitingParticipant[]; incomingActions?: IncomingActions; error: string; isConnecting: boolean; isConnected: boolean; isMuted: boolean; isCameraOff: boolean; isSharingScreen: boolean; reconnectExhausted: boolean; connectedSince: number | null; volumes: Record<string, number>; onVolumeChange: (key: string, volume: number) => void; docked: boolean; onToggleDock: () => void; onReconnect: () => void; onShare: (options: ScreenShareOptions) => Promise<void>; onStopShare: () => void; onToggleMute: () => void; onToggleCamera: () => Promise<void>; onModerate: (userID: string, action: 'mute' | 'unmute' | 'remove') => Promise<void>; onEnd: () => Promise<void> }
 // CallOverlay is the one call view for both full-screen and docked — docked
 // is the exact same component and behavior, just laid out at its own
 // smaller, dedicated scale (its own --tile-w and control sizes, see
@@ -781,7 +785,7 @@ type Props = { localStream: MediaStream | null; localScreenStream: MediaStream |
 // whichever of the three views (this, docked or full; or the floating
 // MiniCallBar) is current, is what keeps audio and PiP alive across
 // switches between them — this component never touches either itself.
-export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, token, participantNames, participantAvatars, canModerate, waitingParticipants, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
+export function CallOverlay({ localStream, localScreenStream, remoteStreams, peers, currentUserID, token, participantNames, participantAvatars, canModerate, waitingParticipants, incomingActions, error, isConnecting, isConnected, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince, volumes, onVolumeChange, docked, onToggleDock, onReconnect, onShare, onStopShare, onToggleMute, onToggleCamera, onModerate, onEnd }: Props) {
   const elapsed = useElapsed(connectedSince)
   const [focusedStreamID, setFocusedStreamID] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
@@ -955,10 +959,9 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
         {connectedSince !== null ? <span className="call-overlay__timer">{elapsedLabel(elapsed)}</span> : null}
       </span>
       <div className="call-overlay__controls">
-        <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton>
-        <IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton>
-        <IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton>
-        <IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}><EndCallIcon /></IconButton>
+        {incomingActions
+          ? <><button type="button" className="call-preview__accept" aria-label="Принять аудиозвонок" data-tooltip="Принять аудиозвонок" onClick={incomingActions.onAcceptAudio}><AcceptCallIcon /></button><button type="button" className="call-preview__accept" aria-label="Принять с камерой" data-tooltip="Принять с камерой" onClick={incomingActions.onAcceptCamera}><CameraIcon off={false} /></button></>
+          : <><IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton><IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton><IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton><IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}><EndCallIcon /></IconButton></>}
       </div>
       {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
     </footer>
