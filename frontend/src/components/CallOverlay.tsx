@@ -522,10 +522,9 @@ export function MiniCallBar({ names, isMuted, onToggleMute, onEnd, onExpand, con
 // useCallGrid ports the call-design-concept artifact's coverflow pager and
 // speaking-priority reorder onto real participant cards — proven out over
 // many iterations there before landing here, not reinvented from scratch:
-// paging steers continuously toward the live center gap every frame
-// (scrollToIndex below) rather than committing to a fixed destination, so
-// it can't overshoot and jerk-correct the way an upfront-computed target
-// did in an earlier version of that artifact; a reorder (driven by
+// paging animates toward one stable destination (scrollToIndex below),
+// while card emphasis stays visual and never changes the flex layout; a
+// reorder (driven by
 // orderedKeys, whose order the caller derives from speaking state) animates
 // with a FLIP transform from each card's old position to its new one
 // instead of letting the browser's own reconciliation snap it there.
@@ -613,9 +612,12 @@ function useCallGrid(orderedKeys: string[]) {
       const scale = (1 + growthPx / rect.width).toFixed(4)
       card.dataset.scale = scale
       card.style.transform = `scale(${scale})`
-      const halfGrowth = Math.max(growthPx, 0) / 2
-      card.style.marginLeft = halfGrowth + 'px'
-      card.style.marginRight = halfGrowth + 'px'
+      // Scaling is visual only. Changing margins here moved the target on
+      // every scroll frame, which made paging chase it and then visibly
+      // jump during the final correction.
+      card.style.marginLeft = ''
+      card.style.marginRight = ''
+      card.style.zIndex = String(Math.max(1, 100 - Math.round(distance * 100)))
     })
   }
 
@@ -645,22 +647,20 @@ function useCallGrid(orderedKeys: string[]) {
     }
     const runId = ++animRef.current
     const start = performance.now()
+    const startScroll = track.scrollLeft
+    const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth)
+    const destination = Math.max(0, Math.min(maxScroll, startScroll + delta()))
+    const duration = 240
     const step = (now: number) => {
       if (runId !== animRef.current) return
-      const d = delta()
-      if (Math.abs(d) < 0.4 || now - start > 900) {
-        track.scrollLeft += d
-        // The card margins are recomputed from the live center position.
-        // Let that layout pass complete, then make one exact correction so a
-        // released drag cannot stop between the nearest card and the center.
-        requestAnimationFrame(() => {
-          if (runId !== animRef.current) return
-          const finalDelta = delta()
-          if (Math.abs(finalDelta) >= 0.1) track.scrollLeft += finalDelta
-        })
+      const progress = Math.min(1, (now - start) / duration)
+      const eased = 1 - (1 - progress) ** 3
+      track.scrollLeft = startScroll + (destination - startScroll) * eased
+      if (progress >= 1) {
+        track.scrollLeft = destination
+        update()
         return
       }
-      track.scrollLeft += d * 0.22
       requestAnimationFrame(step)
     }
     requestAnimationFrame(step)
@@ -724,7 +724,14 @@ function useCallGrid(orderedKeys: string[]) {
 
   useEffect(() => {
     if (!track) return
-    const onScroll = () => update()
+    let scrollFrame = 0
+    const onScroll = () => {
+      if (scrollFrame) return
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0
+        update()
+      })
+    }
     track.addEventListener('scroll', onScroll)
     // A ResizeObserver on the track itself, not a window 'resize' listener:
     // the track's own box can change size for reasons that never fire a
@@ -736,7 +743,11 @@ function useCallGrid(orderedKeys: string[]) {
     // layout is still mid-transition.
     const observer = new ResizeObserver(() => update())
     observer.observe(track)
-    return () => { track.removeEventListener('scroll', onScroll); observer.disconnect() }
+    return () => {
+      track.removeEventListener('scroll', onScroll)
+      observer.disconnect()
+      if (scrollFrame) cancelAnimationFrame(scrollFrame)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track, orderedKeysDep])
 
@@ -750,6 +761,8 @@ function useCallGrid(orderedKeys: string[]) {
     if (!track) return
     let dragging = false
     let dragMoved = false
+    let suppressClick = false
+    let suppressResetTimer = 0
     let startX = 0
     let startScroll = 0
     const onDown = (event: PointerEvent) => {
@@ -762,6 +775,7 @@ function useCallGrid(orderedKeys: string[]) {
       // Let a press that starts on a button behave like a normal click
       // instead of the start of a drag.
       if ((event.target as HTMLElement).closest('button')) return
+      ++animRef.current
       dragging = true
       dragMoved = false
       startX = event.clientX
@@ -770,6 +784,7 @@ function useCallGrid(orderedKeys: string[]) {
       // every small scroll update. Suspend it for the gesture; on release the
       // explicit center operation below chooses the nearest card once.
       track.dataset.dragging = 'true'
+      event.preventDefault()
       track.setPointerCapture(event.pointerId)
     }
     const onMove = (event: PointerEvent) => {
@@ -782,24 +797,42 @@ function useCallGrid(orderedKeys: string[]) {
       const shouldSnap = dragging && dragMoved
       dragging = false
       delete track.dataset.dragging
-      if (shouldSnap) requestAnimationFrame(() => scrollToIndex(closestIndex()))
+      dragMoved = false
+      if (shouldSnap) {
+        // Suppress only the compatibility click produced by this drag. The
+        // old persistent flag also swallowed every later button click.
+        suppressClick = true
+        window.clearTimeout(suppressResetTimer)
+        suppressResetTimer = window.setTimeout(() => { suppressClick = false }, 0)
+        requestAnimationFrame(() => scrollToIndex(closestIndex()))
+      }
     }
     // globalThis.MouseEvent, not the bare name: MouseEvent is shadowed at
     // this file's top by React's own synthetic event type, which a native
     // addEventListener('click', ...) below can't accept.
-    const onClickCapture = (event: globalThis.MouseEvent) => { if (dragMoved) { event.stopPropagation(); event.preventDefault() } }
+    const onClickCapture = (event: globalThis.MouseEvent) => {
+      if (!suppressClick) return
+      suppressClick = false
+      window.clearTimeout(suppressResetTimer)
+      event.stopPropagation()
+      event.preventDefault()
+    }
+    const onNativeDrag = (event: DragEvent) => event.preventDefault()
     track.addEventListener('pointerdown', onDown)
     track.addEventListener('pointermove', onMove)
     track.addEventListener('pointerup', onUp)
     track.addEventListener('pointercancel', onUp)
     track.addEventListener('click', onClickCapture, true)
+    track.addEventListener('dragstart', onNativeDrag)
     return () => {
       delete track.dataset.dragging
+      window.clearTimeout(suppressResetTimer)
       track.removeEventListener('pointerdown', onDown)
       track.removeEventListener('pointermove', onMove)
       track.removeEventListener('pointerup', onUp)
       track.removeEventListener('pointercancel', onUp)
       track.removeEventListener('click', onClickCapture, true)
+      track.removeEventListener('dragstart', onNativeDrag)
     }
     // The visible card list can be reordered by speaking priority while the
     // track remains mounted. Rebind so drop always measures that current list,
