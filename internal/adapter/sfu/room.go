@@ -385,7 +385,9 @@ func (r *room) kickParticipant(userID uuid.UUID) error {
 }
 
 // removeParticipant drops a participant and everything it published, then
-// renegotiates whoever was subscribed to it. The last one out drains the room.
+// renegotiates whoever was subscribed to it. Preview viewers are not accepted
+// callers, so the last publisher out drains the room even if viewers still
+// have their docked preview socket open.
 func (r *room) removeParticipant(userID uuid.UUID) {
 	p, ok := r.peers[userID]
 	if !ok {
@@ -394,7 +396,7 @@ func (r *room) removeParticipant(userID uuid.UUID) {
 	r.detachParticipant(p)
 
 	r.events.ParticipantLeft(r.callID, userID)
-	if len(r.peers) == 0 {
+	if r.publisherCount() == 0 {
 		r.drain()
 		return
 	}

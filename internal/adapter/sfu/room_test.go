@@ -95,3 +95,30 @@ func TestRoomViewerDoesNotKeepUnansweredCallAlive(t *testing.T) {
 		t.Fatal("viewer kept an otherwise unanswered call alive")
 	}
 }
+
+func TestRoomDrainsImmediatelyWhenLastPublisherLeavesDespiteViewer(t *testing.T) {
+	api, err := newWebRTCAPI()
+	if err != nil {
+		t.Fatalf("newWebRTCAPI: %v", err)
+	}
+	drained := make(chan struct{}, 1)
+	r := newRoom(uuid.Must(uuid.NewV7()), &config.Config{}, api, noopEventPublisher{}, func(*room) { drained <- struct{}{} }, time.Hour, time.Hour)
+	defer r.close()
+
+	publisherID := uuid.Must(uuid.NewV7())
+	if err := r.join(publisherID, "publisher", fakeSignaller{}); err != nil {
+		t.Fatalf("join publisher: %v", err)
+	}
+	if err := r.join(uuid.Must(uuid.NewV7()), "viewer", fakeSignaller{}); err != nil {
+		t.Fatalf("join viewer: %v", err)
+	}
+	if err := r.remove(publisherID); err != nil {
+		t.Fatalf("remove publisher: %v", err)
+	}
+
+	select {
+	case <-drained:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("viewer kept an empty call room alive")
+	}
+}
