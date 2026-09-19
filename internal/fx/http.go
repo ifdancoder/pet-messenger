@@ -25,6 +25,7 @@ func newGinEngine(
 	db database.Service,
 	authHandler *httpadapter.AuthHandler,
 	userHandler *httpadapter.UserHandler,
+	e2eeDeviceHandler *httpadapter.E2EEDeviceHandler,
 	convHandler *httpadapter.ConversationHandler,
 	msgHandler *httpadapter.MessageHandler,
 	notifHandler *httpadapter.NotificationHandler,
@@ -50,6 +51,7 @@ func newGinEngine(
 	users := r.Group("/users")
 	users.Use(httpadapter.AuthMiddleware(verifier))
 	userHandler.RegisterRoutes(users)
+	e2eeDeviceHandler.RegisterRoutes(users)
 
 	conversations := r.Group("/conversations")
 	conversations.Use(httpadapter.AuthMiddleware(verifier))
