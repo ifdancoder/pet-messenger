@@ -107,7 +107,7 @@ minikube-deploy:
 # (Re)starts the frontend port-forward. Idempotent: safe to call again after
 # minikube-deploy replaces the frontend pod and drops the previous tunnel.
 minikube-port-forward:
-	@pkill -f "port-forward svc/frontend 8082:80" 2>/dev/null || true
+	@fuser -k 8082/tcp >/dev/null 2>&1 || true
 	@sleep 1
 	@setsid nohup $(MINIKUBE_KUBECTL) -n $(MINIKUBE_NS) port-forward svc/frontend 8082:80 >/tmp/pet-messenger-port-forward.log 2>&1 </dev/null &
 	@sleep 2
