@@ -507,7 +507,7 @@ export function MiniCallBar({ names, isMuted, onToggleMute, onEnd, onExpand, con
     <span className="call-mini-bar__names">{names.length ? names.join(', ') : 'Звонок'}</span>
     <span className="call-mini-bar__timer">{elapsedLabel(elapsed)}</span>
     <IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={event => { event.stopPropagation(); onToggleMute() }}><MicIcon muted={isMuted} /></IconButton>
-    <IconButton label="Завершить звонок" className="call-mini-bar__end" onClick={event => { event.stopPropagation(); onEnd() }}><EndCallIcon /></IconButton>
+    <IconButton label="Выйти из звонка" className="call-mini-bar__end" onClick={event => { event.stopPropagation(); onEnd() }}><EndCallIcon /></IconButton>
   </div>
 }
 // useCallGrid ports the call-design-concept artifact's coverflow pager and
@@ -961,7 +961,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
       <div className="call-overlay__controls">
         {incomingActions
           ? <><button type="button" className="call-preview__accept" aria-label="Принять аудиозвонок" data-tooltip="Принять аудиозвонок" onClick={incomingActions.onAcceptAudio}><AcceptCallIcon /></button><button type="button" className="call-preview__accept" aria-label="Принять с камерой" data-tooltip="Принять с камерой" onClick={incomingActions.onAcceptCamera}><CameraIcon off={false} /></button></>
-          : <><IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton><IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton><IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton><IconButton label="Завершить звонок" className="call-overlay__end" onClick={() => void onEnd()}><EndCallIcon /></IconButton></>}
+          : <><IconButton label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'} onClick={onToggleMute}><MicIcon muted={isMuted} /></IconButton><IconButton label={isCameraOff ? 'Включить камеру' : 'Выключить камеру'} onClick={() => void onToggleCamera()}><CameraIcon off={isCameraOff} /></IconButton><IconButton label={isSharingScreen ? 'Остановить демонстрацию' : 'Показать экран'} className={isSharingScreen ? 'is-active' : ''} onClick={() => isSharingScreen ? onStopShare() : setShareModalOpen(true)}><ScreenShareIcon /></IconButton><IconButton label="Выйти из звонка" className="call-overlay__end" onClick={() => void onEnd()}><EndCallIcon /></IconButton></>}
       </div>
       {canModerate ? otherPeers.map(peer => <div className="call-peer" key={peer.user_id}><span>{nameFor(peer.user_id, 'Участник')} · {peer.muted ? 'без звука' : 'со звуком'}</span><Button variant="ghost" onClick={() => void onModerate(peer.user_id, peer.muted ? 'unmute' : 'mute')}>{peer.muted ? 'Включить звук' : 'Выключить звук'}</Button><Button variant="danger" onClick={() => void onModerate(peer.user_id, 'remove')}>Исключить</Button></div>) : null}
     </footer>

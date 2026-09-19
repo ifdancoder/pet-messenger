@@ -107,7 +107,11 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     return () => { current = false; setCallMembers([]) }
   }, [callConversation, session.access_token])
   const openCall = useCallback((conversation: Conversation, withCamera = false) => { setCallMembers([]); setCallParticipantNames({}); setCallParticipantAvatars({}); setJoinWithCamera(withCamera); setFullScreen(true); setCallConversation(conversation) }, [])
-  const endCall = useCallback(async () => { await close(true); setCallMembers([]); setCallParticipantNames({}); setCallParticipantAvatars({}); setJoinWithCamera(false); setCallConversation(null); setFullScreen(true) }, [close])
+  // Leaving a call only closes this participant's media session. The room is
+  // still live for everyone else, so useLiveCalls can immediately replace
+  // this view with its docked incoming preview instead of making the call
+  // appear to vanish for the person who just left.
+  const endCall = useCallback(async () => { await close(false); setCallMembers([]); setCallParticipantNames({}); setCallParticipantAvatars({}); setJoinWithCamera(false); setCallConversation(null); setFullScreen(true) }, [close])
   const ownCallName = `@${session.user.username} · ${session.user.display_name || session.user.username}`
   // Three mutually exclusive views for an active call: full-screen (on its
   // own chat, fullScreen), docked (on its own chat, not fullScreen — a
