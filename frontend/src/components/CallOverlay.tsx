@@ -918,7 +918,7 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
           <button type="button" className="call-pager-btn call-pager-prev" disabled={prevDisabled} onClick={pagePrev} aria-label="Предыдущие участники"><PagerIcon direction="prev" /></button>
           <div className="call-tile-track" ref={trackRef}>
             <div className="call-tile-spacer" ref={leadSpacerRef} />
-            {showLocal ? <ParticipantSection gridRef={registerCard('local')} title={nameFor(currentUserID, 'Вы')} avatarUrl={avatarFor(currentUserID)} token={token} streams={local} tracks={localTracks} muted micMuted={isMuted} showSpeaking={showSpeaking} focusedID={focusedStreamID} onFocus={toggleFocus} /> : null}
+            {showLocal ? <ParticipantSection gridRef={registerCard('local')} title="Вы" avatarUrl={avatarFor(currentUserID)} token={token} streams={local} tracks={localTracks} muted micMuted={isMuted} showSpeaking={showSpeaking} focusedID={focusedStreamID} onFocus={toggleFocus} /> : null}
             {orderedRemoteKeys.map(userID => {
               const streams = sections.get(userID) ?? []
               const label = nameFor(userID, `Собеседник ${(fallbackIndex.get(userID) ?? 0) + 1}`)
