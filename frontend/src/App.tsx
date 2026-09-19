@@ -134,7 +134,7 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
   // while already on the call's conversation.
   const toggleDock = useCallback(() => setFullScreen(current => !current), [])
   const setVolume = useCallback((key: string, volume: number) => setVolumes(previous => ({ ...previous, [key]: volume })), [])
-  const otherCallNames = peers.filter(peer => peer.user_id !== session.user.id).map(peer => callParticipantNames[peer.user_id] ?? 'Собеседник')
+  const otherCallNames = peers.filter(peer => peer.user_id !== session.user.id && peer.role !== 'viewer').map(peer => callParticipantNames[peer.user_id] ?? 'Собеседник')
   // Docked and full-screen are the exact same CallOverlay, just mounted in
   // two different places (see the docked= prop) — sharing one props object
   // keeps the two call sites from drifting out of sync on everything but
@@ -146,7 +146,10 @@ function Messenger({ session, onLogout, onSessionUpdate }: { session: Session; o
     participantNames: { ...callParticipantNames, [session.user.id]: ownCallName },
     participantAvatars: session.user.avatar_url ? { ...callParticipantAvatars, [session.user.id]: session.user.avatar_url } : callParticipantAvatars,
     canModerate: callConversation.kind !== 'direct',
-    waitingParticipants: callMembers.filter(member => member.user_id !== session.user.id && !peers.some(peer => peer.user_id === member.user_id)).map(member => ({ userID: member.user_id, name: `@${member.username} · ${member.display_name || member.username}`, avatarUrl: member.avatar_url })),
+    // A docked preview joins the SFU as a receive-only viewer. Viewing an
+    // invitation is not accepting it: only a publisher removes the ringing
+    // card from the caller's view.
+    waitingParticipants: callMembers.filter(member => member.user_id !== session.user.id && !peers.some(peer => peer.user_id === member.user_id && peer.role !== 'viewer')).map(member => ({ userID: member.user_id, name: `@${member.username} · ${member.display_name || member.username}`, avatarUrl: member.avatar_url })),
     error: callError, isConnecting, isConnected: isOpen, isMuted, isCameraOff, isSharingScreen, reconnectExhausted, connectedSince,
     volumes, onVolumeChange: setVolume, onToggleDock: toggleDock,
     onReconnect: reconnectNow, onShare: shareScreen, onStopShare: stopScreenShare,

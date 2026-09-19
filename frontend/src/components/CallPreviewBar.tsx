@@ -48,7 +48,10 @@ export function CallPreviewBar({ liveCall, session, participantNames, participan
   // In particular, this must not be tied to the original initiator: after
   // they leave, either side still needs a docked way back into the live room
   // for as long as its solo timeout has not ended it.
-  const visibleParticipants = liveCall.participants.filter(participant => participant.user_id !== session.user.id)
+  // Preview sockets are intentionally visible to the SFU roster for media
+  // delivery, but they are not accepted call participants and must never be
+  // rendered as one in another person's incoming docked preview.
+  const visibleParticipants = liveCall.participants.filter(participant => participant.user_id !== session.user.id && participant.role !== 'viewer')
   const participantIDs = new Set(visibleParticipants.map(participant => participant.user_id))
   const peers = liveCall.participants
     .filter(participant => participantIDs.has(participant.user_id))

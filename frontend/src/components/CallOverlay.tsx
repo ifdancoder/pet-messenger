@@ -807,7 +807,10 @@ export function CallOverlay({ localStream, localScreenStream, remoteStreams, pee
     event.preventDefault()
     setVolumeMenu({ x: event.clientX, y: event.clientY, key, label })
   }
-  const otherPeers = peers.filter(peer => peer.user_id !== currentUserID)
+  // A viewer is merely receiving an incoming docked preview. It is not in
+  // the call yet, so it must neither get a participant tile nor suppress the
+  // caller's ringing card for that person.
+  const otherPeers = peers.filter(peer => peer.user_id !== currentUserID && peer.role !== 'viewer')
   // Do not let a stale browser MediaStream create a participant section.
   // The SFU's roster frame removes an exited participant before WebRTC has
   // necessarily fired `ended` for their old tracks.
