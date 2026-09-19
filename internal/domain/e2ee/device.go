@@ -26,6 +26,7 @@ const (
 type Device struct {
 	ID, UserID            uuid.UUID
 	PublicKey             []byte
+	SigningPublicKey      []byte
 	Fingerprint           string
 	Label                 string
 	Status                Status

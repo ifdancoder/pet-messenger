@@ -204,3 +204,7 @@
 .settings-modal__panel label{display:grid;gap:6px;font-size:12px;font-weight:700;color:#c4b8a7}
 .settings-modal__toggle{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;cursor:pointer}.settings-modal__avatar-row{display:flex;align-items:center;gap:14px;margin-top:6px}.settings-modal__avatar{display:grid;place-items:center;flex:none;width:56px;height:56px;font-size:20px;font-weight:800;border-radius:50%;background:var(--paper-raised);color:#e6b578}
 .settings-modal__error{margin:0;padding:10px 12px;border-radius:10px;background:var(--danger-soft);color:#f4a89f;font-size:13px}
+.settings-modal__secure-devices{display:grid;gap:9px;margin-top:4px;padding-top:14px;border-top:1px solid rgb(255 255 255 / 12%)}
+.settings-modal__secure-devices>strong{font-size:13px}.settings-modal__secure-devices>p{margin:0;color:var(--muted);font-size:11px;line-height:1.5}
+.settings-modal__secure-device{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid rgb(255 255 255 / 10%);border-radius:10px;background:rgb(255 255 255 / 3%)}
+.settings-modal__secure-device>span:first-child{display:grid;gap:3px;min-width:0}.settings-modal__secure-device b{font-size:12px}.settings-modal__secure-device small{overflow:hidden;color:var(--muted);font:500 10px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace;text-overflow:ellipsis;white-space:nowrap}.settings-modal__device-trusted{color:#7dce91;font-size:11px;font-weight:800}

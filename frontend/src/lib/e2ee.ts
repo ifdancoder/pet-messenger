@@ -11,7 +11,7 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const identityInFlight = new Map<string, Promise<StoredIdentity>>()
 
-export type StoredIdentity = { deviceID: string; keyPair: CryptoKeyPair }
+export type StoredIdentity = { deviceID: string; keyPair: CryptoKeyPair; signingKeyPair: CryptoKeyPair }
 
 type WrappedKey = { n: string; c: string }
 type EncryptedMessage = {
@@ -110,15 +110,23 @@ function equalBytes(left: Uint8Array, right: Uint8Array) {
 async function ensureIdentity(token: string, userID: string, label: string) {
   if (!crypto.subtle || typeof indexedDB === 'undefined') throw new Error('Этот браузер не поддерживает защищённые чаты')
   let identity = await readIdentity(userID)
+  if (identity && !identity.signingKeyPair) {
+    identity.signingKeyPair = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']) as CryptoKeyPair
+    await saveIdentity(identityKey(userID), identity)
+  }
   if (!identity) {
     const deviceID = crypto.randomUUID()
     const keyPair = await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits']) as CryptoKeyPair
-    identity = { deviceID, keyPair }
+    const signingKeyPair = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']) as CryptoKeyPair
+    identity = { deviceID, keyPair, signingKeyPair }
     await saveIdentity(identityKey(userID), identity)
   }
   localStorage.setItem(`${DEVICE_ID_KEY}.${userID}`, identity.deviceID)
   const publicKey = await crypto.subtle.exportKey('raw', identity.keyPair.publicKey)
-  await api.registerE2EEDevice({ id: identity.deviceID, public_key: base64url(publicKey), label }, token)
+  const signingPublicKey = await crypto.subtle.exportKey('raw', identity.signingKeyPair.publicKey)
+  await api.registerE2EEDevice({
+    id: identity.deviceID, public_key: base64url(publicKey), signing_public_key: base64url(signingPublicKey), label,
+  }, token)
   return identity
 }
 
@@ -134,6 +142,13 @@ export function ensureE2EEIdentity(token: string, userID: string, label = 'Эт�
 }
 
 export function e2eeDeviceID(userID: string) { return localStorage.getItem(`${DEVICE_ID_KEY}.${userID}`) }
+
+export async function approveE2EEDevice(target: E2EEDevice, token: string, userID: string) {
+  const identity = await ensureE2EEIdentity(token, userID)
+  const statement = encoder.encode(`pet-messenger:approve-device:v1:${identity.deviceID}:${target.id}:${target.fingerprint}`)
+  const signature = await crypto.subtle.sign({ name: 'Ed25519' }, identity.signingKeyPair.privateKey, statement)
+  await api.approveE2EEDevice(target.id, token, identity.deviceID, base64url(signature))
+}
 
 async function deriveWrappingKey(privateKey: CryptoKey, publicKey: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, info: string) {
   const importedPublicKey = await crypto.subtle.importKey('raw', publicKey, { name: 'X25519' }, false, [])
