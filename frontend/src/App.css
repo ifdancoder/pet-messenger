@@ -141,7 +141,7 @@
    inside a fixed-height 45vh strip (call-docked-wrapper), so the same
    padding reads as excess empty space above/below a small card rather
    than deliberate breathing room. */
-.call-overlay--docked .call-tile-track{padding:20px 30px;gap:24px}.call-overlay--docked .call-pager-prev{left:4px}.call-overlay--docked .call-pager-next{right:4px}/* The concept's own exact fixed 150px, not a clamp/vw guess at it. */
+.call-overlay--docked .call-tile-track{padding:20px 30px;gap:44px}.call-overlay--docked .call-pager-prev{left:4px}.call-overlay--docked .call-pager-next{right:4px}/* The concept's own exact fixed 150px, not a clamp/vw guess at it. */
 .call-overlay--docked .call-participant{--tile-w:150px;padding:6px;border-radius:4px;gap:6px}
 .call-overlay--docked .call-participant[data-media-count="2"]{flex-basis:calc(var(--tile-w) * 2 - 12px + 6px)}.call-overlay--docked .call-participant>header{font-size:10.5px}.call-overlay--docked .call-participant__chip{padding:3px 12px 3px 3px;font-size:10.5px}.call-overlay--docked .call-participant__chip-avatar{width:22px;height:22px;font-size:10px}.call-overlay--docked .identity-tile__muted{top:6px;right:6px;width:16px;height:16px}.call-overlay--docked .identity-tile__muted svg{width:9px;height:9px}.call-overlay--docked .call-participant__media{grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px}.call-overlay--docked .call-video{border-radius:4px}/* Scoped to the grid track specifically, not just .call-overlay--docked
    .call-video: the focused view's main tile is also a .call-video, and

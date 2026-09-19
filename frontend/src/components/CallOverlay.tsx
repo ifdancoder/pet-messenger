@@ -651,11 +651,13 @@ function useCallGrid(orderedKeys: string[]) {
     const startScroll = track.scrollLeft
     const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth)
     const destination = Math.max(0, Math.min(maxScroll, startScroll + delta()))
-    const duration = 240
+    const duration = 360
     const step = (now: number) => {
       if (runId !== animRef.current) return
       const progress = Math.min(1, (now - start) / duration)
-      const eased = 1 - (1 - progress) ** 3
+      // Smoothstep gives the snap a soft start and finish instead of the
+      // abrupt ease-out that made the card appear to lurch into place.
+      const eased = progress * progress * (3 - 2 * progress)
       track.scrollLeft = startScroll + (destination - startScroll) * eased
       if (progress >= 1) {
         track.scrollLeft = destination
