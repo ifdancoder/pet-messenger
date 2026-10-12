@@ -1,0 +1,16 @@
+namespace: pet-messenger
+resources:
+  - ../../base
+  - ingress.yaml
+
+# images here are placeholders — the "deploy" job in
+# .github/workflows/deploy.yml rewrites both newName (registry host, from
+# the REGISTRY repository variable) and newTag (the commit SHA) on every
+# push to main. Never edit these by hand; a stable tag would make
+# repeated applies of the same manifest a no-op, exactly like
+# overlays/minikube's kustomization documents for the same reason.
+images:
+  - {name: registry.invalid/pet-messenger-api, newName: registry.invalid/pet-messenger-api, newTag: unset}
+  - {name: registry.invalid/pet-messenger-media, newName: registry.invalid/pet-messenger-media, newTag: unset}
+  - {name: registry.invalid/pet-messenger-frontend, newName: registry.invalid/pet-messenger-frontend, newTag: unset}
+  - {name: registry.invalid/pet-messenger-migrate, newName: registry.invalid/pet-messenger-migrate, newTag: unset}
