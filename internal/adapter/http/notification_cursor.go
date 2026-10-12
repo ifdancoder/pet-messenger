@@ -2,11 +2,14 @@ package http
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+var errInvalidCursor = errors.New("http: invalid pagination cursor")
 
 // encodeNotificationCursor packs a (created_at, id) keyset position into an
 // opaque base64 token for the notification-list API.
@@ -17,8 +20,7 @@ func encodeNotificationCursor(t time.Time, id uuid.UUID) string {
 
 // decodeNotificationCursor is the inverse. An empty string is the "first page"
 // sentinel and returns the zero time and uuid.Nil with no error; anything that
-// does not parse returns errInvalidCursor (shared with the conversation codec
-// in cursor.go).
+// does not parse returns errInvalidCursor.
 func decodeNotificationCursor(raw string) (time.Time, uuid.UUID, error) {
 	if raw == "" {
 		return time.Time{}, uuid.Nil, nil

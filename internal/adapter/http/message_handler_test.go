@@ -13,14 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	// oldconv is the pre-retrofit conversation domain package, still imported
-	// by the old ConversationHandler (conversation_handler.go) this file's
-	// coexistence test exercises. It goes away in the same slice that
-	// deletes conversation_handler.go — see
-	// docs/superpowers/plans/2026-10-12-conversation-clean-hexagonal-cqrs.md
-	// Task 29.
-	oldconv "pet-messenger/internal/domain/conversation"
-
 	domainmsg "pet-messenger/internal/domain/message"
 	usecasemsg "pet-messenger/internal/usecase/message"
 
@@ -54,15 +46,12 @@ func (f *fakeMessageService) MarkRead(_ context.Context, actor, convID, messageI
 	return f.read(actor, convID, messageID)
 }
 
-func msgRouter(h *MessageHandler, convH *ConversationHandler, actor *uuid.UUID) *gin.Engine {
+func msgRouter(h *MessageHandler, actor *uuid.UUID) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	grp := r.Group("/conversations")
 	if actor != nil {
 		grp.Use(func(c *gin.Context) { c.Set(ContextUserIDKey, *actor); c.Next() })
-	}
-	if convH != nil {
-		convH.RegisterRoutes(grp)
 	}
 	h.RegisterRoutes(grp)
 	return r
@@ -85,34 +74,6 @@ func sampleMessage(convID, sender uuid.UUID, seq int64) *domainmsg.Message {
 	}
 }
 
-func TestMessageHandler_RoutesCoexistWithConversationRoutes(t *testing.T) {
-	actor := uuid.Must(uuid.NewV7())
-	convID := uuid.Must(uuid.NewV7())
-	msgH := &MessageHandler{svc: &fakeMessageService{
-		send: func(_, cv uuid.UUID, _ string, _ *uuid.UUID, _ string) (*domainmsg.Message, error) {
-			return sampleMessage(cv, actor, 1), nil
-		},
-	}}
-	convH := &ConversationHandler{svc: &fakeConversationService{
-		openDirect: func(_, _ uuid.UUID) (*oldconv.Conversation, error) {
-			return &oldconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: oldconv.KindDirect, LastMessageAt: time.Now().UTC()}, nil
-		},
-	}}
-	// Registering both handlers on one group must not panic.
-	r := msgRouter(msgH, convH, &actor)
-
-	// Conversation route still resolves.
-	w := doMsg(t, r, http.MethodPost, "/conversations/direct", `{"user_id":"`+uuid.Must(uuid.NewV7()).String()+`"}`)
-	if w.Code == http.StatusNotFound {
-		t.Fatalf("POST /conversations/direct 404 after mounting message routes")
-	}
-	// Message route resolves.
-	w = doMsg(t, r, http.MethodPost, "/conversations/"+convID.String()+"/messages", `{"content":"hi"}`)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("POST /conversations/:id/messages = %d, want 201 (body %s)", w.Code, w.Body.String())
-	}
-}
-
 func TestMessageHandler_Send_Created(t *testing.T) {
 	actor := uuid.Must(uuid.NewV7())
 	convID := uuid.Must(uuid.NewV7())
@@ -126,7 +87,7 @@ func TestMessageHandler_Send_Created(t *testing.T) {
 			return want, nil
 		},
 	}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 
 	w := doMsg(t, r, http.MethodPost, "/conversations/"+convID.String()+"/messages",
 		`{"content":"hello","reply_to_id":"`+reply.String()+`","idempotency_key":"k9"}`)
@@ -149,7 +110,7 @@ func TestMessageHandler_Send_MissingContent(t *testing.T) {
 		t.Fatal("service must not be called")
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages", `{}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -162,7 +123,7 @@ func TestMessageHandler_Send_IdempotencyKeyTooLong(t *testing.T) {
 		t.Fatal("service must not be called")
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	key := strings.Repeat("a", 256)
 	w := doMsg(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages",
 		`{"content":"hi","idempotency_key":"`+key+`"}`)
@@ -177,7 +138,7 @@ func TestMessageHandler_Send_BadConversationID(t *testing.T) {
 		t.Fatal("service must not be called")
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodPost, "/conversations/not-a-uuid/messages", `{"content":"hi"}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -190,7 +151,7 @@ func TestMessageHandler_Send_BadReplyToID(t *testing.T) {
 		t.Fatal("service must not be called")
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages", `{"content":"hi","reply_to_id":"xxx"}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -201,7 +162,7 @@ func TestMessageHandler_Send_NoAuthContext(t *testing.T) {
 	h := &MessageHandler{svc: &fakeMessageService{send: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, string) (*domainmsg.Message, error) {
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, nil)
+	r := msgRouter(h, nil)
 	w := doMsg(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages", `{"content":"hi"}`)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
@@ -227,7 +188,7 @@ func TestMessageHandler_Send_ErrorMapping(t *testing.T) {
 			h := &MessageHandler{svc: &fakeMessageService{send: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, string) (*domainmsg.Message, error) {
 				return nil, tc.err
 			}}}
-			r := msgRouter(h, nil, &actor)
+			r := msgRouter(h, &actor)
 			w := doMsg(t, r, http.MethodPost, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages", `{"content":"hi"}`)
 			if w.Code != tc.want {
 				t.Fatalf("status = %d, want %d", w.Code, tc.want)
@@ -246,7 +207,7 @@ func TestMessageHandler_List_FullPageHasCursor(t *testing.T) {
 	h := &MessageHandler{svc: &fakeMessageService{list: func(_, _ uuid.UUID, _, _ *int64, _ int) ([]*domainmsg.Message, error) {
 		return page, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodGet, "/conversations/"+convID.String()+"/messages", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
@@ -271,7 +232,7 @@ func TestMessageHandler_List_ShortPageNoCursor(t *testing.T) {
 	h := &MessageHandler{svc: &fakeMessageService{list: func(_, _ uuid.UUID, _, _ *int64, _ int) ([]*domainmsg.Message, error) {
 		return []*domainmsg.Message{sampleMessage(convID, actor, 1)}, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodGet, "/conversations/"+convID.String()+"/messages", "")
 	var body struct {
 		NextSeq int64 `json:"next_seq"`
@@ -292,7 +253,7 @@ func TestMessageHandler_List_CursorsReachService(t *testing.T) {
 		gotAfter, gotBefore, gotLimit = after, before, limit
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 
 	w := doMsg(t, r, http.MethodGet, "/conversations/"+convID.String()+"/messages?after_seq=12&limit=25", "")
 	if w.Code != http.StatusOK {
@@ -309,7 +270,7 @@ func TestMessageHandler_List_BadAfterSeq(t *testing.T) {
 		t.Fatal("service must not be called")
 		return nil, nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodGet, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages?after_seq=abc", "")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -321,7 +282,7 @@ func TestMessageHandler_List_ConflictingCursors(t *testing.T) {
 	h := &MessageHandler{svc: &fakeMessageService{list: func(uuid.UUID, uuid.UUID, *int64, *int64, int) ([]*domainmsg.Message, error) {
 		return nil, usecasemsg.ErrConflictingCursors
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodGet, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages?after_seq=1&before_seq=2", "")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -333,7 +294,7 @@ func TestMessageHandler_List_NotMember(t *testing.T) {
 	h := &MessageHandler{svc: &fakeMessageService{list: func(uuid.UUID, uuid.UUID, *int64, *int64, int) ([]*domainmsg.Message, error) {
 		return nil, domainconv.ErrNotMember
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodGet, "/conversations/"+uuid.Must(uuid.NewV7()).String()+"/messages", "")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", w.Code)
@@ -354,7 +315,7 @@ func TestMessageHandler_Edit(t *testing.T) {
 			}
 			return want, nil
 		}}}
-		r := msgRouter(h, nil, &actor)
+		r := msgRouter(h, &actor)
 		w := doMsg(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/messages/"+msgID.String(), `{"content":"edited"}`)
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
@@ -366,7 +327,7 @@ func TestMessageHandler_Edit(t *testing.T) {
 			t.Fatal("service must not be called")
 			return nil, nil
 		}}}
-		r := msgRouter(h, nil, &actor)
+		r := msgRouter(h, &actor)
 		w := doMsg(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/messages/nope", `{"content":"x"}`)
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", w.Code)
@@ -386,7 +347,7 @@ func TestMessageHandler_Edit(t *testing.T) {
 			h := &MessageHandler{svc: &fakeMessageService{edit: func(uuid.UUID, uuid.UUID, uuid.UUID, string) (*domainmsg.Message, error) {
 				return nil, tc.err
 			}}}
-			r := msgRouter(h, nil, &actor)
+			r := msgRouter(h, &actor)
 			w := doMsg(t, r, http.MethodPatch, "/conversations/"+convID.String()+"/messages/"+msgID.String(), `{"content":"x"}`)
 			if w.Code != tc.want {
 				t.Fatalf("status = %d, want %d", w.Code, tc.want)
@@ -408,7 +369,7 @@ func TestMessageHandler_Delete(t *testing.T) {
 		h := &MessageHandler{svc: &fakeMessageService{del: func(uuid.UUID, uuid.UUID, uuid.UUID) (*domainmsg.Message, error) {
 			return tomb, nil
 		}}}
-		r := msgRouter(h, nil, &actor)
+		r := msgRouter(h, &actor)
 		w := doMsg(t, r, http.MethodDelete, "/conversations/"+convID.String()+"/messages/"+msgID.String(), "")
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d", w.Code)
@@ -424,7 +385,7 @@ func TestMessageHandler_Delete(t *testing.T) {
 		h := &MessageHandler{svc: &fakeMessageService{del: func(uuid.UUID, uuid.UUID, uuid.UUID) (*domainmsg.Message, error) {
 			return nil, usecasemsg.ErrNotAuthor
 		}}}
-		r := msgRouter(h, nil, &actor)
+		r := msgRouter(h, &actor)
 		w := doMsg(t, r, http.MethodDelete, "/conversations/"+convID.String()+"/messages/"+msgID.String(), "")
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", w.Code)
@@ -439,7 +400,7 @@ func TestMessageHandler_MarkRead(t *testing.T) {
 		called = gotActor == actor && gotConversation == convID && gotMessage == messageID
 		return nil
 	}}}
-	r := msgRouter(h, nil, &actor)
+	r := msgRouter(h, &actor)
 	w := doMsg(t, r, http.MethodPost, "/conversations/"+convID.String()+"/read", `{"message_id":"`+messageID.String()+`"}`)
 	if w.Code != http.StatusNoContent || !called {
 		t.Fatalf("POST read status=%d called=%t, want 204 and service call", w.Code, called)

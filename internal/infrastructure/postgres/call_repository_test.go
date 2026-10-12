@@ -9,7 +9,8 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
 
 func newLiveCall(t *testing.T) (*call.Call, uuid.UUID) {

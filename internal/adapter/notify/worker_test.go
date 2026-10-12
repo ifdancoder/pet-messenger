@@ -25,7 +25,6 @@ import (
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	domainconv "pet-messenger/internal/domain/conversation"
 	domainnotif "pet-messenger/internal/domain/notification"
 	"pet-messenger/internal/domain/pushtoken"
 	domainuser "pet-messenger/internal/domain/user"
@@ -33,6 +32,9 @@ import (
 	"pet-messenger/internal/infrastructure/postgres"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
 	"pet-messenger/internal/infrastructure/push"
+
+	domainconv "pet-messenger/internal/conversation/domain"
+	convpersistence "pet-messenger/internal/conversation/adapter/out/persistence"
 )
 
 var (
@@ -228,7 +230,7 @@ func newEnv(t *testing.T) *env {
 	w := NewWorker(
 		postgres.NewNotificationRepository(testDB),
 		postgres.NewPushTokenRepository(testDB),
-		postgres.NewConversationRepository(testDB),
+		convpersistence.NewConversationRepository(testDB),
 		presence,
 		pusher,
 		ws,
@@ -312,7 +314,7 @@ func mkGroupChat(t *testing.T, creator uuid.UUID, others ...uuid.UUID) uuid.UUID
 	if err != nil {
 		t.Fatalf("NewGroupChat: %v", err)
 	}
-	repo := postgres.NewConversationRepository(testDB)
+	repo := convpersistence.NewConversationRepository(testDB)
 	if err := repo.Create(context.Background(), c, members); err != nil {
 		t.Fatalf("create group chat: %v", err)
 	}

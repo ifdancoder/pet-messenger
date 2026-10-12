@@ -12,8 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
+
+	conversation "pet-messenger/internal/conversation/domain"
+	"pet-messenger/internal/conversation/adapter/out/persistence"
 )
 
 // seedConversation creates a group chat owned by a fresh user and returns the
@@ -25,7 +27,7 @@ func seedConversation(t *testing.T) (convID, ownerID uuid.UUID) {
 	if err != nil {
 		t.Fatalf("NewGroupChat: %v", err)
 	}
-	if err := NewConversationRepository(testDB).Create(context.Background(), c, members); err != nil {
+	if err := persistence.NewConversationRepository(testDB).Create(context.Background(), c, members); err != nil {
 		t.Fatalf("seed conversation: %v", err)
 	}
 	return c.ID, owner.ID
@@ -669,7 +671,7 @@ func TestMessageRepository_ListBeforeSeq_NegativeBeforeSeqSameAsZero(t *testing.
 func TestMessageRepository_Create_AdvancesLastMessageAt(t *testing.T) {
 	ctx := context.Background()
 	msgRepo := NewMessageRepository(testDB)
-	convRepo := NewConversationRepository(testDB)
+	convRepo := persistence.NewConversationRepository(testDB)
 	convID, sender := seedConversation(t)
 
 	before, err := convRepo.GetByID(ctx, convID)
@@ -698,7 +700,7 @@ func TestMessageRepository_Create_AdvancesLastMessageAt(t *testing.T) {
 func TestMessageRepository_Create_LastMessageAtIsMonotonic(t *testing.T) {
 	ctx := context.Background()
 	msgRepo := NewMessageRepository(testDB)
-	convRepo := NewConversationRepository(testDB)
+	convRepo := persistence.NewConversationRepository(testDB)
 	convID, sender := seedConversation(t)
 
 	recent, err := message.NewText(convID, sender, "recent", nil)

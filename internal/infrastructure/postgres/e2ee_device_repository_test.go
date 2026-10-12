@@ -7,8 +7,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/e2ee"
+
+	conversation "pet-messenger/internal/conversation/domain"
+	"pet-messenger/internal/conversation/adapter/out/persistence"
 )
 
 func testE2EEDevice(userID uuid.UUID, marker byte) *e2ee.Device {
@@ -23,7 +25,7 @@ func testE2EEDevice(userID uuid.UUID, marker byte) *e2ee.Device {
 func TestE2EEDeviceRepositoryTrustLifecycleAndConversationDiscovery(t *testing.T) {
 	ctx := context.Background()
 	devices := NewE2EEDeviceRepository(testDB)
-	conversations := NewConversationRepository(testDB)
+	conversations := persistence.NewConversationRepository(testDB)
 	firstUser := createTestUser(t)
 	secondUser := createTestUser(t)
 
