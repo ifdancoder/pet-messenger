@@ -8,8 +8,9 @@ import (
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
-	domainconv "pet-messenger/internal/domain/conversation"
 	domainmsg "pet-messenger/internal/domain/message"
+
+	domainconv "pet-messenger/internal/conversation/domain"
 )
 
 // startJetStream returns the package-shared JetStream context with the NOTIF

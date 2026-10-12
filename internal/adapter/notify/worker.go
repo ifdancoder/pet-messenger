@@ -10,23 +10,31 @@ import (
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
-	domainconv "pet-messenger/internal/domain/conversation"
 	domainnotif "pet-messenger/internal/domain/notification"
 	"pet-messenger/internal/domain/pushtoken"
 	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/push"
 )
 
+// MemberLister is the slice of the conversation context's write-side
+// repository this worker needs: just enough to fan a notification intent
+// out to every current member. Defined here (consumer-driven) per the
+// project's retrofit design. Implemented by
+// internal/conversation/adapter/out/persistence.ConversationRepository.
+type MemberLister interface {
+	ListMemberIDs(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error)
+}
+
 type Worker struct {
 	notifs   domainnotif.Repository
 	tokens   pushtoken.Repository
-	members  domainconv.Repository
+	members  MemberLister
 	presence Presence
 	pusher   push.Pusher
 	ws       WSNotifier
 }
 
-func NewWorker(notifs domainnotif.Repository, tokens pushtoken.Repository, members domainconv.Repository, presence Presence, pusher push.Pusher, ws WSNotifier) *Worker {
+func NewWorker(notifs domainnotif.Repository, tokens pushtoken.Repository, members MemberLister, presence Presence, pusher push.Pusher, ws WSNotifier) *Worker {
 	return &Worker{notifs: notifs, tokens: tokens, members: members, presence: presence, pusher: pusher, ws: ws}
 }
 

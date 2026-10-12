@@ -13,9 +13,10 @@ import (
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
-	domainconv "pet-messenger/internal/domain/conversation"
 	domainmsg "pet-messenger/internal/domain/message"
 	usecasemsg "pet-messenger/internal/usecase/message"
+
+	domainconv "pet-messenger/internal/conversation/domain"
 )
 
 // NotifIntent is the wire payload published to notif.msg.<id> / notif.member.<id>.
