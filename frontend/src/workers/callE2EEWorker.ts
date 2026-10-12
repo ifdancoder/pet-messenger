@@ -1,5 +1,6 @@
 type EncodedFrame = {
   data: ArrayBuffer
+  timestamp?: number
   type?: 'key' | 'delta'
   getMetadata?: () => { mimeType?: string }
 }
@@ -51,15 +52,33 @@ function authenticatedData(callID: string, clearPrefix: Uint8Array) {
   return output
 }
 
+async function audioCounter(callID: string, timestamp: number | undefined) {
+  const context = encoder.encode(`pet-messenger:audio-frame:v2:${callID}:${timestamp ?? 0}`)
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', context))
+  return digest.slice(0, 16)
+}
+
 const workerScope = self as typeof self & { onrtctransform: ((event: TransformEvent) => void) | null }
 workerScope.onrtctransform = event => {
   const { operation, key, callID, mediaKind } = event.transformer.options
-  const cryptoKey = crypto.subtle.importKey('raw', fromBase64url(key), { name: 'AES-GCM' }, false, operation === 'encrypt' ? ['encrypt'] : ['decrypt'])
+  const rawKey = fromBase64url(key)
+  const cryptoKey = crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, operation === 'encrypt' ? ['encrypt'] : ['decrypt'])
+  const audioCryptoKey = crypto.subtle.importKey('raw', rawKey, { name: 'AES-CTR' }, false, operation === 'encrypt' ? ['encrypt'] : ['decrypt'])
   const transform = new TransformStream<EncodedFrame, EncodedFrame>({
     async transform(frame, controller) {
       try {
         if (operation === 'encrypt') {
           const input = new Uint8Array(frame.data)
+          if (mediaKind === 'audio' || frame.getMetadata?.().mimeType?.toLowerCase().startsWith('audio/')) {
+            const counter = await audioCounter(callID, frame.timestamp)
+            frame.data = await crypto.subtle.encrypt(
+              { name: 'AES-CTR', counter, length: 64 },
+              await audioCryptoKey,
+              input,
+            )
+            controller.enqueue(frame)
+            return
+          }
           const offset = cryptoOffset(frame, input, mediaKind)
           const clearPrefix = input.slice(0, offset)
           const nonce = crypto.getRandomValues(new Uint8Array(12))
@@ -78,6 +97,16 @@ workerScope.onrtctransform = event => {
           return
         }
         const input = new Uint8Array(frame.data)
+        if (mediaKind === 'audio' || frame.getMetadata?.().mimeType?.toLowerCase().startsWith('audio/')) {
+          const counter = await audioCounter(callID, frame.timestamp)
+          frame.data = await crypto.subtle.decrypt(
+            { name: 'AES-CTR', counter, length: 64 },
+            await audioCryptoKey,
+            input,
+          )
+          controller.enqueue(frame)
+          return
+        }
         const offset = cryptoOffset(frame, input, mediaKind)
         if (!startsWithMarker(input, offset) || input.length < offset + marker.length + 12 + 16) return
         const clearPrefix = input.slice(0, offset)

@@ -286,6 +286,16 @@ export function useCall(session: Session) {
       // is guaranteed; do not let a placeholder receiver install an audio
       // transform with video-shaped options.
       mediaE2EE.current?.decrypt(event.receiver, event.track.kind)
+      // Some Chromium builds expose a provisional receiver in ontrack and
+      // replace its transform slot during negotiation. Re-apply the transform
+      // to the concrete receiver on the next microtask as well; without this,
+      // encrypted audio can reach the decoder as noise in only one direction.
+      queueMicrotask(() => {
+        connection.getReceivers().forEach(receiver => {
+          const kind = receiver.track?.kind
+          if (kind) mediaE2EE.current?.decrypt(receiver, kind)
+        })
+      })
       // A browser may put camera and screen tracks into one remote MediaStream.
       // Keep a stream per track so each tile retains its own SFU label.
       const stream = new MediaStream([event.track])

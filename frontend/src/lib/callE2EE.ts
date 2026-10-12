@@ -38,7 +38,10 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
   keyBytes.set(key)
   const nativeKey = crypto.subtle.importKey('raw', keyBytes.buffer, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
   const encrypted = new WeakSet<RTCRtpSender>()
-  const decrypted = new WeakSet<RTCRtpReceiver>()
+  const decrypted = new WeakMap<RTCRtpReceiver, unknown>()
+  // Native SFrame is preferred for audio when the browser exposes it; the
+  // worker's AES-CTR path below is the fallback when it doesn't.
+  const useNativeAudio = Boolean(NativeEncryptor && NativeDecryptor)
   const installNativeAudioSender = (sender: RTCRtpSender) => {
     if (!NativeEncryptor) return false
     try {
@@ -60,11 +63,12 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
   return {
     encrypt(sender) {
       if (encrypted.has(sender)) return
-      if (sender.track?.kind === 'audio' && NativeEncryptor) {
+      if (useNativeAudio && sender.track?.kind === 'audio') {
         if (installNativeAudioSender(sender)) {
           encrypted.add(sender)
           return
         }
+        return
       }
       if (!Constructor || !worker) return
       ;(sender as TransformableSender).transform = new Constructor(worker, {
@@ -73,18 +77,21 @@ export function createCallE2EETransforms(callID: string, key: Uint8Array): CallE
       encrypted.add(sender)
     },
     decrypt(receiver, mediaKind = receiver.track?.kind ?? '') {
-      if (decrypted.has(receiver)) return
-      if ((mediaKind === 'audio' || receiver.track?.kind === 'audio') && NativeDecryptor) {
+      const currentTransform = (receiver as TransformableReceiver).transform
+      if (decrypted.get(receiver) === currentTransform && currentTransform) return
+      if (useNativeAudio && (mediaKind === 'audio' || receiver.track?.kind === 'audio')) {
         if (installNativeAudioReceiver(receiver)) {
-          decrypted.add(receiver)
+          decrypted.set(receiver, (receiver as TransformableReceiver).transform)
           return
         }
+        return
       }
       if (!Constructor || !worker) return
-      ;(receiver as TransformableReceiver).transform = new Constructor(worker, {
+      const transform = new Constructor(worker, {
         operation: 'decrypt', key: encodedKey, callID, mediaKind,
       })
-      decrypted.add(receiver)
+      ;(receiver as TransformableReceiver).transform = transform
+      decrypted.set(receiver, transform)
     },
     close() { worker?.terminate() },
   }

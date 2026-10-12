@@ -224,7 +224,15 @@ async function readCallKey(call: Call, conversationID: string, token: string, id
 }
 
 export async function prepareCallE2EE(call: Call, conversationID: string, token: string, userID: string) {
-  if (!('RTCRtpScriptTransform' in window)) throw new Error('Браузер не поддерживает E2EE медиапотоков')
+  const mediaRuntime = window as typeof window & {
+    RTCRtpScriptTransform?: unknown
+    RTCRtpSFrameEncryptor?: unknown
+    RTCRtpSFrameDecryptor?: unknown
+  }
+  const hasScriptTransform = typeof mediaRuntime.RTCRtpScriptTransform === 'function'
+  const hasNativeSFrame = typeof mediaRuntime.RTCRtpSFrameEncryptor === 'function' &&
+    typeof mediaRuntime.RTCRtpSFrameDecryptor === 'function'
+  if (!hasScriptTransform && !hasNativeSFrame) throw new Error('Браузер не поддерживает E2EE медиапотоков')
   const identity = await ensureE2EEIdentity(token, userID)
   try {
     return await readCallKey(call, conversationID, token, identity, call.initiator_id === userID ? 1 : 20)
