@@ -13,9 +13,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	domainconv "pet-messenger/internal/domain/conversation"
+	// oldconv is the pre-retrofit conversation domain package, still imported
+	// by the old ConversationHandler (conversation_handler.go) this file's
+	// coexistence test exercises. It goes away in the same slice that
+	// deletes conversation_handler.go — see
+	// docs/superpowers/plans/2026-10-12-conversation-clean-hexagonal-cqrs.md
+	// Task 29.
+	oldconv "pet-messenger/internal/domain/conversation"
+
 	domainmsg "pet-messenger/internal/domain/message"
 	usecasemsg "pet-messenger/internal/usecase/message"
+
+	domainconv "pet-messenger/internal/conversation/domain"
 )
 
 type fakeMessageService struct {
@@ -85,8 +94,8 @@ func TestMessageHandler_RoutesCoexistWithConversationRoutes(t *testing.T) {
 		},
 	}}
 	convH := &ConversationHandler{svc: &fakeConversationService{
-		openDirect: func(_, _ uuid.UUID) (*domainconv.Conversation, error) {
-			return &domainconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: domainconv.KindDirect, LastMessageAt: time.Now().UTC()}, nil
+		openDirect: func(_, _ uuid.UUID) (*oldconv.Conversation, error) {
+			return &oldconv.Conversation{ID: uuid.Must(uuid.NewV7()), Kind: oldconv.KindDirect, LastMessageAt: time.Now().UTC()}, nil
 		},
 	}}
 	// Registering both handlers on one group must not panic.

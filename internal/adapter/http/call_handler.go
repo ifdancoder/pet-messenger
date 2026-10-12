@@ -10,8 +10,9 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
 	usecasecall "pet-messenger/internal/usecase/call"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
 
 type callService interface {

@@ -10,9 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	domainconv "pet-messenger/internal/domain/conversation"
 	domainmsg "pet-messenger/internal/domain/message"
 	usecasemsg "pet-messenger/internal/usecase/message"
+
+	domainconv "pet-messenger/internal/conversation/domain"
 )
 
 // messageService is satisfied by *usecasemsg.Service; declared here so tests can
