@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	domainconv "pet-messenger/internal/domain/conversation"
+	domainconv "pet-messenger/internal/conversation/domain"
 	domainmsg "pet-messenger/internal/domain/message"
 )
 
@@ -152,7 +152,7 @@ func (f *fakeNotifProducer) MembershipEvent(context.Context, domainmsg.SystemEve
 
 // newSvc builds a Service with a capturing publisher and a no-op notification
 // producer.
-func newSvc(msgs domainmsg.Repository, convs domainconv.Repository) (*Service, *fakePublisher) {
+func newSvc(msgs domainmsg.Repository, convs ConversationReader) (*Service, *fakePublisher) {
 	pub := &fakePublisher{}
 	return NewService(msgs, convs, pub, &fakeNotifProducer{}), pub
 }

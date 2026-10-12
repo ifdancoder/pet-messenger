@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
-	domainconv "pet-messenger/internal/domain/conversation"
+	domainconv "pet-messenger/internal/conversation/domain"
 	domainmsg "pet-messenger/internal/domain/message"
 )
 
@@ -42,17 +42,17 @@ var (
 // Service is the message usecase.
 type Service struct {
 	messages      domainmsg.Repository
-	conversations domainconv.Repository
+	conversations ConversationReader
 	publisher     MessagePublisher
 	notif         NotificationProducer
 }
 
 // NewService wires the service. messages is implemented by
 // internal/infrastructure/postgres.MessageRepository; conversations by
-// internal/infrastructure/postgres.ConversationRepository; publisher by
-// internal/infrastructure/nats.Publisher; notif by
+// internal/conversation/adapter/out/persistence.ConversationRepository;
+// publisher by internal/infrastructure/nats.Publisher; notif by
 // internal/infrastructure/notification.Producer.
-func NewService(messages domainmsg.Repository, conversations domainconv.Repository, publisher MessagePublisher, notif NotificationProducer) *Service {
+func NewService(messages domainmsg.Repository, conversations ConversationReader, publisher MessagePublisher, notif NotificationProducer) *Service {
 	return &Service{messages: messages, conversations: conversations, publisher: publisher, notif: notif}
 }
 

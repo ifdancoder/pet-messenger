@@ -2,12 +2,27 @@ package message
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
-	domainconv "pet-messenger/internal/domain/conversation"
+	domainconv "pet-messenger/internal/conversation/domain"
 	domainmsg "pet-messenger/internal/domain/message"
 )
+
+// ConversationReader is the slice of the conversation context's write-side
+// repository this service needs: enough to check membership/role before a
+// message write, and to advance a member's read cursor. Defined here
+// (consumer-driven), not imported from the conversation context, per the
+// project's retrofit design (see
+// docs/superpowers/specs/2026-10-12-conversation-clean-hexagonal-cqrs-design.md).
+// Implemented by internal/conversation/adapter/out/persistence.ConversationRepository.
+type ConversationReader interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*domainconv.Conversation, error)
+	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*domainconv.Member, error)
+	SetLastReadMessage(ctx context.Context, conversationID, userID, messageID uuid.UUID) error
+	ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error)
+}
 
 // MessagePublisher broadcasts a message change to connected clients across pods,
 // after the write commits. Implemented by internal/infrastructure/nats.Publisher.
