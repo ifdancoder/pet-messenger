@@ -3,12 +3,10 @@ package fxapp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 
@@ -107,54 +105,11 @@ func startMessageSubscription(lc fx.Lifecycle, nc *natsgo.Conn, hub *wsadapter.H
 	})
 }
 
-// startMemberRevocationSubscription opens the per-pod member.revoked.>
-// subscription and drops the named user's local subscription to the named
-// conversation from the Hub.
-func startMemberRevocationSubscription(lc fx.Lifecycle, nc *natsgo.Conn, hub *wsadapter.Hub) {
-	var sub *natsgo.Subscription
-	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
-			s, err := nc.Subscribe(natsinfra.RevokeWildcardSubject, func(m *natsgo.Msg) {
-				cid, ok := natsinfra.ConversationIDFromRevokeSubject(m.Subject)
-				if !ok {
-					log.Printf("nats: member-revoked on unparseable subject %q", m.Subject)
-					return
-				}
-				var ev natsinfra.MemberRevokedEvent
-				if err := json.Unmarshal(m.Data, &ev); err != nil {
-					log.Printf("nats: bad member-revoked payload on %s: %v", m.Subject, err)
-					return
-				}
-				uid, err := uuid.Parse(ev.UserID)
-				if err != nil {
-					log.Printf("nats: member-revoked with bad user id %q", ev.UserID)
-					return
-				}
-				hub.DropSubscription(uid, cid)
-			})
-			if err != nil {
-				return fmt.Errorf("subscribe %s: %w", natsinfra.RevokeWildcardSubject, err)
-			}
-			sub = s
-			log.Printf("nats: subscribed to %s", natsinfra.RevokeWildcardSubject)
-			return nil
-		},
-		OnStop: func(context.Context) error {
-			if sub != nil {
-				return sub.Unsubscribe()
-			}
-			return nil
-		},
-	})
-}
-
 var NATSModule = fx.Module("nats",
 	fx.Provide(
 		newNATSConn,
 		newJetStream,
 		natsinfra.NewPublisher,
-		natsinfra.NewMemberEventPublisher,
 	),
 	fx.Invoke(startMessageSubscription),
-	fx.Invoke(startMemberRevocationSubscription),
 )

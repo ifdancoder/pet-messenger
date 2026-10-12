@@ -30,34 +30,6 @@ func TestConversationIDFromSubject_Rejects(t *testing.T) {
 	}
 }
 
-func TestRevokeSubjectRoundTrip(t *testing.T) {
-	id := uuid.Must(uuid.NewV7())
-	subj := RevokeSubjectForConversation(id.String())
-	if subj != "member.revoked."+id.String() {
-		t.Fatalf("subject = %q", subj)
-	}
-	got, ok := ConversationIDFromRevokeSubject(subj)
-	if !ok || got != id {
-		t.Fatalf("ConversationIDFromRevokeSubject(%q) = %v, %v", subj, got, ok)
-	}
-	for _, bad := range []string{"member.revoked.", "member.revoked.nope", "msg." + id.String(), ""} {
-		if _, ok := ConversationIDFromRevokeSubject(bad); ok {
-			t.Errorf("accepted %q", bad)
-		}
-	}
-}
-
-func TestMemberRevokedEvent_JSONShape(t *testing.T) {
-	user := uuid.Must(uuid.NewV7())
-	data, err := json.Marshal(MemberRevokedEvent{UserID: user.String()})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if got, want := string(data), `{"user_id":"`+user.String()+`"}`; got != want {
-		t.Fatalf("marshalled %s, want %s", got, want)
-	}
-}
-
 func TestToPayload(t *testing.T) {
 	sender := uuid.Must(uuid.NewV7())
 	edited := time.Now().UTC()

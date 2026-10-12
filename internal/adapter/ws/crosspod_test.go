@@ -19,6 +19,9 @@ import (
 	"pet-messenger/internal/domain/message"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	natsinfra "pet-messenger/internal/infrastructure/nats"
+
+	convmsg "pet-messenger/internal/conversation/adapter/out/messaging"
+	convdomain "pet-messenger/internal/conversation/domain"
 )
 
 // TestCrossPodDelivery: a message published on one NATS connection ("pod A")
@@ -133,9 +136,13 @@ func TestCrossPodDelivery(t *testing.T) {
 	}
 }
 
-// TestCrossPodMemberRevocation: a member.revoked event published on one NATS
+// TestCrossPodMemberRevocation: a member.removed event published on one NATS
 // connection ("pod A") makes a different pod ("pod B") drop that user's local
-// Hub subscription to the conversation.
+// Hub subscription to the conversation. This exercises the same
+// conversation.events.> envelope + ephemeral JetStream subscription shape as
+// internal/fx/conversation.go's startMemberRevocationFanout (the pre-retrofit
+// member.revoked.> core-NATS mechanism this superseded — see the design
+// spec's "Migration of existing wiring").
 func TestCrossPodMemberRevocation(t *testing.T) {
 	ctx := context.Background()
 
@@ -149,28 +156,44 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 		t.Fatalf("connection string: %v", err)
 	}
 
-	// pod B: Hub + a member.revoked.> subscription that calls hub.DropSubscription
+	// pod B: Hub + an ephemeral conversation.events.> subscription that
+	// calls hub.DropSubscription on a member.removed event.
 	hub := NewHub()
 	ncB, err := connectTestNATS(url)
 	if err != nil {
 		t.Fatalf("pod B connect: %v", err)
 	}
 	t.Cleanup(func() { ncB.Close() })
-	subB, err := ncB.Subscribe(natsinfra.RevokeWildcardSubject, func(m *natsgo.Msg) {
-		cid, ok := natsinfra.ConversationIDFromRevokeSubject(m.Subject)
-		if !ok {
-			t.Logf("pod B: revoke subject %q not parseable, dropping", m.Subject)
+	jsB, err := ncB.JetStream()
+	if err != nil {
+		t.Fatalf("pod B jetstream: %v", err)
+	}
+	if err := convmsg.EnsureStream(jsB); err != nil {
+		t.Fatalf("ensure stream: %v", err)
+	}
+	subB, err := jsB.Subscribe(convmsg.WildcardSubject, func(m *natsgo.Msg) {
+		var env struct {
+			Type    string          `json:"type"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		if err := json.Unmarshal(m.Data, &env); err != nil {
+			t.Logf("pod B: unmarshal envelope %q: %v", m.Data, err)
+			_ = m.Ack()
 			return
 		}
-		var ev natsinfra.MemberRevokedEvent
-		if err := json.Unmarshal(m.Data, &ev); err != nil {
-			t.Logf("pod B: unmarshal revoke frame %q: %v", m.Data, err)
+		if env.Type != "member.removed" {
+			_ = m.Ack()
 			return
 		}
-		if uid, err := uuid.Parse(ev.UserID); err == nil {
-			hub.DropSubscription(uid, cid)
+		var ev convdomain.MemberRemoved
+		if err := json.Unmarshal(env.Payload, &ev); err != nil {
+			t.Logf("pod B: unmarshal member.removed payload %q: %v", env.Payload, err)
+			_ = m.Ack()
+			return
 		}
-	})
+		hub.DropSubscription(ev.UserID, ev.ConversationID)
+		_ = m.Ack()
+	}, natsgo.ManualAck())
 	if err != nil {
 		t.Fatalf("pod B subscribe: %v", err)
 	}
@@ -181,18 +204,22 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 	conn := newConn(user, 4)
 	hub.Subscribe(conn, conv)
 
-	// pod A publishes the revoke
+	// pod A publishes the member.removed event
 	ncA, err := connectTestNATS(url)
 	if err != nil {
 		t.Fatalf("pod A connect: %v", err)
 	}
 	t.Cleanup(func() { ncA.Close() })
-	pub := natsinfra.NewMemberEventPublisher(ncA)
+	jsA, err := ncA.JetStream()
+	if err != nil {
+		t.Fatalf("pod A jetstream: %v", err)
+	}
+	pub := convmsg.NewEventPublisher(jsA)
 
 	// retry the publish to absorb subscription-propagation lag
 	deadline := time.After(8 * time.Second)
 	for {
-		if err := pub.PublishMemberRevoked(ctx, conv, user); err != nil {
+		if err := pub.Publish(ctx, convdomain.MemberRemoved{ConversationID: conv, UserID: user}); err != nil {
 			t.Fatalf("publish: %v", err)
 		}
 		if !hub.IsSubscribed(conn, conv) {
