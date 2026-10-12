@@ -1,0 +1,29 @@
+# PLACEHOLDER. Replace `other-project` below with the real namespace name,
+# and the numbers with that project's actual measured need — these are
+# NOT a measured fact. See ../README.md's node-wide arithmetic for where
+# "1792Mi" / "500m" come from (what's left after pet-messenger's own
+# quota and the node's system-overhead reserve). Applied by hand, same as
+# pet-messenger.yaml in this directory.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: other-project-quota
+  namespace: other-project
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: 512Mi
+    limits.cpu: "2500m"
+    limits.memory: 1792Mi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: other-project-limits
+  namespace: other-project
+spec:
+  limits:
+    - type: Container
+      defaultRequest: {cpu: 25m, memory: 32Mi}
+      default: {cpu: 200m, memory: 128Mi}

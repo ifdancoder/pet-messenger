@@ -1,0 +1,26 @@
+# Cluster-wide governance — applied by hand under the admin kubeconfig,
+# never by this (or any) project's own CI. See ../README.md for why and
+# for the arithmetic these numbers come from.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: pet-messenger-quota
+  namespace: pet-messenger
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: 512Mi
+    limits.cpu: "2500m"
+    limits.memory: 1792Mi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: pet-messenger-limits
+  namespace: pet-messenger
+spec:
+  limits:
+    - type: Container
+      defaultRequest: {cpu: 25m, memory: 32Mi}
+      default: {cpu: 200m, memory: 128Mi}
