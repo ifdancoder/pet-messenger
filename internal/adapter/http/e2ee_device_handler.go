@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -14,17 +15,28 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/e2ee"
+
+	"pet-messenger/internal/conversation/domain"
 )
+
+// ConversationMemberChecker is the slice of the conversation context's
+// write-side repository this handler needs: just enough to confirm the
+// actor is a member before trusting an e2ee device claim scoped to a
+// conversation. Exported so internal/fx can bridge a concrete adapter to
+// it. Implemented by
+// internal/conversation/adapter/out/persistence.ConversationRepository.
+type ConversationMemberChecker interface {
+	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*domain.Member, error)
+}
 
 type E2EEDeviceHandler struct {
 	repo          e2ee.Repository
-	conversations conversation.Repository
+	conversations ConversationMemberChecker
 	calls         domaincall.Repository
 }
 
-func NewE2EEDeviceHandler(repo e2ee.Repository, conversations conversation.Repository, calls domaincall.Repository) *E2EEDeviceHandler {
+func NewE2EEDeviceHandler(repo e2ee.Repository, conversations ConversationMemberChecker, calls domaincall.Repository) *E2EEDeviceHandler {
 	return &E2EEDeviceHandler{repo: repo, conversations: conversations, calls: calls}
 }
 
