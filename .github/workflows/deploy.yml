@@ -1,0 +1,73 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  build-and-push:
+    needs: [test-go, test-frontend]
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: |
+          docker build -t "${{ vars.REGISTRY }}/pet-messenger-api:${{ github.sha }}" -f deploy/media/Dockerfile.api .
+          docker build -t "${{ vars.REGISTRY }}/pet-messenger-media:${{ github.sha }}" -f deploy/media/Dockerfile.media .
+          docker build -t "${{ vars.REGISTRY }}/pet-messenger-migrate:${{ github.sha }}" -f deploy/kubernetes/Dockerfile.migrate .
+          docker build -t "${{ vars.REGISTRY }}/pet-messenger-frontend:${{ github.sha }}" -f frontend/Dockerfile frontend
+      - name: Push images
+        run: |
+          docker push "${{ vars.REGISTRY }}/pet-messenger-api:${{ github.sha }}"
+          docker push "${{ vars.REGISTRY }}/pet-messenger-media:${{ github.sha }}"
+          docker push "${{ vars.REGISTRY }}/pet-messenger-migrate:${{ github.sha }}"
+          docker push "${{ vars.REGISTRY }}/pet-messenger-frontend:${{ github.sha }}"
+
+  deploy:
+    needs: build-and-push
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Point the production overlay at the new images
+        env:
+          REGISTRY: ${{ vars.REGISTRY }}
+          SHA: ${{ github.sha }}
+        run: |
+          OVERLAY=deploy/kubernetes/overlays/production/kustomization.yaml
+          sed -i -E "s#newName: [A-Za-z0-9._/:-]+/pet-messenger-#newName: ${REGISTRY}/pet-messenger-#g" "$OVERLAY"
+          sed -i -E "s/newTag: \"?[A-Za-z0-9._-]+\"?/newTag: \"${SHA}\"/g" "$OVERLAY"
+      - name: Re-run migrations
+        run: kubectl delete job -n pet-messenger migrate --ignore-not-found
+      - name: Apply
+        run: kubectl apply -k deploy/kubernetes/overlays/production
+      - name: Wait for rollout
+        run: |
+          kubectl -n pet-messenger wait --for=condition=complete job/migrate --timeout=120s
+          kubectl -n pet-messenger rollout status deployment/api
+          kubectl -n pet-messenger rollout status deployment/media
+          kubectl -n pet-messenger rollout status deployment/frontend
