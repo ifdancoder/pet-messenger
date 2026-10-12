@@ -46,3 +46,49 @@ the API service. The Minikube overlay advertises `localhost:8081` to the
 browser, matching the media port-forward. Coturn uses
 the Minikube node network; TURN relay verification needs a host-reachable TURN
 address and is therefore a production-overlay concern.
+
+## Production
+
+Production runs on an existing k3s node shared with one other project.
+Unlike Minikube, there is a real CI/CD pipeline for this path — see
+`.github/workflows/ci.yml` (tests every PR) and `.github/workflows/deploy.yml`
+(builds, pushes, and deploys on every push to `main`, via a self-hosted
+GitHub Actions runner that lives on the target server). The full design
+and the per-workload memory/CPU numbers behind it are in
+`../../docs/superpowers/specs/2026-10-12-k8s-shared-server-deploy-cicd-design.md`.
+
+### One-time manual setup (not automated by CI)
+
+1. Register a self-hosted GitHub Actions runner on the target server
+   (GitHub repo → Settings → Actions → Runners → New self-hosted runner),
+   scoped to this repository. Give its service user read access to the
+   k3s kubeconfig (typically `/etc/rancher/k3s/k3s.yaml`, root-owned by
+   default) — either run the runner as a user in the right group, or
+   copy a scoped kubeconfig into the runner's home directory and set
+   `KUBECONFIG` in its environment.
+2. Set the repository variable `REGISTRY` (Settings → Secrets and
+   variables → Actions → Variables) to the real registry host:port. The
+   `130.17.20.23:5000` that used to be hardcoded in the base manifests is
+   explicitly unconfirmed — do not reuse it without checking.
+3. Point `messenger.ifdancoder.ru`'s DNS A record at the server's public IP.
+4. Apply the cluster-wide pieces by hand, under the admin kubeconfig (see
+   `../../cluster/README.md` and `../../cluster/cert-manager/README.md`):
+   `cluster/quotas/pet-messenger.yaml` and cert-manager + its
+   `ClusterIssuer`.
+5. Create the runtime secrets in the real cluster's `pet-messenger`
+   namespace — the same `kubectl create secret` commands the Minikube
+   section above already documents, run against the real cluster's
+   context instead of `minikube kubectl --`.
+6. Once the other project's administrator knows its real memory/CPU
+   need, fill in and apply `cluster/quotas/other-project.yaml`.
+
+### Known limitation to watch for
+
+Traefik's own entrypoint idle timeout (commonly 180s by default in k3s)
+sits in front of `frontend/nginx.conf`'s deliberate 1-hour timeout on
+`/rtc`. If call signaling drops after roughly 3 minutes of quiet in
+production specifically (not reproducible via the Minikube port-forward
+path, which never goes through Traefik), raise or disable that
+entrypoint timeout — it was not pre-emptively changed here because the
+k3s default may already be long enough; confirm against real call
+behavior rather than a guessed value.
