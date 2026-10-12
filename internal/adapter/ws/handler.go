@@ -13,15 +13,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"pet-messenger/internal/domain/conversation"
 	infraauth "pet-messenger/internal/infrastructure/auth"
+
+	"pet-messenger/internal/conversation/domain"
 )
 
 const defaultConnBuffer = 64 // outbound frames buffered before a slow client is dropped
 
-// memberChecker is the slice of conversation.Repository the subscribe gate uses.
-type memberChecker interface {
-	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error)
+// MemberChecker is the slice of the conversation context's write-side
+// repository the subscribe gate uses. Exported so internal/fx can bridge a
+// concrete adapter to it without this package needing to know the
+// adapter's concrete type. Implemented by
+// internal/conversation/adapter/out/persistence.ConversationRepository.
+type MemberChecker interface {
+	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*domain.Member, error)
 }
 
 // WSHandler upgrades /ws connections, authenticates them via the
@@ -30,7 +35,7 @@ type memberChecker interface {
 type WSHandler struct {
 	hub            *Hub
 	verifier       *infraauth.JWTVerifier
-	members        memberChecker
+	members        MemberChecker
 	originPatterns []string
 	bufSize        int
 	presence       PresenceRecorder
@@ -39,7 +44,7 @@ type WSHandler struct {
 // NewWSHandler builds the handler. originPatterns is passed straight to
 // websocket.AcceptOptions.OriginPatterns; a nil/empty slice keeps
 // coder/websocket's same-origin default.
-func NewWSHandler(hub *Hub, verifier *infraauth.JWTVerifier, members conversation.Repository, originPatterns []string, presence PresenceRecorder) *WSHandler {
+func NewWSHandler(hub *Hub, verifier *infraauth.JWTVerifier, members MemberChecker, originPatterns []string, presence PresenceRecorder) *WSHandler {
 	return &WSHandler{
 		hub:            hub,
 		verifier:       verifier,
@@ -177,7 +182,7 @@ func (h *WSHandler) handleControl(ctx context.Context, conn *Conn, data []byte) 
 			return
 		}
 		if _, err := h.members.GetMember(ctx, cid, conn.userID); err != nil {
-			if errors.Is(err, conversation.ErrNotMember) {
+			if errors.Is(err, domain.ErrNotMember) {
 				conn.enqueue(serverError(cid.String(), "not a member"))
 			} else {
 				log.Printf("ws: GetMember user=%s conv=%s: %v", conn.userID, cid, err)

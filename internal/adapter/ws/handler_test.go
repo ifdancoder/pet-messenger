@@ -15,11 +15,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"pet-messenger/internal/domain/conversation"
 	infraauth "pet-messenger/internal/infrastructure/auth"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
 
-// stubConvRepo implements conversation.Repository; only GetMember is meaningful.
+// stubConvRepo implements MemberChecker (and, harmlessly, more); only GetMember is meaningful.
 type stubConvRepo struct{ memberErr error }
 
 func (s stubConvRepo) Create(context.Context, *conversation.Conversation, []*conversation.Member) error {
@@ -68,7 +69,7 @@ func (s stubConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, u
 
 func (s stubConvRepo) ListMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) { return nil, nil }
 
-func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
+func wsTestServer(t *testing.T, members MemberChecker) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -88,7 +89,7 @@ func wsTestServer(t *testing.T, members conversation.Repository) (*httptest.Serv
 
 // wsTestServerOpts builds a server with explicit origin patterns and access-token
 // TTL, for the origin and token-expiry tests.
-func wsTestServerOpts(t *testing.T, members conversation.Repository, originPatterns []string, ttl time.Duration) (*httptest.Server, *infraauth.JWTIssuer) {
+func wsTestServerOpts(t *testing.T, members MemberChecker, originPatterns []string, ttl time.Duration) (*httptest.Server, *infraauth.JWTIssuer) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
