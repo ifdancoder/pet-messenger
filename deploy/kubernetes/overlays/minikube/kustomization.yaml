@@ -9,10 +9,10 @@ resources: [../../base]
 # so that a changed tag is what makes `kubectl apply -k` pick up new code at
 # all; a fixed tag would make repeated applies of the same manifest a no-op.
 images:
-  - {name: 130.17.20.23:5000/pet-messenger-api, newName: pet-messenger-api, newTag: unbuilt}
-  - {name: 130.17.20.23:5000/pet-messenger-media, newName: pet-messenger-media, newTag: unbuilt}
-  - {name: 130.17.20.23:5000/pet-messenger-frontend, newName: pet-messenger-frontend, newTag: unbuilt}
-  - {name: 130.17.20.23:5000/pet-messenger-migrate, newName: pet-messenger-migrate, newTag: unbuilt}
+  - {name: registry.invalid/pet-messenger-api, newName: pet-messenger-api, newTag: unbuilt}
+  - {name: registry.invalid/pet-messenger-media, newName: pet-messenger-media, newTag: unbuilt}
+  - {name: registry.invalid/pet-messenger-frontend, newName: pet-messenger-frontend, newTag: unbuilt}
+  - {name: registry.invalid/pet-messenger-migrate, newName: pet-messenger-migrate, newTag: unbuilt}
 
 # Always: pulls from the registry named above, which minikube's node can't
 # reach for a locally built image anyway. IfNotPresent is correct once the

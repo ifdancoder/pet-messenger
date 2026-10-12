@@ -17,7 +17,7 @@ spec:
       imagePullSecrets: [{name: registry-credentials}]
       containers:
         - name: frontend
-          image: 130.17.20.23:5000/pet-messenger-frontend:d710c91
+          image: registry.invalid/pet-messenger-frontend:unset
           imagePullPolicy: Always
           ports: [{containerPort: 80}]
           resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
