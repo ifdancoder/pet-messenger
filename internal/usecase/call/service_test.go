@@ -9,8 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
 
 // ---- fakes ----

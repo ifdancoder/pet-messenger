@@ -9,13 +9,14 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
 
 type Service struct {
 	calls   domaincall.Repository
-	convs   conversation.Repository
+	convs   ConversationReader
 	nodes   MediaNodeRegistry
 	rooms   RoomControl
 	tickets JoinTicketIssuer
@@ -24,7 +25,7 @@ type Service struct {
 	notif   CallNotifier
 }
 
-func NewService(calls domaincall.Repository, convs conversation.Repository, nodes MediaNodeRegistry, rooms RoomControl, tickets JoinTicketIssuer, ice ICEConfigProvider, events SystemEventPoster, notif CallNotifier) *Service {
+func NewService(calls domaincall.Repository, convs ConversationReader, nodes MediaNodeRegistry, rooms RoomControl, tickets JoinTicketIssuer, ice ICEConfigProvider, events SystemEventPoster, notif CallNotifier) *Service {
 	return &Service{calls: calls, convs: convs, nodes: nodes, rooms: rooms, tickets: tickets, ice: ice, events: events, notif: notif}
 }
 

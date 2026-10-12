@@ -9,9 +9,10 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
 	usecasecall "pet-messenger/internal/usecase/call"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
 
 // ---- fakes ----

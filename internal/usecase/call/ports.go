@@ -11,9 +11,20 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/conversation"
 	"pet-messenger/internal/domain/message"
+
+	conversation "pet-messenger/internal/conversation/domain"
 )
+
+// ConversationReader is the slice of the conversation context's write-side
+// repository this service needs: enough to check a call's host conversation
+// exists and that the actor is a member. Defined here (consumer-driven) per
+// the project's retrofit design. Implemented by
+// internal/conversation/adapter/out/persistence.ConversationRepository.
+type ConversationReader interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*conversation.Conversation, error)
+	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*conversation.Member, error)
+}
 
 var (
 	ErrCallNotSupported       = errors.New("call: this conversation kind cannot host a call")
