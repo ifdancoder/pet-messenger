@@ -16,6 +16,7 @@ import (
 	httpadapter "pet-messenger/internal/adapter/http"
 	wsadapter "pet-messenger/internal/adapter/ws"
 	"pet-messenger/internal/config"
+	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/database"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 )
@@ -26,7 +27,7 @@ func newGinEngine(
 	authHandler *httpadapter.AuthHandler,
 	userHandler *httpadapter.UserHandler,
 	e2eeDeviceHandler *httpadapter.E2EEDeviceHandler,
-	convHandler *httpadapter.ConversationHandler,
+	convHandler *web.ConversationHandler,
 	msgHandler *httpadapter.MessageHandler,
 	notifHandler *httpadapter.NotificationHandler,
 	pushTokenHandler *httpadapter.PushTokenHandler,
