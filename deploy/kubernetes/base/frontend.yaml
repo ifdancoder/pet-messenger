@@ -20,5 +20,6 @@ spec:
           image: 130.17.20.23:5000/pet-messenger-frontend:d710c91
           imagePullPolicy: Always
           ports: [{containerPort: 80}]
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
           readinessProbe: {httpGet: {path: /, port: 80}, initialDelaySeconds: 3}
           livenessProbe: {httpGet: {path: /, port: 80}, initialDelaySeconds: 10}

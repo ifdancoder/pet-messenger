@@ -24,6 +24,7 @@ spec:
             - name: MINIO_ROOT_PASSWORD
               valueFrom: {secretKeyRef: {name: pet-messenger-secrets, key: MINIO_SECRET_KEY}}
           ports: [{containerPort: 9000}]
+          resources: {requests: {cpu: 25m, memory: 64Mi}, limits: {cpu: 200m, memory: 192Mi}}
           readinessProbe: {httpGet: {path: /minio/health/live, port: 9000}, initialDelaySeconds: 5}
           volumeMounts: [{name: data, mountPath: /data}]
   volumeClaimTemplates:

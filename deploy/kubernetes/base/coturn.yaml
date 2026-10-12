@@ -27,5 +27,6 @@ spec:
         - name: coturn
           image: coturn/coturn:4.6
           args: [-c, /etc/coturn/turnserver.conf]
+          resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 300m, memory: 128Mi}}
           volumeMounts: [{name: config, mountPath: /etc/coturn}]
       volumes: [{name: config, configMap: {name: coturn-config}}]

@@ -18,6 +18,7 @@ spec:
           image: nats:2.10-alpine
           args: [-js, -sd, /data]
           ports: [{containerPort: 4222}]
+          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 150m, memory: 128Mi}}
           volumeMounts: [{name: data, mountPath: /data}]
   volumeClaimTemplates:
     - metadata: {name: data}

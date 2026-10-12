@@ -13,4 +13,8 @@ spec:
     metadata: {labels: {app: redis}}
     spec:
       containers:
-        - {name: redis, image: redis:7-alpine, ports: [{containerPort: 6379}], args: [redis-server, --save, '']}
+        - name: redis
+          image: redis:7-alpine
+          ports: [{containerPort: 6379}]
+          args: [redis-server, --save, '']
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}

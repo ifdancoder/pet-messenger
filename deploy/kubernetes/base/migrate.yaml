@@ -12,3 +12,4 @@ spec:
           image: 130.17.20.23:5000/pet-messenger-migrate:d710c91
           imagePullPolicy: Always
           envFrom: [{configMapRef: {name: pet-messenger-config}}, {secretRef: {name: pet-messenger-secrets}}]
+          resources: {requests: {cpu: 50m, memory: 32Mi}, limits: {cpu: 250m, memory: 96Mi}}
