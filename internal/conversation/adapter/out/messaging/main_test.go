@@ -53,6 +53,18 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// purgeStream clears the CONVERSATION_EVENTS stream so each test starts
+// from an empty backlog — without this, a WorkQueuePolicy stream shared
+// across every test in this package would hand a new consumer whatever
+// unclaimed message an earlier test left behind, not necessarily the one
+// that test itself just published.
+func purgeStream(t *testing.T) {
+	t.Helper()
+	if err := testJS.PurgeStream(streamName); err != nil {
+		t.Fatalf("purge %s stream: %v", streamName, err)
+	}
+}
+
 // connectWithRetry absorbs the brief window after the container reports
 // ready where the nats server still resets incoming connections.
 func connectWithRetry(url string) (*natsgo.Conn, error) {

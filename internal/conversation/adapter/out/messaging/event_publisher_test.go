@@ -14,6 +14,7 @@ import (
 )
 
 func TestEventPublisher_PublishesOnConversationSubject(t *testing.T) {
+	purgeStream(t)
 	pub := NewEventPublisher(testJS)
 
 	convID := uuid.Must(uuid.NewV7())
