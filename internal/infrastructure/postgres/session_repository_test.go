@@ -7,17 +7,20 @@ import (
 	"testing"
 
 	domainauth "pet-messenger/internal/domain/auth"
-	"pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
-func createTestUser(t *testing.T) *user.User {
+func createTestUser(t *testing.T) *domainuser.User {
 	t.Helper()
-	u, err := user.New(randomUsername(), "Test User")
+	u, err := domainuser.New(randomUsername(), "Test User")
 	if err != nil {
-		t.Fatalf("user.New: %v", err)
+		t.Fatalf("domainuser.New: %v", err)
 	}
 	u.PasswordHash = "hashed"
-	if err := NewUserRepository(testDB).Create(context.Background(), u); err != nil {
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		u.ID, u.Username, u.DisplayName, u.PasswordHash, u.CreatedAt,
+	); err != nil {
 		t.Fatalf("create test user: %v", err)
 	}
 	return u

@@ -19,13 +19,14 @@ import (
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/database"
 	infraauth "pet-messenger/internal/infrastructure/auth"
+	userweb "pet-messenger/internal/user/adapter/in/web"
 )
 
 func newGinEngine(
 	cfg *config.Config,
 	db database.Service,
 	authHandler *httpadapter.AuthHandler,
-	userHandler *httpadapter.UserHandler,
+	userHandler *userweb.UserHandler,
 	e2eeDeviceHandler *httpadapter.E2EEDeviceHandler,
 	convHandler *web.ConversationHandler,
 	msgHandler *httpadapter.MessageHandler,

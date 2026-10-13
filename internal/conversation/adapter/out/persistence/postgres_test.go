@@ -18,7 +18,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 var testDB *sql.DB
@@ -79,11 +79,11 @@ func randomUsername() string {
 
 // createTestUser inserts a user row directly (no dependency on
 // internal/infrastructure/postgres from this package) and returns its id.
-func createTestUser(t *testing.T) *user.User {
+func createTestUser(t *testing.T) *domainuser.User {
 	t.Helper()
-	u, err := user.New(randomUsername(), "Test User")
+	u, err := domainuser.New(randomUsername(), "Test User")
 	if err != nil {
-		t.Fatalf("user.New: %v", err)
+		t.Fatalf("domainuser.New: %v", err)
 	}
 	u.PasswordHash = "hashed"
 	if _, err := testDB.ExecContext(context.Background(),

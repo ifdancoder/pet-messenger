@@ -27,7 +27,7 @@ import (
 
 	domainnotif "pet-messenger/internal/domain/notification"
 	"pet-messenger/internal/domain/pushtoken"
-	domainuser "pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/postgres"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
@@ -299,10 +299,13 @@ func mkUser(t *testing.T) uuid.UUID {
 	t.Helper()
 	u, err := domainuser.New("u_"+uuid.NewString()[:8], "Test User")
 	if err != nil {
-		t.Fatalf("user.New: %v", err)
+		t.Fatalf("domainuser.New: %v", err)
 	}
 	u.PasswordHash = "hashed"
-	if err := postgres.NewUserRepository(testDB).Create(context.Background(), u); err != nil {
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		u.ID, u.Username, u.DisplayName, u.PasswordHash, u.CreatedAt,
+	); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	return u.ID

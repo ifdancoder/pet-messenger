@@ -7,7 +7,6 @@ import (
 	httpadapter "pet-messenger/internal/adapter/http"
 	"pet-messenger/internal/config"
 	infraauth "pet-messenger/internal/infrastructure/auth"
-	objectstoreinfra "pet-messenger/internal/infrastructure/objectstore"
 	"pet-messenger/internal/infrastructure/postgres"
 	usecaseauth "pet-messenger/internal/usecase/auth"
 )
@@ -18,7 +17,6 @@ func newRefreshTTL(cfg *config.Config) usecaseauth.RefreshTTL {
 
 var AuthModule = fx.Module("auth",
 	fx.Provide(
-		postgres.NewUserRepository,
 		postgres.NewSessionRepository,
 		postgres.NewE2EEDeviceRepository,
 		infraauth.NewBcryptHasher,
@@ -28,8 +26,6 @@ var AuthModule = fx.Module("auth",
 		newRefreshTTL,
 		usecaseauth.NewService,
 		httpadapter.NewAuthHandler,
-		httpadapter.NewUserHandler,
 		httpadapter.NewE2EEDeviceHandler,
-		objectstoreinfra.NewMinioAvatarStore,
 	),
 )
