@@ -69,6 +69,16 @@ func TestListMembers_EnrichesEachMemberByID(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %d members, want 2", len(got))
 	}
+	// Pagination in internal/conversation/adapter/in/web/controller.go builds
+	// the next-page cursor from got[len(got)-1] — the LAST element — so
+	// Handle must preserve the input members slice's order (zip by position
+	// into the by-ID profile lookup), not the profiles map's order. Assert
+	// this before any re-indexing below, since re-indexing by UserID would
+	// mask a positional-order bug just as well as it'd mask a correct
+	// implementation.
+	if got[0].UserID != userA || got[1].UserID != userB {
+		t.Fatalf("order not preserved: got[0]=%v, got[1]=%v, want %v, %v", got[0].UserID, got[1].UserID, userA, userB)
+	}
 	byUser := make(map[uuid.UUID]*domain.MemberProfile, len(got))
 	for _, mp := range got {
 		byUser[mp.UserID] = mp
