@@ -185,9 +185,8 @@ func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationI
 
 // ListMembers returns a page of conversationID's roster — membership rows
 // only, no user-profile fields. Callers that need display data (the
-// ListMembers query, Task... of the user-context retrofit plan) resolve it
-// separately via out.ProfileBatchViewPort, rather than this adapter
-// joining the users table directly.
+// ListMembers query) resolve it separately via out.ProfileBatchViewPort,
+// rather than this adapter joining the users table directly.
 func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domain.Member, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50

@@ -188,9 +188,11 @@ type Member struct {
 // assembles it in two steps: MemberViewPort.ListMembers returns the bare
 // membership rows, then ProfileBatchViewPort.GetProfilesByIDs resolves their
 // display fields in one batch call to the user context, keyed by user ID. A
-// user ID with no matching profile (expected to be unreachable today, since
-// nothing deletes a user) simply leaves Username / DisplayName / AvatarURL as
-// zero values rather than erroring.
+// user ID with no matching profile (structurally unreachable: conversation_
+// members.user_id has an ON DELETE CASCADE foreign key to users(id), see
+// db/migrations/000005_create_conversation_members_table.up.sql, so a
+// membership row cannot outlive its user) simply leaves Username /
+// DisplayName / AvatarURL as zero values rather than erroring.
 type MemberProfile struct {
 	Member
 	Username    string

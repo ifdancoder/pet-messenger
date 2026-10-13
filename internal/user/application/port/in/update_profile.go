@@ -14,8 +14,8 @@ import (
 // UpdateProfileCommand carries the optional profile fields to change. A
 // nil field is left untouched. The web adapter rejects both-nil before
 // calling Handle, matching today's HTTP contract exactly — Handle's own
-// command.ErrNoFields guard (see Task 4) is defense in depth for any
-// future, non-HTTP caller, not the primary enforcement point.
+// command.ErrNoFields guard is defense in depth for any future, non-HTTP
+// caller, not the primary enforcement point.
 type UpdateProfileCommand struct {
 	UserID      uuid.UUID
 	DisplayName *string
