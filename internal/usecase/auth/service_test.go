@@ -58,8 +58,6 @@ func (r *fakeUserRepo) GetByUsername(_ context.Context, username string) (*domai
 	return u, nil
 }
 
-func (r *fakeUserRepo) Update(_ context.Context, _ *domainuser.User) error { return nil }
-
 type fakeSessionRepo struct {
 	mu     sync.Mutex
 	byHash map[string]*domainauth.Session
