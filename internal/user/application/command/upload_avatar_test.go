@@ -58,3 +58,47 @@ func TestUploadAvatar_UserNotFound(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestUploadAvatar_StoreFails(t *testing.T) {
+	u, err := domain.New("alice_01", "Alice")
+	if err != nil {
+		t.Fatalf("domain.New: %v", err)
+	}
+	store := newFakeUserStore(u)
+	avatars := newFakeAvatarStore()
+	avatars.putErr = errors.New("disk full")
+	h := command.NewUploadAvatarHandler(store, avatars)
+
+	data := []byte("fake-png-bytes")
+	_, err = h.Handle(context.Background(), in.UploadAvatarCommand{
+		UserID: u.ID, ContentType: "image/png", Data: bytes.NewReader(data), Size: int64(len(data)),
+	})
+	if err == nil {
+		t.Fatalf("Handle: expected error, got nil")
+	}
+	if !errors.Is(err, avatars.putErr) {
+		t.Fatalf("err = %v, want to contain putErr", err)
+	}
+}
+
+func TestUploadAvatar_UpdateFails(t *testing.T) {
+	u, err := domain.New("alice_01", "Alice")
+	if err != nil {
+		t.Fatalf("domain.New: %v", err)
+	}
+	store := newFakeUserStore(u)
+	store.updateErr = errors.New("conflict")
+	avatars := newFakeAvatarStore()
+	h := command.NewUploadAvatarHandler(store, avatars)
+
+	data := []byte("fake-png-bytes")
+	_, err = h.Handle(context.Background(), in.UploadAvatarCommand{
+		UserID: u.ID, ContentType: "image/png", Data: bytes.NewReader(data), Size: int64(len(data)),
+	})
+	if err == nil {
+		t.Fatalf("Handle: expected error, got nil")
+	}
+	if !errors.Is(err, store.updateErr) {
+		t.Fatalf("err = %v, want to contain updateErr", err)
+	}
+}
