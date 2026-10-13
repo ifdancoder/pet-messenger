@@ -23,7 +23,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 
-	userID := newTestResult().User.ID
+	userID := uuid.New()
 	claims := jwt.RegisteredClaims{
 		Subject:   userID.String(),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),

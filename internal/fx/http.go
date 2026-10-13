@@ -15,6 +15,7 @@ import (
 
 	httpadapter "pet-messenger/internal/adapter/http"
 	wsadapter "pet-messenger/internal/adapter/ws"
+	authweb "pet-messenger/internal/auth/adapter/in/web"
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/database"
@@ -25,7 +26,7 @@ import (
 func newGinEngine(
 	cfg *config.Config,
 	db database.Service,
-	authHandler *httpadapter.AuthHandler,
+	authHandler *authweb.AuthHandler,
 	userHandler *userweb.UserHandler,
 	e2eeDeviceHandler *httpadapter.E2EEDeviceHandler,
 	convHandler *web.ConversationHandler,

@@ -17,6 +17,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 var testDB *sql.DB
@@ -77,4 +79,24 @@ func randomUsername() string {
 
 func uuidNewShort() string {
 	return uuid.NewString()[:8]
+}
+
+// createTestUser inserts a user row directly (no dependency on any
+// context's own persistence package from this package) and returns its
+// id. Shared by every *_repository_test.go in this package that needs an
+// owning user.
+func createTestUser(t *testing.T) *domainuser.User {
+	t.Helper()
+	u, err := domainuser.New(randomUsername(), "Test User")
+	if err != nil {
+		t.Fatalf("domainuser.New: %v", err)
+	}
+	u.PasswordHash = "hashed"
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		u.ID, u.Username, u.DisplayName, u.PasswordHash, u.CreatedAt,
+	); err != nil {
+		t.Fatalf("create test user: %v", err)
+	}
+	return u
 }
