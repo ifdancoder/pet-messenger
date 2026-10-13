@@ -184,6 +184,34 @@ func TestUpdateProfile_UsernameTakenMapsTo409(t *testing.T) {
 	}
 }
 
+func TestUpdateProfile_InvalidDisplayNameMapsTo400(t *testing.T) {
+	me := uuid.Must(uuid.NewV7())
+	h := &UserHandler{updateProfile: &fakeUpdateProfile{err: domain.ErrInvalidDisplayName}}
+	r := newTestRouter(t, h, me, true)
+
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"display_name":""}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestUpdateProfile_UnrecognizedErrorMapsTo500(t *testing.T) {
+	me := uuid.Must(uuid.NewV7())
+	h := &UserHandler{updateProfile: &fakeUpdateProfile{err: errors.New("boom")}}
+	r := newTestRouter(t, h, me, true)
+
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"display_name":"Alicia"}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+}
+
 func multipartAvatarBody(t *testing.T, data []byte) (io.Reader, string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -246,7 +274,8 @@ type closingReader struct{ *bytes.Reader }
 func (closingReader) Close() error { return nil }
 
 func TestServeAvatar_Found(t *testing.T) {
-	h := &UserHandler{serveAvatar: &fakeServeAvatar{data: closingReader{bytes.NewReader([]byte("png-bytes"))}, ct: "image/png"}}
+	avatarBytes := []byte("png-bytes")
+	h := &UserHandler{serveAvatar: &fakeServeAvatar{data: closingReader{bytes.NewReader(avatarBytes)}, ct: "image/png"}}
 	r := newTestRouter(t, h, uuid.Nil, false)
 
 	req := httptest.NewRequest(http.MethodGet, "/users/alice_01/avatar", nil)
@@ -255,6 +284,18 @@ func TestServeAvatar_Found(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if !bytes.Equal(w.Body.Bytes(), avatarBytes) {
+		t.Fatalf("body = %q, want %q", w.Body.Bytes(), avatarBytes)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("Content-Type = %q, want image/png", ct)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "private, max-age=300" {
+		t.Fatalf("Cache-Control = %q, want %q", cc, "private, max-age=300")
+	}
+	if xcto := w.Header().Get("X-Content-Type-Options"); xcto != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", xcto)
 	}
 }
 
