@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Domain errors.
 var (
 	ErrInvalidUsername    = errors.New("user: invalid username")
 	ErrUsernameTaken      = errors.New("user: username already taken")
