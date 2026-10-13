@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/infrastructure/objectstore"
+	userout "pet-messenger/internal/user/application/port/out"
 )
 
 func TestMinioAvatarStore_PutGetRoundTrip(t *testing.T) {
@@ -48,7 +49,7 @@ func TestMinioAvatarStore_GetMissing(t *testing.T) {
 	}
 	store := objectstore.NewMinioAvatarStore(client, cfg)
 	_, _, err = store.Get(context.Background(), uuid.Must(uuid.NewV7()))
-	if !errors.Is(err, objectstore.ErrAvatarNotFound) {
+	if !errors.Is(err, userout.ErrAvatarNotFound) {
 		t.Fatalf("got %v, want ErrAvatarNotFound", err)
 	}
 }

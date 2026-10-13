@@ -2,31 +2,26 @@ package objectstore
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 
 	"pet-messenger/internal/config"
+	userout "pet-messenger/internal/user/application/port/out"
 )
 
-var ErrAvatarNotFound = errors.New("objectstore: avatar not found")
-
-// AvatarStore is the port UserHandler depends on — an interface, not
-// *minio.Client directly, so handler tests use a fake instead of a real
-// MinIO.
-type AvatarStore interface {
-	Put(ctx context.Context, userID uuid.UUID, contentType string, data io.Reader, size int64) error
-	Get(ctx context.Context, userID uuid.UUID) (data io.ReadCloser, contentType string, err error)
-}
-
+// MinioAvatarStore implements userout.AvatarStorePort.
 type MinioAvatarStore struct {
 	client *minio.Client
 	bucket string
 }
 
-func NewMinioAvatarStore(client *minio.Client, cfg *config.Config) AvatarStore {
+// NewMinioAvatarStore constructs the port directly — the same convention
+// internal/infrastructure/nats.NewPublisher already uses for
+// usecasemsg.MessagePublisher — so no separate fx bridge function is
+// needed.
+func NewMinioAvatarStore(client *minio.Client, cfg *config.Config) userout.AvatarStorePort {
 	return &MinioAvatarStore{client: client, bucket: cfg.MinIO.Bucket}
 }
 
@@ -47,7 +42,7 @@ func (s *MinioAvatarStore) Get(ctx context.Context, userID uuid.UUID) (io.ReadCl
 		errResp := minio.ToErrorResponse(err)
 		if errResp.Code == "NoSuchKey" {
 			_ = obj.Close()
-			return nil, "", ErrAvatarNotFound
+			return nil, "", userout.ErrAvatarNotFound
 		}
 		_ = obj.Close()
 		return nil, "", err
