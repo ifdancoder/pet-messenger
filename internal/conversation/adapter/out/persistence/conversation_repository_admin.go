@@ -183,7 +183,12 @@ func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationI
 	return claimed, nil
 }
 
-func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domain.MemberProfile, error) {
+// ListMembers returns a page of conversationID's roster — membership rows
+// only, no user-profile fields. Callers that need display data (the
+// ListMembers query, Task... of the user-context retrofit plan) resolve it
+// separately via out.ProfileBatchViewPort, rather than this adapter
+// joining the users table directly.
+func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domain.Member, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -193,15 +198,13 @@ func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID
 		beforePtr = &b
 	}
 	const q = `
-		SELECT m.conversation_id, m.user_id, m.role, m.joined_at, m.muted_until,
-		       m.last_read_message_id, m.is_creator, m.admin_tier,
-		       u.username, u.display_name, u.avatar_url
-		FROM conversation_members m
-		JOIN users u ON u.id = m.user_id
-		WHERE m.conversation_id = $1
-		  AND ($2::bool = false OR m.admin_tier IS NOT NULL OR m.is_creator)
-		  AND ($3::timestamptz IS NULL OR (m.joined_at, m.user_id) > ($3, $4))
-		ORDER BY m.joined_at ASC, m.user_id ASC
+		SELECT conversation_id, user_id, role, joined_at, muted_until,
+		       last_read_message_id, is_creator, admin_tier
+		FROM conversation_members
+		WHERE conversation_id = $1
+		  AND ($2::bool = false OR admin_tier IS NOT NULL OR is_creator)
+		  AND ($3::timestamptz IS NULL OR (joined_at, user_id) > ($3, $4))
+		ORDER BY joined_at ASC, user_id ASC
 		LIMIT $5`
 	rows, err := r.db.QueryContext(ctx, q, conversationID, adminsOnly, beforePtr, beforeUserID, limit)
 	if err != nil {
@@ -209,37 +212,36 @@ func (r *ConversationRepository) ListMembers(ctx context.Context, conversationID
 	}
 	defer rows.Close()
 
-	var out []*domain.MemberProfile
+	var out []*domain.Member
 	for rows.Next() {
 		var (
-			mp         domain.MemberProfile
+			m          domain.Member
 			role       string
 			mutedUntil sql.NullTime
 			lastRead   uuid.NullUUID
 			adminTier  sql.NullString
 		)
 		if err := rows.Scan(
-			&mp.ConversationID, &mp.UserID, &role, &mp.JoinedAt, &mutedUntil,
-			&lastRead, &mp.IsCreator, &adminTier,
-			&mp.Username, &mp.DisplayName, &mp.AvatarURL,
+			&m.ConversationID, &m.UserID, &role, &m.JoinedAt, &mutedUntil,
+			&lastRead, &m.IsCreator, &adminTier,
 		); err != nil {
-			return nil, fmt.Errorf("scan member profile: %w", err)
+			return nil, fmt.Errorf("scan member: %w", err)
 		}
-		mp.Role = domain.Role(role)
+		m.Role = domain.Role(role)
 		if mutedUntil.Valid {
 			t := mutedUntil.Time
-			mp.MutedUntil = &t
+			m.MutedUntil = &t
 		}
 		if lastRead.Valid {
 			id := lastRead.UUID
-			mp.LastReadMessageID = &id
+			m.LastReadMessageID = &id
 		}
 		if adminTier.Valid {
-			mp.AdminTier = domain.AdminTier(adminTier.String)
+			m.AdminTier = domain.AdminTier(adminTier.String)
 		} else {
-			mp.AdminTier = domain.TierNone
+			m.AdminTier = domain.TierNone
 		}
-		out = append(out, &mp)
+		out = append(out, &m)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate member rows: %w", err)

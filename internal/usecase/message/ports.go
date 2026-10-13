@@ -21,7 +21,7 @@ type ConversationReader interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domainconv.Conversation, error)
 	GetMember(ctx context.Context, conversationID, userID uuid.UUID) (*domainconv.Member, error)
 	SetLastReadMessage(ctx context.Context, conversationID, userID, messageID uuid.UUID) error
-	ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.MemberProfile, error)
+	ListMembers(ctx context.Context, conversationID uuid.UUID, adminsOnly bool, before time.Time, beforeUserID uuid.UUID, limit int) ([]*domainconv.Member, error)
 }
 
 // MessagePublisher broadcasts a message change to connected clients across pods,

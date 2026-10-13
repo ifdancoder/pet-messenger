@@ -26,6 +26,7 @@ var UserModule = fx.Module("user",
 		func(r *persistence.UserRepository) out.UserStorePort { return r },
 		func(r *persistence.UserRepository) usecaseauth.UserStore { return r },
 		func(r *persistence.UserRepository) convout.UserChecker { return r },
+		func(r *persistence.UserRepository) convout.ProfileBatchViewPort { return r },
 
 		command.NewUpdateProfileHandler,
 		command.NewUploadAvatarHandler,

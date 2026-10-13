@@ -8,6 +8,7 @@ import (
 
 	"pet-messenger/internal/conversation/application/port/out"
 	"pet-messenger/internal/conversation/domain"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 type fakePublicChannelView struct {
@@ -24,10 +25,21 @@ func (f *fakePublicChannelView) ListPublicChannels(_ context.Context, query stri
 }
 
 type fakeMemberView struct {
-	profiles []*domain.MemberProfile
+	members []*domain.Member
 }
 
-func (f *fakeMemberView) ListMembers(_ context.Context, _ uuid.UUID, _ bool, _ time.Time, _ uuid.UUID, _ int) ([]*domain.MemberProfile, error) {
+func (f *fakeMemberView) ListMembers(_ context.Context, _ uuid.UUID, _ bool, _ time.Time, _ uuid.UUID, _ int) ([]*domain.Member, error) {
+	return f.members, nil
+}
+
+// fakeProfileView is the minimal out.ProfileBatchViewPort the ListMembers
+// query needs to zip display fields onto the bare roster rows returned by
+// fakeMemberView.
+type fakeProfileView struct {
+	profiles []*domainuser.Profile
+}
+
+func (f *fakeProfileView) GetProfilesByIDs(_ context.Context, _ []uuid.UUID) ([]*domainuser.Profile, error) {
 	return f.profiles, nil
 }
 

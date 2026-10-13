@@ -112,7 +112,7 @@ func (f *fakeConvRepo) RemoveMemberWithSuccession(context.Context, uuid.UUID, uu
 func (f *fakeConvRepo) ClaimCreator(context.Context, uuid.UUID, uuid.UUID) (*domainconv.Member, error) {
 	return nil, nil
 }
-func (f *fakeConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, uuid.UUID, int) ([]*domainconv.MemberProfile, error) {
+func (f *fakeConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, uuid.UUID, int) ([]*domainconv.Member, error) {
 	return nil, nil
 }
 func (f *fakeConvRepo) ListMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) {

@@ -836,12 +836,6 @@ func TestConversationRepository_ListMembers(t *testing.T) {
 	if all[0].UserID != creatorID || all[1].UserID != m1 || all[2].UserID != m2 {
 		t.Fatalf("order = %v", []uuid.UUID{all[0].UserID, all[1].UserID, all[2].UserID})
 	}
-	for _, mp := range all {
-		if mp.Username == "" {
-			t.Fatalf("member %s has no Username joined", mp.UserID)
-		}
-	}
-
 	adminsOnly, err := repo.ListMembers(ctx, convID, true, time.Time{}, uuid.Nil, 50)
 	if err != nil {
 		t.Fatalf("ListMembers(adminsOnly): %v", err)
