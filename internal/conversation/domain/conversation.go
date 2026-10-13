@@ -184,9 +184,13 @@ type Member struct {
 }
 
 // MemberProfile is a Member row denormalized with the user's display fields,
-// for the roster read (GET /conversations/:id/members). The roster read inner-
-// joins users, and conversation_members.user_id is ON DELETE CASCADE, so a
-// profile always carries the live account's Username / DisplayName / AvatarURL.
+// for the roster read (GET /conversations/:id/members). The ListMembers query
+// assembles it in two steps: MemberViewPort.ListMembers returns the bare
+// membership rows, then ProfileBatchViewPort.GetProfilesByIDs resolves their
+// display fields in one batch call to the user context, keyed by user ID. A
+// user ID with no matching profile (expected to be unreachable today, since
+// nothing deletes a user) simply leaves Username / DisplayName / AvatarURL as
+// zero values rather than erroring.
 type MemberProfile struct {
 	Member
 	Username    string
