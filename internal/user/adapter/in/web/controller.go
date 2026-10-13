@@ -162,7 +162,7 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 func (h *UserHandler) ServeAvatar(c *gin.Context) {
 	data, contentType, err := h.serveAvatar.Handle(c.Request.Context(), in.ServeAvatarQuery{Username: c.Param("username")})
 	if err != nil {
-		c.String(http.StatusNotFound, "")
+		c.Status(http.StatusNotFound)
 		return
 	}
 	defer data.Close()

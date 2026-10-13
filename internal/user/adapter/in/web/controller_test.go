@@ -1,4 +1,3 @@
-// internal/user/adapter/in/web/controller_test.go
 package web
 
 import (
@@ -59,15 +58,27 @@ func (f *fakeUploadAvatar) Handle(context.Context, in.UploadAvatarCommand) (*dom
 	return f.user, f.err
 }
 
-func newTestContext(method, path string, body io.Reader, userID uuid.UUID, hasUser bool) (*gin.Context, *httptest.ResponseRecorder) {
+// newTestRouter wires h behind a real gin engine so tests exercise the
+// actual ServeHTTP dispatch path (status/header writing, route param
+// parsing) instead of calling handler methods directly against a bare
+// gin.Context — a direct call never triggers gin's deferred
+// WriteHeaderNow, which would make a bare c.Status(...) response
+// (ServeAvatar's 404 path) appear as a 200 in the test even though it is
+// correct in production. When hasUser is true, userID is injected via a
+// middleware exactly as httpadapter.AuthMiddleware would.
+func newTestRouter(t *testing.T, h *UserHandler, userID uuid.UUID, hasUser bool) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(method, path, body)
+	r := gin.New()
+	rg := r.Group("/users")
 	if hasUser {
-		c.Set(httpadapter.ContextUserIDKey, userID)
+		rg.Use(func(c *gin.Context) {
+			c.Set(httpadapter.ContextUserIDKey, userID)
+			c.Next()
+		})
 	}
-	return c, w
+	h.RegisterRoutes(rg)
+	return r
 }
 
 func TestGetByUsername_Found(t *testing.T) {
@@ -76,13 +87,14 @@ func TestGetByUsername_Found(t *testing.T) {
 		t.Fatalf("domain.New: %v", err)
 	}
 	h := &UserHandler{getByUsername: &fakeGetByUsername{user: u}}
-	c, w := newTestContext(http.MethodGet, "/users/alice_01", nil, uuid.Nil, false)
-	c.Params = gin.Params{{Key: "username", Value: "alice_01"}}
+	r := newTestRouter(t, h, uuid.Nil, false)
 
-	h.GetByUsername(c)
+	req := httptest.NewRequest(http.MethodGet, "/users/alice_01", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
+		t.Fatalf("status = %d, want 200, body = %s", w.Code, w.Body.String())
 	}
 	var resp userProfileResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -95,10 +107,11 @@ func TestGetByUsername_Found(t *testing.T) {
 
 func TestGetByUsername_NotFound(t *testing.T) {
 	h := &UserHandler{getByUsername: &fakeGetByUsername{err: domain.ErrNotFound}}
-	c, w := newTestContext(http.MethodGet, "/users/nobody", nil, uuid.Nil, false)
-	c.Params = gin.Params{{Key: "username", Value: "nobody"}}
+	r := newTestRouter(t, h, uuid.Nil, false)
 
-	h.GetByUsername(c)
+	req := httptest.NewRequest(http.MethodGet, "/users/nobody", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
@@ -107,9 +120,11 @@ func TestGetByUsername_NotFound(t *testing.T) {
 
 func TestUpdateProfile_Unauthenticated(t *testing.T) {
 	h := &UserHandler{}
-	c, w := newTestContext(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{}`)), uuid.Nil, false)
+	r := newTestRouter(t, h, uuid.Nil, false)
 
-	h.UpdateProfile(c)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
@@ -119,9 +134,11 @@ func TestUpdateProfile_Unauthenticated(t *testing.T) {
 func TestUpdateProfile_NoFields(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	h := &UserHandler{}
-	c, w := newTestContext(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{}`)), me, true)
+	r := newTestRouter(t, h, me, true)
 
-	h.UpdateProfile(c)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -136,12 +153,14 @@ func TestUpdateProfile_Success(t *testing.T) {
 	}
 	fake := &fakeUpdateProfile{user: updated}
 	h := &UserHandler{updateProfile: fake}
-	c, w := newTestContext(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"display_name":"Alicia"}`)), me, true)
+	r := newTestRouter(t, h, me, true)
 
-	h.UpdateProfile(c)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"display_name":"Alicia"}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
+		t.Fatalf("status = %d, want 200, body = %s", w.Code, w.Body.String())
 	}
 	if fake.gotCmd.UserID != me {
 		t.Fatalf("UserID = %v, want %v", fake.gotCmd.UserID, me)
@@ -154,19 +173,17 @@ func TestUpdateProfile_Success(t *testing.T) {
 func TestUpdateProfile_UsernameTakenMapsTo409(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	h := &UserHandler{updateProfile: &fakeUpdateProfile{err: domain.ErrUsernameTaken}}
-	c, w := newTestContext(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"username":"taken"}`)), me, true)
+	r := newTestRouter(t, h, me, true)
 
-	h.UpdateProfile(c)
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"username":"taken"}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
 }
 
-// multipartAvatarBody builds a multipart/form-data body with one "avatar"
-// file part containing data. The handler under test sniffs the actual
-// image content type from data's magic bytes server-side — this helper
-// does not need to be told what type data is.
 func multipartAvatarBody(t *testing.T, data []byte) (io.Reader, string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -195,11 +212,13 @@ func TestUploadAvatar_Success(t *testing.T) {
 		t.Fatalf("domain.New: %v", err)
 	}
 	h := &UserHandler{uploadAvatar: &fakeUploadAvatar{user: u}}
+	r := newTestRouter(t, h, me, true)
 	body, ct := multipartAvatarBody(t, pngMagicBytes)
-	c, w := newTestContext(http.MethodPost, "/users/me/avatar", body, me, true)
-	c.Request.Header.Set("Content-Type", ct)
 
-	h.UploadAvatar(c)
+	req := httptest.NewRequest(http.MethodPost, "/users/me/avatar", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
@@ -209,11 +228,13 @@ func TestUploadAvatar_Success(t *testing.T) {
 func TestUploadAvatar_RejectsUnknownType(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	h := &UserHandler{uploadAvatar: &fakeUploadAvatar{}}
+	r := newTestRouter(t, h, me, true)
 	body, ct := multipartAvatarBody(t, []byte("not an image"))
-	c, w := newTestContext(http.MethodPost, "/users/me/avatar", body, me, true)
-	c.Request.Header.Set("Content-Type", ct)
 
-	h.UploadAvatar(c)
+	req := httptest.NewRequest(http.MethodPost, "/users/me/avatar", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -226,10 +247,11 @@ func (closingReader) Close() error { return nil }
 
 func TestServeAvatar_Found(t *testing.T) {
 	h := &UserHandler{serveAvatar: &fakeServeAvatar{data: closingReader{bytes.NewReader([]byte("png-bytes"))}, ct: "image/png"}}
-	c, w := newTestContext(http.MethodGet, "/users/alice_01/avatar", nil, uuid.Nil, false)
-	c.Params = gin.Params{{Key: "username", Value: "alice_01"}}
+	r := newTestRouter(t, h, uuid.Nil, false)
 
-	h.ServeAvatar(c)
+	req := httptest.NewRequest(http.MethodGet, "/users/alice_01/avatar", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
@@ -238,10 +260,11 @@ func TestServeAvatar_Found(t *testing.T) {
 
 func TestServeAvatar_NotFound(t *testing.T) {
 	h := &UserHandler{serveAvatar: &fakeServeAvatar{err: errors.New("not found")}}
-	c, w := newTestContext(http.MethodGet, "/users/alice_01/avatar", nil, uuid.Nil, false)
-	c.Params = gin.Params{{Key: "username", Value: "alice_01"}}
+	r := newTestRouter(t, h, uuid.Nil, false)
 
-	h.ServeAvatar(c)
+	req := httptest.NewRequest(http.MethodGet, "/users/alice_01/avatar", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
