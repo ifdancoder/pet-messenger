@@ -2,8 +2,10 @@
 package query_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"pet-messenger/internal/user/application/port/in"
@@ -29,6 +31,13 @@ func TestServeAvatar_StreamsStoredBytes(t *testing.T) {
 	defer data.Close()
 	if ct != "image/png" {
 		t.Errorf("content type = %q, want image/png", ct)
+	}
+	got, err := io.ReadAll(data)
+	if err != nil {
+		t.Fatalf("io.ReadAll: %v", err)
+	}
+	if !bytes.Equal(got, []byte("png-bytes")) {
+		t.Errorf("bytes = %q, want \"png-bytes\"", got)
 	}
 }
 
