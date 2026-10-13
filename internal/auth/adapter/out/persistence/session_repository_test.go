@@ -1,14 +1,83 @@
-// internal/infrastructure/postgres/session_repository_test.go
-package postgres
+// internal/auth/adapter/out/persistence/session_repository_test.go
+package persistence
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"log"
+	"os"
 	"testing"
+	"time"
 
-	domainauth "pet-messenger/internal/domain/auth"
+	"github.com/golang-migrate/migrate/v4"
+	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/google/uuid"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+
+	"pet-messenger/internal/auth/domain"
 	domainuser "pet-messenger/internal/user/domain"
 )
+
+var testDB *sql.DB
+
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	container, err := tcpostgres.Run(
+		ctx,
+		"postgres:latest",
+		tcpostgres.WithDatabase("database"),
+		tcpostgres.WithUsername("user"),
+		tcpostgres.WithPassword("password"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(5*time.Second)),
+	)
+	if err != nil {
+		log.Fatalf("start postgres container: %v", err)
+	}
+
+	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		log.Fatalf("get connection string: %v", err)
+	}
+
+	testDB, err = sql.Open("pgx", connStr)
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+
+	driver, err := migratepg.WithInstance(testDB, &migratepg.Config{})
+	if err != nil {
+		log.Fatalf("init migrate driver: %v", err)
+	}
+	mig, err := migrate.NewWithDatabaseInstance("file://../../../../../db/migrations", "pgx", driver)
+	if err != nil {
+		log.Fatalf("init migrate: %v", err)
+	}
+	if err := mig.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatalf("run migrations: %v", err)
+	}
+
+	code := m.Run()
+
+	testDB.Close()
+	if err := container.Terminate(ctx); err != nil {
+		log.Fatalf("terminate container: %v", err)
+	}
+
+	os.Exit(code)
+}
+
+func randomUsername() string {
+	return "u_" + uuid.NewString()[:8]
+}
 
 func createTestUser(t *testing.T) *domainuser.User {
 	t.Helper()
@@ -30,7 +99,7 @@ func TestSessionRepository_CreateAndGetByHash(t *testing.T) {
 	repo := NewSessionRepository(testDB)
 	u := createTestUser(t)
 
-	sess := domainauth.New(u.ID, "hash-create-1", "device-a")
+	sess := domain.New(u.ID, "hash-create-1", "device-a")
 	if err := repo.Create(context.Background(), sess); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -50,7 +119,7 @@ func TestSessionRepository_CreateAndGetByHash(t *testing.T) {
 func TestSessionRepository_GetByRefreshTokenHash_NotFound(t *testing.T) {
 	repo := NewSessionRepository(testDB)
 	_, err := repo.GetByRefreshTokenHash(context.Background(), "does-not-exist")
-	if !errors.Is(err, domainauth.ErrNotFound) {
+	if !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -60,12 +129,12 @@ func TestSessionRepository_RotateSession(t *testing.T) {
 	u := createTestUser(t)
 	ctx := context.Background()
 
-	old := domainauth.New(u.ID, "hash-old", "device-a")
+	old := domain.New(u.ID, "hash-old", "device-a")
 	if err := repo.Create(ctx, old); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	newSess := domainauth.New(u.ID, "hash-new", "device-a")
+	newSess := domain.New(u.ID, "hash-new", "device-a")
 	if err := repo.RotateSession(ctx, old.ID, newSess); err != nil {
 		t.Fatalf("RotateSession: %v", err)
 	}
@@ -92,8 +161,8 @@ func TestSessionRepository_RevokeAllForUser(t *testing.T) {
 	u := createTestUser(t)
 	ctx := context.Background()
 
-	s1 := domainauth.New(u.ID, "hash-multi-a", "device-a")
-	s2 := domainauth.New(u.ID, "hash-multi-b", "device-b")
+	s1 := domain.New(u.ID, "hash-multi-a", "device-a")
+	s2 := domain.New(u.ID, "hash-multi-b", "device-b")
 	if err := repo.Create(ctx, s1); err != nil {
 		t.Fatalf("Create s1: %v", err)
 	}

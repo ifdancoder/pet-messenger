@@ -58,7 +58,7 @@ func TestCrossPodDelivery(t *testing.T) {
 	t.Cleanup(func() { _ = subB.Unsubscribe() })
 
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	issuer := infraauth.NewJWTIssuerWithKey(priv, time.Minute)
+	issuer := newTestTokenIssuer(priv, time.Minute)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 
 	gin.SetMode(gin.TestMode)

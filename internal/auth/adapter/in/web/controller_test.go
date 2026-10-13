@@ -1,5 +1,5 @@
-// internal/adapter/http/auth_handler_test.go
-package http
+// internal/auth/adapter/in/web/controller_test.go
+package web
 
 import (
 	"bytes"
@@ -12,35 +12,53 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	usecaseauth "pet-messenger/internal/usecase/auth"
+	"pet-messenger/internal/auth/application/command"
+	"pet-messenger/internal/auth/application/port/in"
 	domainuser "pet-messenger/internal/user/domain"
 )
 
-func init() {
-	gin.SetMode(gin.TestMode)
-}
-
-type fakeAuthService struct {
-	result *usecaseauth.Result
+type fakeRegister struct {
+	result *in.Result
 	err    error
 }
 
-func (f *fakeAuthService) Register(context.Context, string, string, string) (*usecaseauth.Result, error) {
+func (f *fakeRegister) Handle(context.Context, in.RegisterCommand) (*in.Result, error) {
 	return f.result, f.err
 }
-func (f *fakeAuthService) Login(context.Context, string, string, string) (*usecaseauth.Result, error) {
+
+type fakeLogin struct {
+	result *in.Result
+	err    error
+}
+
+func (f *fakeLogin) Handle(context.Context, in.LoginCommand) (*in.Result, error) {
 	return f.result, f.err
 }
-func (f *fakeAuthService) Refresh(context.Context, string) (*usecaseauth.Result, error) {
+
+type fakeRefresh struct {
+	result *in.Result
+	err    error
+}
+
+func (f *fakeRefresh) Handle(context.Context, in.RefreshCommand) (*in.Result, error) {
 	return f.result, f.err
 }
-func (f *fakeAuthService) Logout(context.Context, string) error {
+
+type fakeLogout struct {
+	err error
+}
+
+func (f *fakeLogout) Handle(context.Context, in.LogoutCommand) error {
 	return f.err
 }
 
-func newTestResult() *usecaseauth.Result {
-	u, _ := domainuser.New("alice_01", "Alice")
-	return &usecaseauth.Result{
+func newTestResult(t *testing.T) *in.Result {
+	t.Helper()
+	u, err := domainuser.New("alice_01", "Alice")
+	if err != nil {
+		t.Fatalf("domainuser.New: %v", err)
+	}
+	return &in.Result{
 		User:            u,
 		AccessToken:     "access-token",
 		AccessExpiresAt: time.Now().Add(15 * time.Minute),
@@ -48,7 +66,8 @@ func newTestResult() *usecaseauth.Result {
 	}
 }
 
-func setupRouter(h *AuthHandler) *gin.Engine {
+func newTestRouter(h *AuthHandler) *gin.Engine {
+	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	h.RegisterRoutes(r.Group("/auth"))
 	return r
@@ -68,8 +87,8 @@ func doJSON(t *testing.T, r *gin.Engine, method, path string, payload map[string
 }
 
 func TestAuthHandler_Register(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{result: newTestResult()}}
-	r := setupRouter(h)
+	h := &AuthHandler{register: &fakeRegister{result: newTestResult(t)}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/register", map[string]string{
 		"username": "alice_01",
@@ -92,8 +111,8 @@ func TestAuthHandler_Register(t *testing.T) {
 }
 
 func TestAuthHandler_Register_MissingFields(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{result: newTestResult()}}
-	r := setupRouter(h)
+	h := &AuthHandler{register: &fakeRegister{result: newTestResult(t)}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/register", map[string]string{})
 
@@ -103,8 +122,8 @@ func TestAuthHandler_Register_MissingFields(t *testing.T) {
 }
 
 func TestAuthHandler_Register_UsernameTaken(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{err: domainuser.ErrUsernameTaken}}
-	r := setupRouter(h)
+	h := &AuthHandler{register: &fakeRegister{err: domainuser.ErrUsernameTaken}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/register", map[string]string{
 		"username": "alice_01",
@@ -117,8 +136,8 @@ func TestAuthHandler_Register_UsernameTaken(t *testing.T) {
 }
 
 func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{err: usecaseauth.ErrInvalidCredentials}}
-	r := setupRouter(h)
+	h := &AuthHandler{login: &fakeLogin{err: command.ErrInvalidCredentials}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/login", map[string]string{
 		"username": "alice_01",
@@ -131,8 +150,8 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 }
 
 func TestAuthHandler_Refresh(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{result: newTestResult()}}
-	r := setupRouter(h)
+	h := &AuthHandler{refresh: &fakeRefresh{result: newTestResult(t)}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": "some-token"})
 
@@ -142,8 +161,8 @@ func TestAuthHandler_Refresh(t *testing.T) {
 }
 
 func TestAuthHandler_Refresh_Invalid(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{err: usecaseauth.ErrInvalidRefreshToken}}
-	r := setupRouter(h)
+	h := &AuthHandler{refresh: &fakeRefresh{err: command.ErrInvalidRefreshToken}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": "bad"})
 
@@ -153,8 +172,8 @@ func TestAuthHandler_Refresh_Invalid(t *testing.T) {
 }
 
 func TestAuthHandler_Logout(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{}}
-	r := setupRouter(h)
+	h := &AuthHandler{logout: &fakeLogout{}}
+	r := newTestRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/logout", map[string]string{"refresh_token": "some-token"})
 

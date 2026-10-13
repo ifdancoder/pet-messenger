@@ -1,14 +1,14 @@
-// internal/infrastructure/auth/bcrypt_test.go
-package auth_test
+// internal/auth/adapter/out/bcrypt/hasher_test.go
+package bcrypt_test
 
 import (
 	"testing"
 
-	"pet-messenger/internal/infrastructure/auth"
+	"pet-messenger/internal/auth/adapter/out/bcrypt"
 )
 
-func TestBcryptHasher_HashAndVerify(t *testing.T) {
-	h := auth.NewBcryptHasher()
+func TestHasher_HashAndVerify(t *testing.T) {
+	h := bcrypt.NewHasher()
 
 	hash, err := h.Hash("correct-password")
 	if err != nil {

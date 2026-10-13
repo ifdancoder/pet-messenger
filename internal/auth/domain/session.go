@@ -1,16 +1,22 @@
-// internal/domain/auth/session.go
-package auth
+// internal/auth/domain/session.go
+
+// Package domain holds the Session aggregate: a refresh-token session
+// tied to one user and one device. It is the Entities layer (Clean
+// Architecture) / domain core (Hexagonal) for the auth bounded context —
+// no dependency on anything outside the standard library and uuid.
+package domain
 
 import (
-	"context"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+// ErrNotFound is returned when no session matches the given lookup.
 var ErrNotFound = errors.New("session: not found")
 
+// Session is one refresh-token session for one device.
 type Session struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID
@@ -21,6 +27,7 @@ type Session struct {
 	RevokedAt        *time.Time
 }
 
+// New constructs a fresh, unrevoked Session.
 func New(userID uuid.UUID, refreshTokenHash, deviceInfo string) *Session {
 	now := time.Now().UTC()
 	return &Session{
@@ -33,18 +40,7 @@ func New(userID uuid.UUID, refreshTokenHash, deviceInfo string) *Session {
 	}
 }
 
+// IsRevoked reports whether this session has been revoked.
 func (s *Session) IsRevoked() bool {
 	return s.RevokedAt != nil
-}
-
-// Repository stores refresh-token sessions. GetByRefreshTokenHash must return
-// revoked sessions too (not filter them out) so callers can detect reuse of an
-// already-rotated-away token.
-type Repository interface {
-	Create(ctx context.Context, s *Session) error
-	GetByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
-	// RotateSession atomically revokes oldSessionID and inserts newSession.
-	RotateSession(ctx context.Context, oldSessionID uuid.UUID, newSession *Session) error
-	Revoke(ctx context.Context, sessionID uuid.UUID) error
-	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
 }

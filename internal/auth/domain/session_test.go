@@ -1,5 +1,5 @@
-// internal/domain/auth/session_test.go
-package auth_test
+// internal/auth/domain/session_test.go
+package domain_test
 
 import (
 	"testing"
@@ -7,12 +7,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"pet-messenger/internal/domain/auth"
+	"pet-messenger/internal/auth/domain"
 )
 
 func TestNew(t *testing.T) {
 	userID := uuid.New()
-	s := auth.New(userID, "hash", "device")
+	s := domain.New(userID, "hash", "device")
 
 	if s.UserID != userID {
 		t.Errorf("UserID = %v, want %v", s.UserID, userID)
@@ -38,7 +38,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestSession_IsRevoked(t *testing.T) {
-	s := auth.New(uuid.New(), "hash", "device")
+	s := domain.New(uuid.New(), "hash", "device")
 	if s.IsRevoked() {
 		t.Fatal("new session should not be revoked")
 	}

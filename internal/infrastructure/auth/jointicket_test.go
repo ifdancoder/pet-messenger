@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/config"
@@ -52,10 +53,19 @@ func TestJoinTicket_RoundTrip(t *testing.T) {
 
 func TestJoinTicket_RejectsAccessToken(t *testing.T) {
 	cfg := testCfg(t)
-	// an access token from the normal issuer has no "media" audience
-	access, _, err := NewJWTIssuerWithKey(cfg.JWT.PrivateKey, time.Minute).IssueAccessToken(uuid.Must(uuid.NewV7()))
+	// an access token from the normal issuer has no "media" audience. Built
+	// directly here (rather than via internal/auth/adapter/out/jwt.Issuer)
+	// so this shared-infrastructure package's tests do not depend on a
+	// specific bounded context's adapter.
+	accessClaims := jwt.RegisteredClaims{
+		Subject:   uuid.Must(uuid.NewV7()).String(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ID:        uuid.NewString(),
+	}
+	access, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, accessClaims).SignedString(cfg.JWT.PrivateKey)
 	if err != nil {
-		t.Fatalf("IssueAccessToken: %v", err)
+		t.Fatalf("sign access token: %v", err)
 	}
 	if _, err := NewJoinTicketVerifier(cfg).Verify(access); !errors.Is(err, ErrInvalidJoinTicket) {
 		t.Fatalf("access token accepted as join-ticket: %v", err)

@@ -1,14 +1,14 @@
-// internal/infrastructure/auth/refresh_token_test.go
-package auth_test
+// internal/auth/adapter/out/refreshtoken/generator_test.go
+package refreshtoken_test
 
 import (
 	"testing"
 
-	"pet-messenger/internal/infrastructure/auth"
+	"pet-messenger/internal/auth/adapter/out/refreshtoken"
 )
 
-func TestRefreshTokenGenerator_Generate(t *testing.T) {
-	g := auth.NewRefreshTokenGenerator()
+func TestGenerator_Generate(t *testing.T) {
+	g := refreshtoken.NewGenerator()
 
 	plain1, hash1, err := g.Generate()
 	if err != nil {
