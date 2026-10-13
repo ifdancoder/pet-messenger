@@ -9,7 +9,7 @@ import (
 	"time"
 
 	domainauth "pet-messenger/internal/domain/auth"
-	"pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 var (
@@ -19,7 +19,7 @@ var (
 )
 
 type Service struct {
-	users      user.Repository
+	users      UserStore
 	sessions   domainauth.Repository
 	hasher     PasswordHasher
 	tokens     TokenIssuer
@@ -28,7 +28,7 @@ type Service struct {
 }
 
 func NewService(
-	users user.Repository,
+	users UserStore,
 	sessions domainauth.Repository,
 	hasher PasswordHasher,
 	tokens TokenIssuer,
@@ -46,7 +46,7 @@ func NewService(
 }
 
 type Result struct {
-	User            *user.User
+	User            *domainuser.User
 	AccessToken     string
 	AccessExpiresAt time.Time
 	RefreshToken    string
@@ -56,7 +56,7 @@ func (s *Service) Register(ctx context.Context, username, password, displayName 
 	if len(password) < 8 {
 		return nil, ErrWeakPassword
 	}
-	u, err := user.New(username, displayName)
+	u, err := domainuser.New(username, displayName)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *Service) Register(ctx context.Context, username, password, displayName 
 func (s *Service) Login(ctx context.Context, username, password, deviceInfo string) (*Result, error) {
 	u, err := s.users.GetByUsername(ctx, username)
 	if err != nil {
-		if errors.Is(err, user.ErrNotFound) {
+		if errors.Is(err, domainuser.ErrNotFound) {
 			return nil, ErrInvalidCredentials
 		}
 		return nil, err
@@ -86,7 +86,7 @@ func (s *Service) Login(ctx context.Context, username, password, deviceInfo stri
 	return s.issueSession(ctx, u, deviceInfo)
 }
 
-func (s *Service) issueSession(ctx context.Context, u *user.User, deviceInfo string) (*Result, error) {
+func (s *Service) issueSession(ctx context.Context, u *domainuser.User, deviceInfo string) (*Result, error) {
 	plain, hash, err := s.refresh.Generate()
 	if err != nil {
 		return nil, fmt.Errorf("generate refresh token: %w", err)

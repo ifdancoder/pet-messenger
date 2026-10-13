@@ -12,25 +12,25 @@ import (
 	"github.com/google/uuid"
 
 	domainauth "pet-messenger/internal/domain/auth"
-	"pet-messenger/internal/domain/user"
 	"pet-messenger/internal/usecase/auth"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 type fakeUserRepo struct {
 	mu     sync.Mutex
-	byID   map[uuid.UUID]*user.User
-	byName map[string]*user.User
+	byID   map[uuid.UUID]*domainuser.User
+	byName map[string]*domainuser.User
 }
 
 func newFakeUserRepo() *fakeUserRepo {
-	return &fakeUserRepo{byID: map[uuid.UUID]*user.User{}, byName: map[string]*user.User{}}
+	return &fakeUserRepo{byID: map[uuid.UUID]*domainuser.User{}, byName: map[string]*domainuser.User{}}
 }
 
-func (r *fakeUserRepo) Create(_ context.Context, u *user.User) error {
+func (r *fakeUserRepo) Create(_ context.Context, u *domainuser.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.byName[u.Username]; exists {
-		return user.ErrUsernameTaken
+		return domainuser.ErrUsernameTaken
 	}
 	cp := *u
 	r.byID[u.ID] = &cp
@@ -38,27 +38,27 @@ func (r *fakeUserRepo) Create(_ context.Context, u *user.User) error {
 	return nil
 }
 
-func (r *fakeUserRepo) GetByID(_ context.Context, id uuid.UUID) (*user.User, error) {
+func (r *fakeUserRepo) GetByID(_ context.Context, id uuid.UUID) (*domainuser.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	u, ok := r.byID[id]
 	if !ok {
-		return nil, user.ErrNotFound
+		return nil, domainuser.ErrNotFound
 	}
 	return u, nil
 }
 
-func (r *fakeUserRepo) GetByUsername(_ context.Context, username string) (*user.User, error) {
+func (r *fakeUserRepo) GetByUsername(_ context.Context, username string) (*domainuser.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	u, ok := r.byName[username]
 	if !ok {
-		return nil, user.ErrNotFound
+		return nil, domainuser.ErrNotFound
 	}
 	return u, nil
 }
 
-func (r *fakeUserRepo) Update(_ context.Context, _ *user.User) error { return nil }
+func (r *fakeUserRepo) Update(_ context.Context, _ *domainuser.User) error { return nil }
 
 type fakeSessionRepo struct {
 	mu     sync.Mutex
@@ -212,7 +212,7 @@ func TestService_Register_WeakPassword(t *testing.T) {
 func TestService_Register_InvalidUsername(t *testing.T) {
 	svc, _, _ := newTestService()
 	_, err := svc.Register(context.Background(), "a", "password123", "")
-	if !errors.Is(err, user.ErrInvalidUsername) {
+	if !errors.Is(err, domainuser.ErrInvalidUsername) {
 		t.Fatalf("expected ErrInvalidUsername, got %v", err)
 	}
 }
@@ -223,7 +223,7 @@ func TestService_Register_DuplicateUsername(t *testing.T) {
 	if _, err := svc.Register(ctx, "alice_01", "password123", "Alice"); err != nil {
 		t.Fatalf("first Register: %v", err)
 	}
-	if _, err := svc.Register(ctx, "alice_01", "password123", "Alice 2"); !errors.Is(err, user.ErrUsernameTaken) {
+	if _, err := svc.Register(ctx, "alice_01", "password123", "Alice 2"); !errors.Is(err, domainuser.ErrUsernameTaken) {
 		t.Fatalf("expected ErrUsernameTaken, got %v", err)
 	}
 }

@@ -12,8 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"pet-messenger/internal/domain/user"
 	usecaseauth "pet-messenger/internal/usecase/auth"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 func init() {
@@ -39,7 +39,7 @@ func (f *fakeAuthService) Logout(context.Context, string) error {
 }
 
 func newTestResult() *usecaseauth.Result {
-	u, _ := user.New("alice_01", "Alice")
+	u, _ := domainuser.New("alice_01", "Alice")
 	return &usecaseauth.Result{
 		User:            u,
 		AccessToken:     "access-token",
@@ -103,7 +103,7 @@ func TestAuthHandler_Register_MissingFields(t *testing.T) {
 }
 
 func TestAuthHandler_Register_UsernameTaken(t *testing.T) {
-	h := &AuthHandler{svc: &fakeAuthService{err: user.ErrUsernameTaken}}
+	h := &AuthHandler{svc: &fakeAuthService{err: domainuser.ErrUsernameTaken}}
 	r := setupRouter(h)
 
 	w := doJSON(t, r, http.MethodPost, "/auth/register", map[string]string{

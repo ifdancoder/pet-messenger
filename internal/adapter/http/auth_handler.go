@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"pet-messenger/internal/domain/user"
 	usecaseauth "pet-messenger/internal/usecase/auth"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 // authService is satisfied by *usecaseauth.Service; declared here so tests
@@ -82,9 +82,9 @@ func toAuthResponse(r *usecaseauth.Result) authResponse {
 
 func writeAuthError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, user.ErrInvalidUsername), errors.Is(err, user.ErrInvalidDisplayName), errors.Is(err, usecaseauth.ErrWeakPassword):
+	case errors.Is(err, domainuser.ErrInvalidUsername), errors.Is(err, domainuser.ErrInvalidDisplayName), errors.Is(err, usecaseauth.ErrWeakPassword):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, user.ErrUsernameTaken):
+	case errors.Is(err, domainuser.ErrUsernameTaken):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, usecaseauth.ErrInvalidCredentials), errors.Is(err, usecaseauth.ErrInvalidRefreshToken):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
