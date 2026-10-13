@@ -14,8 +14,10 @@ import (
 )
 
 // issueSession generates a refresh token, persists a new session for u,
-// and issues an access token — the work shared by Register, Login, and
-// Refresh after each has established which user is signing in.
+// and issues an access token — the work shared by Register and Login
+// after each has established which user is signing in. Refresh does not
+// call this: it rotates an existing session instead of creating one, so
+// it reimplements this tail inline against sessions.RotateSession.
 func issueSession(ctx context.Context, sessions out.SessionStore, tokens out.TokenIssuer, refresh out.RefreshTokenGenerator, u *domainuser.User, deviceInfo string) (*in.Result, error) {
 	plain, hash, err := refresh.Generate()
 	if err != nil {

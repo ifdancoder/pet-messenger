@@ -7,9 +7,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -31,13 +29,12 @@ import (
 	userpersistence "pet-messenger/internal/user/adapter/out/persistence"
 )
 
-var integrationTestDB *sql.DB
-
-// TestMain spins up a throwaway, migrated Postgres instance (via
-// testcontainers) that every test in this file's real-adapter integration
-// test runs against. It is independent of controller_test.go's fake-based
-// tests, which need no database at all.
-func TestMain(m *testing.M) {
+// setupIntegrationDB starts a throwaway, migrated Postgres instance via
+// testcontainers for this one test and registers its teardown with t.
+// Deliberately NOT a TestMain: this file shares package web with
+// controller_test.go's fake-based tests, which must stay Docker-free.
+func setupIntegrationDB(t *testing.T) *sql.DB {
+	t.Helper()
 	ctx := context.Background()
 
 	container, err := tcpostgres.Run(
@@ -52,46 +49,45 @@ func TestMain(m *testing.M) {
 				WithStartupTimeout(5*time.Second)),
 	)
 	if err != nil {
-		log.Fatalf("start postgres container: %v", err)
+		t.Fatalf("start postgres container: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Errorf("terminate container: %v", err)
+		}
+	})
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		log.Fatalf("get connection string: %v", err)
+		t.Fatalf("get connection string: %v", err)
 	}
 
-	integrationTestDB, err = sql.Open("pgx", connStr)
+	db, err := sql.Open("pgx", connStr)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
+	t.Cleanup(func() { db.Close() })
 
-	driver, err := migratepg.WithInstance(integrationTestDB, &migratepg.Config{})
+	driver, err := migratepg.WithInstance(db, &migratepg.Config{})
 	if err != nil {
-		log.Fatalf("init migrate driver: %v", err)
+		t.Fatalf("init migrate driver: %v", err)
 	}
 	mig, err := migrate.NewWithDatabaseInstance("file://../../../../../db/migrations", "pgx", driver)
 	if err != nil {
-		log.Fatalf("init migrate: %v", err)
+		t.Fatalf("init migrate: %v", err)
 	}
 	if err := mig.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("run migrations: %v", err)
+		t.Fatalf("run migrations: %v", err)
 	}
 
-	code := m.Run()
-
-	integrationTestDB.Close()
-	if err := container.Terminate(ctx); err != nil {
-		log.Fatalf("terminate container: %v", err)
-	}
-
-	os.Exit(code)
+	return db
 }
 
 // newIntegrationRouter builds the real /auth router: real bcrypt hasher,
 // real refresh-token generator, a real ed25519-backed JWT issuer, and real
 // Postgres-backed user/session stores, wired by hand into the real command
 // handlers and the real AuthHandler. No fx, no fakes.
-func newIntegrationRouter(t *testing.T) *AuthHandler {
+func newIntegrationRouter(t *testing.T, db *sql.DB) *AuthHandler {
 	t.Helper()
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -102,8 +98,8 @@ func newIntegrationRouter(t *testing.T) *AuthHandler {
 	hasher := authbcrypt.NewHasher()
 	refreshGen := authrefreshtoken.NewGenerator()
 	tokens := authjwt.NewIssuerWithKey(priv, 15*time.Minute)
-	sessions := authpersistence.NewSessionRepository(integrationTestDB)
-	users := userpersistence.NewUserRepository(integrationTestDB)
+	sessions := authpersistence.NewSessionRepository(db)
+	users := userpersistence.NewUserRepository(db)
 	ttl := authout.RefreshTTL(30 * 24 * time.Hour)
 
 	register := authcommand.NewRegisterHandler(users, hasher, sessions, tokens, refreshGen)
@@ -119,7 +115,8 @@ func newIntegrationRouter(t *testing.T) *AuthHandler {
 // JWT issuance, and real Postgres-backed user/session stores — no fakes
 // anywhere in the call path.
 func TestAuthHandler_Integration_RealAdapters(t *testing.T) {
-	h := newIntegrationRouter(t)
+	db := setupIntegrationDB(t)
+	h := newIntegrationRouter(t, db)
 	r := newTestRouter(h)
 
 	username := "it_" + uuid.NewString()[:8]
