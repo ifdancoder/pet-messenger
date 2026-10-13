@@ -6,28 +6,40 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/infrastructure/auth"
 )
 
-func TestJWTIssuerAndVerifier(t *testing.T) {
+// signTestToken builds a minimal access-token-shaped JWT directly, so
+// these tests can control expiry independently of any real TTL and
+// without depending on internal/auth/adapter/out/jwt.Issuer.
+func signTestToken(t *testing.T, priv ed25519.PrivateKey, userID uuid.UUID, ttl time.Duration) string {
+	t.Helper()
+	claims := jwt.RegisteredClaims{
+		Subject:   userID.String(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ID:        uuid.NewString(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	signed, err := token.SignedString(priv)
+	if err != nil {
+		t.Fatalf("sign test token: %v", err)
+	}
+	return signed
+}
+
+func TestJWTVerifier_VerifiesValidToken(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-
-	issuer := auth.NewJWTIssuerWithKey(priv, time.Minute)
 	verifier := auth.NewJWTVerifierWithKey(pub)
 
 	userID := uuid.New()
-	token, expiresAt, err := issuer.IssueAccessToken(userID)
-	if err != nil {
-		t.Fatalf("IssueAccessToken: %v", err)
-	}
-	if until := time.Until(expiresAt); until <= 0 || until > time.Minute {
-		t.Errorf("unexpected expiry: %v from now", until)
-	}
+	token := signTestToken(t, priv, userID, time.Minute)
 
 	gotID, err := verifier.Verify(token)
 	if err != nil {
@@ -40,13 +52,9 @@ func TestJWTIssuerAndVerifier(t *testing.T) {
 
 func TestJWTVerifier_RejectsExpired(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	issuer := auth.NewJWTIssuerWithKey(priv, -time.Minute) // already expired
 	verifier := auth.NewJWTVerifierWithKey(pub)
 
-	token, _, err := issuer.IssueAccessToken(uuid.New())
-	if err != nil {
-		t.Fatalf("IssueAccessToken: %v", err)
-	}
+	token := signTestToken(t, priv, uuid.New(), -time.Minute) // already expired
 	if _, err := verifier.Verify(token); err == nil {
 		t.Error("expected an error verifying an expired token")
 	}
@@ -55,14 +63,9 @@ func TestJWTVerifier_RejectsExpired(t *testing.T) {
 func TestJWTVerifier_RejectsWrongKey(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 	otherPub, _, _ := ed25519.GenerateKey(rand.Reader)
-
-	issuer := auth.NewJWTIssuerWithKey(priv, time.Minute)
 	verifier := auth.NewJWTVerifierWithKey(otherPub)
 
-	token, _, err := issuer.IssueAccessToken(uuid.New())
-	if err != nil {
-		t.Fatalf("IssueAccessToken: %v", err)
-	}
+	token := signTestToken(t, priv, uuid.New(), time.Minute)
 	if _, err := verifier.Verify(token); err == nil {
 		t.Error("expected an error verifying a token signed with a different key")
 	}
