@@ -118,6 +118,19 @@ func TestGetByUsername_NotFound(t *testing.T) {
 	}
 }
 
+func TestGetByUsername_InternalError(t *testing.T) {
+	h := &UserHandler{getByUsername: &fakeGetByUsername{err: errors.New("boom")}}
+	r := newTestRouter(t, h, uuid.Nil, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/users/alice_01", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+}
+
 func TestUpdateProfile_Unauthenticated(t *testing.T) {
 	h := &UserHandler{}
 	r := newTestRouter(t, h, uuid.Nil, false)
@@ -170,6 +183,12 @@ func TestUpdateProfile_Success(t *testing.T) {
 	}
 }
 
+// writeProfileError sends err.Error() as the response body — these three
+// tests pin the exact body, not just the status, because a future edit
+// that wraps one of these sentinels (e.g. fmt.Errorf("...: %w", err))
+// would still satisfy errors.Is and keep the status correct while
+// silently changing the client-visible error text.
+
 func TestUpdateProfile_UsernameTakenMapsTo409(t *testing.T) {
 	me := uuid.Must(uuid.NewV7())
 	h := &UserHandler{updateProfile: &fakeUpdateProfile{err: domain.ErrUsernameTaken}}
@@ -180,7 +199,11 @@ func TestUpdateProfile_UsernameTakenMapsTo409(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409", w.Code)
+		t.Fatalf("status = %d, want 409, body = %s", w.Code, w.Body.String())
+	}
+	wantBody := `{"error":"` + domain.ErrUsernameTaken.Error() + `"}`
+	if got := w.Body.String(); got != wantBody {
+		t.Fatalf("body = %q, want %q", got, wantBody)
 	}
 }
 
@@ -194,7 +217,29 @@ func TestUpdateProfile_InvalidDisplayNameMapsTo400(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", w.Code)
+		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body.String())
+	}
+	wantBody := `{"error":"` + domain.ErrInvalidDisplayName.Error() + `"}`
+	if got := w.Body.String(); got != wantBody {
+		t.Fatalf("body = %q, want %q", got, wantBody)
+	}
+}
+
+func TestUpdateProfile_InvalidUsernameMapsTo400(t *testing.T) {
+	me := uuid.Must(uuid.NewV7())
+	h := &UserHandler{updateProfile: &fakeUpdateProfile{err: domain.ErrInvalidUsername}}
+	r := newTestRouter(t, h, me, true)
+
+	req := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader([]byte(`{"username":"a"}`)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body.String())
+	}
+	wantBody := `{"error":"` + domain.ErrInvalidUsername.Error() + `"}`
+	if got := w.Body.String(); got != wantBody {
+		t.Fatalf("body = %q, want %q", got, wantBody)
 	}
 }
 
