@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	infraauth "pet-messenger/internal/infrastructure/auth"
@@ -69,14 +70,41 @@ func (s stubConvRepo) ListMembers(context.Context, uuid.UUID, bool, time.Time, u
 
 func (s stubConvRepo) ListMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) { return nil, nil }
 
-func wsTestServer(t *testing.T, members MemberChecker) (*httptest.Server, *infraauth.JWTIssuer, *Hub) {
+// testTokenIssuer builds access-token-shaped JWTs for tests, inline, so this
+// package's tests do not depend on a deleted symbol or on a specific bounded
+// context's adapter (internal/auth/adapter/out/jwt.Issuer).
+type testTokenIssuer struct {
+	priv ed25519.PrivateKey
+	ttl  time.Duration
+}
+
+func newTestTokenIssuer(priv ed25519.PrivateKey, ttl time.Duration) *testTokenIssuer {
+	return &testTokenIssuer{priv: priv, ttl: ttl}
+}
+
+func (i *testTokenIssuer) IssueAccessToken(userID uuid.UUID) (string, time.Time, error) {
+	expiresAt := time.Now().Add(i.ttl)
+	claims := jwt.RegisteredClaims{
+		Subject:   userID.String(),
+		ExpiresAt: jwt.NewNumericDate(expiresAt),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ID:        uuid.NewString(),
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(i.priv)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, expiresAt, nil
+}
+
+func wsTestServer(t *testing.T, members MemberChecker) (*httptest.Server, *testTokenIssuer, *Hub) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("keygen: %v", err)
 	}
-	issuer := infraauth.NewJWTIssuerWithKey(priv, time.Minute)
+	issuer := newTestTokenIssuer(priv, time.Minute)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 	hub := NewHub()
 	h := NewWSHandler(hub, verifier, members, nil, NopPresence{})
@@ -89,14 +117,14 @@ func wsTestServer(t *testing.T, members MemberChecker) (*httptest.Server, *infra
 
 // wsTestServerOpts builds a server with explicit origin patterns and access-token
 // TTL, for the origin and token-expiry tests.
-func wsTestServerOpts(t *testing.T, members MemberChecker, originPatterns []string, ttl time.Duration) (*httptest.Server, *infraauth.JWTIssuer) {
+func wsTestServerOpts(t *testing.T, members MemberChecker, originPatterns []string, ttl time.Duration) (*httptest.Server, *testTokenIssuer) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("keygen: %v", err)
 	}
-	issuer := infraauth.NewJWTIssuerWithKey(priv, ttl)
+	issuer := newTestTokenIssuer(priv, ttl)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 	h := NewWSHandler(NewHub(), verifier, members, originPatterns, NopPresence{})
 	r := gin.New()

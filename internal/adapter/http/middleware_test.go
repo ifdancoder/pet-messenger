@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	infraauth "pet-messenger/internal/infrastructure/auth"
 )
@@ -19,10 +21,16 @@ func TestAuthMiddleware(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	issuer := infraauth.NewJWTIssuerWithKey(priv, time.Minute)
 	verifier := infraauth.NewJWTVerifierWithKey(pub)
 
-	token, _, err := issuer.IssueAccessToken(newTestResult().User.ID)
+	userID := newTestResult().User.ID
+	claims := jwt.RegisteredClaims{
+		Subject:   userID.String(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ID:        uuid.NewString(),
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(priv)
 	if err != nil {
 		t.Fatalf("IssueAccessToken: %v", err)
 	}
