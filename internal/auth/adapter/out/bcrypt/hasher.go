@@ -20,6 +20,7 @@ func NewHasher() out.PasswordHasher {
 	return &Hasher{}
 }
 
+// Hash generates a bcrypt hash of password.
 func (h *Hasher) Hash(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -28,6 +29,7 @@ func (h *Hasher) Hash(password string) (string, error) {
 	return string(hash), nil
 }
 
+// Verify reports whether password matches hash, returning an error if not.
 func (h *Hasher) Verify(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
