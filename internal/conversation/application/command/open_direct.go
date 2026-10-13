@@ -8,7 +8,7 @@ import (
 	"pet-messenger/internal/conversation/application/port/in"
 	"pet-messenger/internal/conversation/application/port/out"
 	"pet-messenger/internal/conversation/domain"
-	"pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 // Errors specific to OpenDirect.
@@ -20,12 +20,12 @@ var (
 type openDirectHandler struct {
 	conversations out.LoadConversationPort
 	writer        out.UpdateConversationPort
-	users         user.Repository
+	users         out.UserChecker
 	events        out.EventPublisherPort
 }
 
 // NewOpenDirectHandler wires the OpenDirect use case.
-func NewOpenDirectHandler(conversations out.LoadConversationPort, writer out.UpdateConversationPort, users user.Repository, events out.EventPublisherPort) in.OpenDirectUseCase {
+func NewOpenDirectHandler(conversations out.LoadConversationPort, writer out.UpdateConversationPort, users out.UserChecker, events out.EventPublisherPort) in.OpenDirectUseCase {
 	return &openDirectHandler{conversations: conversations, writer: writer, users: users, events: events}
 }
 
@@ -38,7 +38,7 @@ func (h *openDirectHandler) Handle(ctx context.Context, cmd in.OpenDirectCommand
 		return nil, ErrCannotDirectSelf
 	}
 	if _, err := h.users.GetByID(ctx, cmd.Other); err != nil {
-		if errors.Is(err, user.ErrNotFound) {
+		if errors.Is(err, domainuser.ErrNotFound) {
 			return nil, ErrRecipientNotFound
 		}
 		return nil, fmt.Errorf("load recipient: %w", err)

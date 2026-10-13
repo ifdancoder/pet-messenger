@@ -8,7 +8,7 @@ import (
 
 	"pet-messenger/internal/conversation/domain"
 	domainmsg "pet-messenger/internal/domain/message"
-	"pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 // fakeLoader is an in-memory out.LoadConversationPort.
@@ -180,26 +180,17 @@ func (f *fakePublisher) Publish(_ context.Context, event domain.Event) error {
 	return nil
 }
 
-// fakeUsers is an in-memory user.Repository stand-in — only GetByID is
-// exercised by this package's handlers.
+// fakeUsers is an in-memory out.UserChecker stand-in.
 type fakeUsers struct {
 	exists map[uuid.UUID]bool
 }
 
-func (f *fakeUsers) GetByID(_ context.Context, id uuid.UUID) (*user.User, error) {
+func (f *fakeUsers) GetByID(_ context.Context, id uuid.UUID) (*domainuser.User, error) {
 	if f.exists[id] {
-		return &user.User{ID: id}, nil
+		return &domainuser.User{ID: id}, nil
 	}
-	return nil, user.ErrNotFound
+	return nil, domainuser.ErrNotFound
 }
-
-// Create, GetByUsername, and Update exist only to satisfy user.Repository
-// — this package's handlers never call them.
-func (f *fakeUsers) Create(context.Context, *user.User) error { return nil }
-func (f *fakeUsers) GetByUsername(context.Context, string) (*user.User, error) {
-	return nil, user.ErrNotFound
-}
-func (f *fakeUsers) Update(context.Context, *user.User) error { return nil }
 
 // fakeSystemEventPoster is an in-memory out.SystemEventPoster that counts
 // every post for assertions.

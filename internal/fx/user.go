@@ -4,6 +4,7 @@ package fxapp
 import (
 	"go.uber.org/fx"
 
+	convout "pet-messenger/internal/conversation/application/port/out"
 	usecaseauth "pet-messenger/internal/usecase/auth"
 	"pet-messenger/internal/user/adapter/in/web"
 	"pet-messenger/internal/user/adapter/out/persistence"
@@ -24,6 +25,7 @@ var UserModule = fx.Module("user",
 
 		func(r *persistence.UserRepository) out.UserStorePort { return r },
 		func(r *persistence.UserRepository) usecaseauth.UserStore { return r },
+		func(r *persistence.UserRepository) convout.UserChecker { return r },
 
 		command.NewUpdateProfileHandler,
 		command.NewUploadAvatarHandler,

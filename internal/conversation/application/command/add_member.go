@@ -10,7 +10,7 @@ import (
 	"pet-messenger/internal/conversation/application/port/out"
 	"pet-messenger/internal/conversation/domain"
 	domainmsg "pet-messenger/internal/domain/message"
-	"pet-messenger/internal/domain/user"
+	domainuser "pet-messenger/internal/user/domain"
 )
 
 // ErrForbidden: the actor is a member but their tier does not permit this
@@ -24,13 +24,13 @@ var ErrInviteeNotFound = errors.New("conversation: invitee user does not exist")
 type addMemberHandler struct {
 	conversations out.LoadConversationPort
 	writer        out.UpdateConversationPort
-	users         user.Repository
+	users         out.UserChecker
 	events        out.EventPublisherPort
 	systemEvents  out.SystemEventPoster
 }
 
 // NewAddMemberHandler wires the AddMember use case.
-func NewAddMemberHandler(conversations out.LoadConversationPort, writer out.UpdateConversationPort, users user.Repository, events out.EventPublisherPort, systemEvents out.SystemEventPoster) in.AddMemberUseCase {
+func NewAddMemberHandler(conversations out.LoadConversationPort, writer out.UpdateConversationPort, users out.UserChecker, events out.EventPublisherPort, systemEvents out.SystemEventPoster) in.AddMemberUseCase {
 	return &addMemberHandler{conversations: conversations, writer: writer, users: users, events: events, systemEvents: systemEvents}
 }
 
@@ -54,7 +54,7 @@ func (h *addMemberHandler) Handle(ctx context.Context, cmd in.AddMemberCommand) 
 		return nil, ErrForbidden
 	}
 	if _, err := h.users.GetByID(ctx, cmd.Invitee); err != nil {
-		if errors.Is(err, user.ErrNotFound) {
+		if errors.Is(err, domainuser.ErrNotFound) {
 			return nil, ErrInviteeNotFound
 		}
 		return nil, fmt.Errorf("load invitee: %w", err)
