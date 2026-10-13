@@ -17,6 +17,7 @@ func TestModulesWireTogether(t *testing.T) {
 		fxapp.ConfigModule,
 		fxapp.DatabaseModule,
 		fxapp.AuthModule,
+		fxapp.UserModule,
 		fxapp.ConversationModule,
 		fxapp.MessageModule,
 		fxapp.NotificationModule,
