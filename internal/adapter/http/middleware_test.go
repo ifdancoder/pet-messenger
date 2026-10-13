@@ -32,7 +32,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(priv)
 	if err != nil {
-		t.Fatalf("IssueAccessToken: %v", err)
+		t.Fatalf("sign test token: %v", err)
 	}
 
 	r := gin.New()
