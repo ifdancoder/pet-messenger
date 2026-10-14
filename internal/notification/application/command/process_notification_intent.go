@@ -35,8 +35,8 @@ func NewProcessNotificationIntentHandler(writer out.NotificationWriter, members 
 // Handle resolves cmd's recipients, records a Notification for each
 // (idempotent via dedup), and delivers it over WebSocket if the recipient
 // is online, falling back to device push otherwise. An unrecognized Kind is
-// silently skipped; not an error; since JetStream redelivery would never
-// make it recognized.
+// silently skipped (not an error): JetStream redelivery would never make it
+// recognized.
 func (h *processNotificationIntentHandler) Handle(ctx context.Context, cmd in.ProcessNotificationIntentCommand) error {
 	switch cmd.Kind {
 	case "message", "member_removed", "member_tier_changed", "call_started":
@@ -78,13 +78,13 @@ func (h *processNotificationIntentHandler) recipients(ctx context.Context, cmd i
 	if cmd.SenderID != nil {
 		sender, _ = uuid.Parse(*cmd.SenderID)
 	}
-	out := ids[:0:0]
+	kept := ids[:0:0]
 	for _, id := range ids {
 		if id != sender {
-			out = append(out, id)
+			kept = append(kept, id)
 		}
 	}
-	return out, nil
+	return kept, nil
 }
 
 func (h *processNotificationIntentHandler) deliverOne(ctx context.Context, uid uuid.UUID, cmd in.ProcessNotificationIntentCommand) error {
