@@ -139,6 +139,75 @@ func TestListMessages_ClampsLimit(t *testing.T) {
 	}
 }
 
+// TestListMessages_AnnotatesReadStatusFromRosterAndLoader exercises the
+// dual-port read-status path: a non-empty roster (out.ConversationRosterPort)
+// supplies each member's LastReadMessageID, out.MessageLoader resolves those
+// IDs to real messages (for their Seq), and a non-empty history page
+// (out.MessageHistoryPort) is annotated against both. Without the loader
+// actually being called, ReadBy/RecipientCount could not be computed at all.
+func TestListMessages_AnnotatesReadStatusFromRosterAndLoader(t *testing.T) {
+	convID := uuid.Must(uuid.NewV7())
+	alice, bob, carol := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	aliceReadID, bobReadID, carolReadID := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+
+	// Each member's last-read message, resolved via the loader port.
+	loader := &fakeLoader{byID: map[uuid.UUID]*domainmsg.Message{
+		aliceReadID: {ID: aliceReadID, ConversationID: convID, Seq: 20},
+		bobReadID:   {ID: bobReadID, ConversationID: convID, Seq: 8},
+		carolReadID: {ID: carolReadID, ConversationID: convID, Seq: 12},
+	}}
+
+	roster := &fakeRoster{members: []*domainconv.Member{
+		{ConversationID: convID, UserID: alice, Role: domainconv.RoleMember, LastReadMessageID: &aliceReadID},
+		{ConversationID: convID, UserID: bob, Role: domainconv.RoleMember, LastReadMessageID: &bobReadID},
+		{ConversationID: convID, UserID: carol, Role: domainconv.RoleMember, LastReadMessageID: &carolReadID},
+	}}
+
+	// Three messages from three different senders, so every member's
+	// read cursor gets exercised as both "the sender" (excluded from their
+	// own message's recipient count) and "a recipient" of the other two.
+	m1 := &domainmsg.Message{ID: uuid.Must(uuid.NewV7()), ConversationID: convID, Seq: 5, SenderID: &bob}
+	m2 := &domainmsg.Message{ID: uuid.Must(uuid.NewV7()), ConversationID: convID, Seq: 10, SenderID: &alice}
+	m3 := &domainmsg.Message{ID: uuid.Must(uuid.NewV7()), ConversationID: convID, Seq: 15, SenderID: &carol}
+
+	hist := &fakeHistory{result: []*domainmsg.Message{m1, m2, m3}}
+	memb := &fakeMembership{member: &domainconv.Member{Role: domainconv.RoleMember}}
+
+	h := NewListMessagesHandler(loader, hist, memb, roster)
+
+	before := int64(100)
+	got, err := h.Handle(context.Background(), in.ListMessagesQuery{Actor: alice, ConversationID: convID, BeforeSeq: &before})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d messages, want 3", len(got))
+	}
+
+	// Expected per message: RecipientCount = members minus the sender (2),
+	// since all three roster members never leave; ReadBy = how many of
+	// those 2 non-sender members have a last-read Seq >= the message's Seq.
+	//   m1 (Seq=5,  sender=bob):   alice(20)>=5 yes, carol(12)>=5 yes  -> ReadBy=2
+	//   m2 (Seq=10, sender=alice): bob(8)>=10 no,    carol(12)>=10 yes -> ReadBy=1
+	//   m3 (Seq=15, sender=carol): alice(20)>=15 yes, bob(8)>=15 no    -> ReadBy=1
+	cases := []struct {
+		name           string
+		msg            *domainmsg.Message
+		wantReadBy     int
+		wantRecipients int
+	}{
+		{"m1 sent by bob", m1, 2, 2},
+		{"m2 sent by alice", m2, 1, 2},
+		{"m3 sent by carol", m3, 1, 2},
+	}
+	for _, tc := range cases {
+		if tc.msg.ReadBy != tc.wantReadBy || tc.msg.RecipientCount != tc.wantRecipients {
+			t.Errorf("%s: ReadBy=%d RecipientCount=%d, want ReadBy=%d RecipientCount=%d",
+				tc.name, tc.msg.ReadBy, tc.msg.RecipientCount, tc.wantReadBy, tc.wantRecipients)
+		}
+	}
+}
+
 func TestPageLimit(t *testing.T) {
 	for _, tc := range []struct{ in, want int }{{-1, DefaultPageLimit}, {0, DefaultPageLimit}, {1, 1}, {MaxPageLimit, MaxPageLimit}, {MaxPageLimit + 1, MaxPageLimit}} {
 		if got := PageLimit(tc.in); got != tc.want {
