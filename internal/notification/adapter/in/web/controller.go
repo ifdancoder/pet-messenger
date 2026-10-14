@@ -125,6 +125,8 @@ type markReadRequest struct {
 	ThroughCursor string `json:"through_cursor"`
 }
 
+// List returns a page of the authenticated user's notifications, newest
+// first, along with their current unread count.
 func (h *NotificationHandler) List(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -174,6 +176,8 @@ func (h *NotificationHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// MarkRead marks every notification of the authenticated user up through
+// ThroughCursor as read; an absent or empty cursor marks everything read.
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
