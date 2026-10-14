@@ -26,15 +26,16 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	domainnotif "pet-messenger/internal/domain/notification"
-	"pet-messenger/internal/domain/pushtoken"
-	domainuser "pet-messenger/internal/user/domain"
 	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/postgres"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
 	"pet-messenger/internal/infrastructure/push"
+	pushtokenpersistence "pet-messenger/internal/pushtoken/adapter/out/persistence"
+	domainpush "pet-messenger/internal/pushtoken/domain"
+	domainuser "pet-messenger/internal/user/domain"
 
-	domainconv "pet-messenger/internal/conversation/domain"
 	convpersistence "pet-messenger/internal/conversation/adapter/out/persistence"
+	domainconv "pet-messenger/internal/conversation/domain"
 )
 
 var (
@@ -140,7 +141,7 @@ type fakePusher struct {
 	gone  map[string]bool // token -> report ErrTokenGone
 }
 
-func (f *fakePusher) Send(_ context.Context, tok *pushtoken.PushToken, n *domainnotif.Notification) error {
+func (f *fakePusher) Send(_ context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, pushCall{token: tok.Token, notifID: n.ID})
@@ -229,7 +230,7 @@ func newEnv(t *testing.T) *env {
 
 	w := NewWorker(
 		postgres.NewNotificationRepository(testDB),
-		postgres.NewPushTokenRepository(testDB),
+		pushtokenpersistence.NewPushTokenRepository(testDB),
 		convpersistence.NewConversationRepository(testDB),
 		presence,
 		pusher,
@@ -336,11 +337,11 @@ func mkGroupChat(t *testing.T, creator uuid.UUID, others ...uuid.UUID) uuid.UUID
 
 func mkToken(t *testing.T, uid uuid.UUID, token string) {
 	t.Helper()
-	pt, err := pushtoken.New(uid, pushtoken.PlatformFCM, token)
+	pt, err := domainpush.New(uid, domainpush.PlatformFCM, token)
 	if err != nil {
 		t.Fatalf("pushtoken.New: %v", err)
 	}
-	if _, err := postgres.NewPushTokenRepository(testDB).Upsert(context.Background(), pt); err != nil {
+	if _, err := pushtokenpersistence.NewPushTokenRepository(testDB).Upsert(context.Background(), pt); err != nil {
 		t.Fatalf("upsert token: %v", err)
 	}
 }

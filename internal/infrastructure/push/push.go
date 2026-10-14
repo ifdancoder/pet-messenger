@@ -14,7 +14,7 @@ import (
 
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/domain/notification"
-	"pet-messenger/internal/domain/pushtoken"
+	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 var (
@@ -28,14 +28,14 @@ var (
 )
 
 type Pusher interface {
-	Send(ctx context.Context, tok *pushtoken.PushToken, n *notification.Notification) error
+	Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error
 }
 
 type MultiPusher struct {
-	byPlatform map[pushtoken.Platform]Pusher
+	byPlatform map[domainpush.Platform]Pusher
 }
 
-func (m *MultiPusher) Send(ctx context.Context, tok *pushtoken.PushToken, n *notification.Notification) error {
+func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error {
 	p, ok := m.byPlatform[tok.Platform]
 	if !ok {
 		return ErrProviderNotConfigured
@@ -45,11 +45,11 @@ func (m *MultiPusher) Send(ctx context.Context, tok *pushtoken.PushToken, n *not
 
 // NewMultiPusher registers a provider per platform when its config is present.
 func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, error) {
-	m := &MultiPusher{byPlatform: map[pushtoken.Platform]Pusher{
-		pushtoken.PlatformAPNS: apnsStub{},
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]Pusher{
+		domainpush.PlatformAPNS: apnsStub{},
 	}}
 	if cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "" && cfg.VAPIDSubject != "" {
-		m.byPlatform[pushtoken.PlatformWeb] = NewWebPush(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
+		m.byPlatform[domainpush.PlatformWeb] = NewWebPush(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
 		log.Printf("push: web-push provider registered")
 	}
 	if cfg.FCMProjectID != "" && cfg.FCMCredentialsJSON != "" {
@@ -57,7 +57,7 @@ func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, e
 		if err != nil {
 			return nil, fmt.Errorf("configure FCM: %w", err)
 		}
-		m.byPlatform[pushtoken.PlatformFCM] = fcm
+		m.byPlatform[domainpush.PlatformFCM] = fcm
 		log.Printf("push: FCM provider registered (project %s)", cfg.FCMProjectID)
 	}
 	return m, nil

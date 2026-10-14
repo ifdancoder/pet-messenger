@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"pet-messenger/internal/domain/notification"
-	"pet-messenger/internal/domain/pushtoken"
+	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 // apnsStub stands in for a real APNS provider. Registering it keeps the
@@ -12,6 +12,6 @@ import (
 // ErrProviderNotConfigured until token-based APNS auth is implemented.
 type apnsStub struct{}
 
-func (apnsStub) Send(context.Context, *pushtoken.PushToken, *notification.Notification) error {
+func (apnsStub) Send(context.Context, *domainpush.PushToken, *notification.Notification) error {
 	return ErrProviderNotConfigured
 }

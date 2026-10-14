@@ -20,6 +20,10 @@ import (
 	"pet-messenger/internal/infrastructure/postgres"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
 	"pet-messenger/internal/infrastructure/push"
+	pushtokenweb "pet-messenger/internal/pushtoken/adapter/in/web"
+	pushtokenpersistence "pet-messenger/internal/pushtoken/adapter/out/persistence"
+	pushtokencommand "pet-messenger/internal/pushtoken/application/command"
+	pushtokenout "pet-messenger/internal/pushtoken/application/port/out"
 	usecasenotif "pet-messenger/internal/usecase/notification"
 )
 
@@ -40,8 +44,23 @@ var NotificationModule = fx.Module("notification",
 
 var PushModule = fx.Module("push",
 	fx.Provide(
-		postgres.NewPushTokenRepository,
-		httpadapter.NewPushTokenHandler,
+		pushtokenpersistence.NewPushTokenRepository,
+
+		// Bridges from the concrete persistence adapter to this context's
+		// own out ports.
+		func(r *pushtokenpersistence.PushTokenRepository) pushtokenout.PushTokenWriter { return r },
+		func(r *pushtokenpersistence.PushTokenRepository) pushtokenout.PushTokenEraser { return r },
+
+		// Bridge from the concrete persistence adapter to internal/adapter/
+		// notify's own consumer-owned PushTokenLister port. Lives here, in
+		// the producer's own fx file, per the bridge-placement rule.
+		func(r *pushtokenpersistence.PushTokenRepository) notify.PushTokenLister { return r },
+
+		pushtokencommand.NewRegisterPushTokenHandler,
+		pushtokencommand.NewUnregisterPushTokenHandler,
+
+		pushtokenweb.NewPushTokenHandler,
+
 		provideMultiPusher,
 	),
 )

@@ -13,7 +13,7 @@ import (
 
 	webpushlib "github.com/SherClockHolmes/webpush-go"
 
-	"pet-messenger/internal/domain/pushtoken"
+	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 // TestWebPush_BadSubscriptionJSON exercises the JSON-unmarshal branch: an
@@ -26,7 +26,7 @@ func TestWebPush_BadSubscriptionJSON(t *testing.T) {
 	w := NewWebPush(pub, priv, "admin@example.com")
 	n := mkNotif(t)
 
-	err = w.Send(context.Background(), &pushtoken.PushToken{Platform: pushtoken.PlatformWeb, Token: "not json"}, n)
+	err = w.Send(context.Background(), &domainpush.PushToken{Platform: domainpush.PlatformWeb, Token: "not json"}, n)
 	if !errors.Is(err, ErrTokenGone) {
 		t.Fatalf("err = %v, want ErrTokenGone", err)
 	}
@@ -69,7 +69,7 @@ func TestWebPush_StatusMapping(t *testing.T) {
 
 	w := NewWebPush(pub, priv, "admin@example.com")
 	n := mkNotif(t)
-	tok := &pushtoken.PushToken{Platform: pushtoken.PlatformWeb, Token: string(raw)}
+	tok := &domainpush.PushToken{Platform: domainpush.PlatformWeb, Token: string(raw)}
 
 	tests := []struct {
 		name      string

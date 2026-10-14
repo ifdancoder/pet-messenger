@@ -12,7 +12,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"pet-messenger/internal/domain/pushtoken"
+	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 // fakeServiceAccountJSON builds a syntactically real service-account key with a
@@ -52,7 +52,7 @@ func fakeServiceAccountJSON(t *testing.T) []byte {
 func TestFCM_Send(t *testing.T) {
 	sa := fakeServiceAccountJSON(t)
 	n := mkNotif(t)
-	tok := &pushtoken.PushToken{Platform: pushtoken.PlatformFCM, Token: "device-token"}
+	tok := &domainpush.PushToken{Platform: domainpush.PlatformFCM, Token: "device-token"}
 
 	tests := []struct {
 		name      string

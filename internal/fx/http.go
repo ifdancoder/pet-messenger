@@ -21,6 +21,7 @@ import (
 	"pet-messenger/internal/database"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	messageweb "pet-messenger/internal/message/adapter/in/web"
+	pushtokenweb "pet-messenger/internal/pushtoken/adapter/in/web"
 	userweb "pet-messenger/internal/user/adapter/in/web"
 )
 
@@ -33,7 +34,7 @@ func newGinEngine(
 	convHandler *web.ConversationHandler,
 	msgHandler *messageweb.MessageHandler,
 	notifHandler *httpadapter.NotificationHandler,
-	pushTokenHandler *httpadapter.PushTokenHandler,
+	pushTokenHandler *pushtokenweb.PushTokenHandler,
 	wsHandler *wsadapter.WSHandler,
 	callHandler *httpadapter.CallHandler,
 	verifier *infraauth.JWTVerifier,

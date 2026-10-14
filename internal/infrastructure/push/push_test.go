@@ -10,12 +10,12 @@ import (
 
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/domain/notification"
-	"pet-messenger/internal/domain/pushtoken"
+	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 type recordingPusher struct{ calls int }
 
-func (r *recordingPusher) Send(context.Context, *pushtoken.PushToken, *notification.Notification) error {
+func (r *recordingPusher) Send(context.Context, *domainpush.PushToken, *notification.Notification) error {
 	r.calls++
 	return nil
 }
@@ -31,17 +31,17 @@ func mkNotif(t *testing.T) *notification.Notification {
 
 func TestMultiPusher_Routes(t *testing.T) {
 	web := &recordingPusher{}
-	m := &MultiPusher{byPlatform: map[pushtoken.Platform]Pusher{pushtoken.PlatformWeb: web}}
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]Pusher{domainpush.PlatformWeb: web}}
 	ctx := context.Background()
 	n := mkNotif(t)
 
-	if err := m.Send(ctx, &pushtoken.PushToken{Platform: pushtoken.PlatformWeb, Token: "t"}, n); err != nil {
+	if err := m.Send(ctx, &domainpush.PushToken{Platform: domainpush.PlatformWeb, Token: "t"}, n); err != nil {
 		t.Fatalf("web send: %v", err)
 	}
 	if web.calls != 1 {
 		t.Fatalf("web calls = %d", web.calls)
 	}
-	if err := m.Send(ctx, &pushtoken.PushToken{Platform: pushtoken.PlatformFCM, Token: "t"}, n); !errors.Is(err, ErrProviderNotConfigured) {
+	if err := m.Send(ctx, &domainpush.PushToken{Platform: domainpush.PlatformFCM, Token: "t"}, n); !errors.Is(err, ErrProviderNotConfigured) {
 		t.Fatalf("fcm (unregistered) err = %v, want ErrProviderNotConfigured", err)
 	}
 }
@@ -52,14 +52,14 @@ func TestNewMultiPusher_RegistersFromConfig(t *testing.T) {
 		t.Fatalf("NewMultiPusher: %v", err)
 	}
 	// APNS stub always present, web/fcm absent
-	if _, ok := m.byPlatform[pushtoken.PlatformAPNS]; !ok {
+	if _, ok := m.byPlatform[domainpush.PlatformAPNS]; !ok {
 		t.Fatal("apns stub should be registered")
 	}
-	if _, ok := m.byPlatform[pushtoken.PlatformWeb]; ok {
+	if _, ok := m.byPlatform[domainpush.PlatformWeb]; ok {
 		t.Fatal("web should not be registered without VAPID creds")
 	}
 	n := mkNotif(t)
-	if err := m.Send(context.Background(), &pushtoken.PushToken{Platform: pushtoken.PlatformAPNS}, n); !errors.Is(err, ErrProviderNotConfigured) {
+	if err := m.Send(context.Background(), &domainpush.PushToken{Platform: domainpush.PlatformAPNS}, n); !errors.Is(err, ErrProviderNotConfigured) {
 		t.Fatalf("apns stub err = %v, want ErrProviderNotConfigured", err)
 	}
 }

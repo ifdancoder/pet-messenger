@@ -12,7 +12,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"pet-messenger/internal/domain/notification"
-	"pet-messenger/internal/domain/pushtoken"
+	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 // fcmAudience is the bearer audience for a self-signed service-account JWT.
@@ -45,7 +45,7 @@ func NewFCM(ctx context.Context, projectID string, credentialsJSON []byte, baseU
 	}, nil
 }
 
-func (f *FCM) Send(ctx context.Context, tok *pushtoken.PushToken, n *notification.Notification) error {
+func (f *FCM) Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error {
 	body, _ := json.Marshal(map[string]any{
 		"message": map[string]any{
 			"token": tok.Token,

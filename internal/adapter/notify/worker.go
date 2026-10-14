@@ -11,7 +11,6 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	domainnotif "pet-messenger/internal/domain/notification"
-	"pet-messenger/internal/domain/pushtoken"
 	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/push"
 )
@@ -27,14 +26,14 @@ type MemberLister interface {
 
 type Worker struct {
 	notifs   domainnotif.Repository
-	tokens   pushtoken.Repository
+	tokens   PushTokenLister
 	members  MemberLister
 	presence Presence
 	pusher   push.Pusher
 	ws       WSNotifier
 }
 
-func NewWorker(notifs domainnotif.Repository, tokens pushtoken.Repository, members MemberLister, presence Presence, pusher push.Pusher, ws WSNotifier) *Worker {
+func NewWorker(notifs domainnotif.Repository, tokens PushTokenLister, members MemberLister, presence Presence, pusher push.Pusher, ws WSNotifier) *Worker {
 	return &Worker{notifs: notifs, tokens: tokens, members: members, presence: presence, pusher: pusher, ws: ws}
 }
 
