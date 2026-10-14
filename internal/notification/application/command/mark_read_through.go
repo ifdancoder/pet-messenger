@@ -17,7 +17,7 @@ func NewMarkReadThroughHandler(marker out.NotificationMarker) in.MarkReadThrough
 	return &markReadThroughHandler{marker: marker}
 }
 
-// Handle delegates straight to the marker — no domain validation needed, a
+// Handle delegates straight to the marker; no domain validation needed, a
 // zero ThroughCreatedAt is a valid "mark everything" request.
 func (h *markReadThroughHandler) Handle(ctx context.Context, cmd in.MarkReadThroughCommand) (int64, error) {
 	return h.marker.MarkReadThrough(ctx, cmd.Actor, cmd.ThroughCreatedAt, cmd.ThroughID)
