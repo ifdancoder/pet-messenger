@@ -18,15 +18,6 @@ import (
 	"pet-messenger/internal/conversation/adapter/out/persistence"
 )
 
-// within asserts got is within tol of want — shared by every integration
-// test in this package that compares a round-tripped timestamp.
-func within(t *testing.T, got, want time.Time, tol time.Duration) {
-	t.Helper()
-	if d := got.Sub(want); d < -tol || d > tol {
-		t.Errorf("time %v not within %v of %v (delta %v)", got, tol, want, d)
-	}
-}
-
 // seedGroupChat creates a group chat with a fresh creator, returns
 // (convID, creatorID).
 func seedGroupChat(t *testing.T) (uuid.UUID, uuid.UUID) {

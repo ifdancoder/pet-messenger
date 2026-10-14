@@ -3,7 +3,6 @@ package command
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -67,14 +66,6 @@ func (f *fakeConversationMembership) GetByID(context.Context, uuid.UUID) (*domai
 
 func (f *fakeConversationMembership) GetMember(context.Context, uuid.UUID, uuid.UUID) (*domainconv.Member, error) {
 	return f.member, f.memberErr
-}
-
-type fakeConversationRoster struct {
-	members []*domainconv.Member
-}
-
-func (f *fakeConversationRoster) ListMembers(context.Context, uuid.UUID, bool, time.Time, uuid.UUID, int) ([]*domainconv.Member, error) {
-	return f.members, nil
 }
 
 type fakeReadCursor struct {
