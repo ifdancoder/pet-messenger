@@ -477,10 +477,12 @@ func TestIntegration_GroupChat_FansOut(t *testing.T) {
 
 // Handling the same message twice writes one row, not two: the second
 // ProcessNotificationIntent attempt collides with the real
-// idx_notifications_user_dedup unique index on (user_id, dedup_key), which
-// the Postgres adapter maps to domain.ErrDuplicate, and the worker still
-// Acks. This is the property worth proving against a real constraint rather
-// than a fake's map.
+// idx_notifications_user_dedup unique index on (user_id, dedup_key). This
+// test proves only the row count against that real constraint, not the
+// error-mapping or Ack path; those are covered by
+// notification_repository_test.go's TestNotificationRepository_CreateAndDedup
+// (real ErrDuplicate) and TestIntegration_GroupChat_FansOut in this file
+// (nil error implies Ack).
 func TestIntegration_Redeliver_NoDuplicateRows(t *testing.T) {
 	e := newEnv(t)
 
