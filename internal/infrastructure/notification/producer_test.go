@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
-	domainmsg "pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 
 	domainconv "pet-messenger/internal/conversation/domain"
 )

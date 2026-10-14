@@ -18,7 +18,6 @@ import (
 	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/postgres"
 	usecasecall "pet-messenger/internal/usecase/call"
-	usecasemsg "pet-messenger/internal/usecase/message"
 )
 
 var CallModule = fx.Module("call",
@@ -38,8 +37,6 @@ var CallModule = fx.Module("call",
 		// ICE
 		func(p *iceinfra.Provider) usecasecall.ICEConfigProvider { return p },
 		iceinfra.NewProvider,
-		// SystemEventPoster is *usecasemsg.Service (already provided by MessageModule)
-		func(s *usecasemsg.Service) usecasecall.SystemEventPoster { return s },
 		// CallNotifier
 		func(n *notifinfra.CallNotifier) usecasecall.CallNotifier { return n },
 		notifinfra.NewCallNotifier,

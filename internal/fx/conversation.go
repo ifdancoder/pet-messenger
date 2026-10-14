@@ -22,8 +22,8 @@ import (
 	"pet-messenger/internal/conversation/application/query"
 	"pet-messenger/internal/conversation/domain"
 	natsinfra "pet-messenger/internal/infrastructure/nats"
+	messageout "pet-messenger/internal/message/application/port/out"
 	usecasecall "pet-messenger/internal/usecase/call"
-	usecasemsg "pet-messenger/internal/usecase/message"
 )
 
 var ConversationModule = fx.Module("conversation",
@@ -43,12 +43,13 @@ var ConversationModule = fx.Module("conversation",
 		func(r *persistence.ConversationRepository) out.PublicChannelViewPort { return r },
 		func(r *persistence.ConversationRepository) out.MemberViewPort { return r },
 		func(r *persistence.InboxRepository) out.InboxViewPort { return r },
-		func(s *usecasemsg.Service) out.SystemEventPoster { return s },
 
 		// Bridges from the concrete write-side adapter to the OTHER
 		// bounded contexts' own narrow, consumer-defined read ports (see
 		// the design spec's "Cross-context seams").
-		func(r *persistence.ConversationRepository) usecasemsg.ConversationReader { return r },
+		func(r *persistence.ConversationRepository) messageout.ConversationMembershipPort { return r },
+		func(r *persistence.ConversationRepository) messageout.ConversationRosterPort { return r },
+		func(r *persistence.ConversationRepository) messageout.ReadCursorPort { return r },
 		func(r *persistence.ConversationRepository) usecasecall.ConversationReader { return r },
 		func(r *persistence.ConversationRepository) notify.MemberLister { return r },
 		func(r *persistence.ConversationRepository) wsadapter.MemberChecker { return r },

@@ -69,14 +69,14 @@ func TestE2EEDeviceHandlerApproveRequiresValidDeviceSignature(t *testing.T) {
 	}}
 	router := e2eeRouter(NewE2EEDeviceHandler(repo, nil, nil), actor)
 
-	invalid := doMsg(t, router, http.MethodPost, "/users/me/e2ee/devices/"+targetID.String()+"/approve",
+	invalid := doConvJSON(t, router, http.MethodPost, "/users/me/e2ee/devices/"+targetID.String()+"/approve",
 		`{"approver_id":"`+approverID.String()+`","signature":"`+base64.RawURLEncoding.EncodeToString(make([]byte, ed25519.SignatureSize))+`"}`)
 	if invalid.Code != http.StatusForbidden || repo.approved {
 		t.Fatalf("invalid signature: status=%d approved=%v", invalid.Code, repo.approved)
 	}
 
 	signature := ed25519.Sign(privateKey, approvalStatement(approverID, targetID, target.Fingerprint))
-	valid := doMsg(t, router, http.MethodPost, "/users/me/e2ee/devices/"+targetID.String()+"/approve",
+	valid := doConvJSON(t, router, http.MethodPost, "/users/me/e2ee/devices/"+targetID.String()+"/approve",
 		`{"approver_id":"`+approverID.String()+`","signature":"`+base64.RawURLEncoding.EncodeToString(signature)+`"}`)
 	if valid.Code != http.StatusNoContent || !repo.approved {
 		t.Fatalf("valid signature: status=%d approved=%v body=%s", valid.Code, repo.approved, valid.Body.String())

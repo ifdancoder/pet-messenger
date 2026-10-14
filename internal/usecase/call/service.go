@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 
 	conversation "pet-messenger/internal/conversation/domain"
 )
@@ -113,7 +113,7 @@ func (s *Service) StartCall(ctx context.Context, actorID, conversationID uuid.UU
 	if err := s.addParticipant(ctx, c.ID, actorID, domaincall.RolePublisher); err != nil {
 		return nil, JoinInfo{}, err
 	}
-	if err := s.events.PostSystemEvent(ctx, conv, &actorID, message.SystemCallStarted, c.ID, ""); err != nil {
+	if err := s.events.PostSystemEvent(ctx, conv, &actorID, domainmsg.SystemCallStarted, c.ID, ""); err != nil {
 		log.Printf("call: post SystemCallStarted %s: %v", c.ID, err)
 	}
 	if err := s.notif.CallStarted(ctx, c.ID, conversationID, actorID); err != nil {
@@ -273,7 +273,7 @@ func (s *Service) finishCall(ctx context.Context, c *domaincall.Call, actorID *u
 		log.Printf("call: load conv for SystemCallEnded %s: %v", c.ID, err)
 		return nil
 	}
-	if perr := s.events.PostSystemEvent(ctx, conv, actorID, message.SystemCallEnded, c.ID, ""); perr != nil {
+	if perr := s.events.PostSystemEvent(ctx, conv, actorID, domainmsg.SystemCallEnded, c.ID, ""); perr != nil {
 		log.Printf("call: post SystemCallEnded %s: %v", c.ID, perr)
 	}
 	return nil

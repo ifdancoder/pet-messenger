@@ -7,7 +7,7 @@ import (
 	"pet-messenger/internal/conversation/application/port/in"
 	"pet-messenger/internal/conversation/application/port/out"
 	"pet-messenger/internal/conversation/domain"
-	domainmsg "pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 )
 
 // ErrCannotKickSelf: RemoveMember was called with Actor == Target; use

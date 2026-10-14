@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/conversation/domain"
-	domainmsg "pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 	domainuser "pet-messenger/internal/user/domain"
 )
 

@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 
 	conversation "pet-messenger/internal/conversation/domain"
 )
@@ -91,10 +91,11 @@ type ICEConfigProvider interface {
 }
 
 // SystemEventPoster is re-declared here (rather than imported from
-// internal/usecase/conversation) to avoid a usecase→usecase import. Its
-// signature matches *message.Service.PostSystemEvent.
+// internal/conversation or internal/message) to avoid a usecase→usecase
+// import. Its signature matches
+// *internal/message/application/command.PostSystemEventHandler.PostSystemEvent.
 type SystemEventPoster interface {
-	PostSystemEvent(ctx context.Context, conv *conversation.Conversation, actorID *uuid.UUID, event message.SystemEvent, targetID uuid.UUID, detail string) error
+	PostSystemEvent(ctx context.Context, conv *conversation.Conversation, actorID *uuid.UUID, event domainmsg.SystemEvent, targetID uuid.UUID, detail string) error
 }
 
 type CallNotifier interface {

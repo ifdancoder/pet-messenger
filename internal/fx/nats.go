@@ -109,7 +109,6 @@ var NATSModule = fx.Module("nats",
 	fx.Provide(
 		newNATSConn,
 		newJetStream,
-		natsinfra.NewPublisher,
 	),
 	fx.Invoke(startMessageSubscription),
 )

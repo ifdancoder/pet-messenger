@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 
 	conversation "pet-messenger/internal/conversation/domain"
 )
@@ -239,9 +239,9 @@ type fakeICE struct{}
 
 func (fakeICE) ServersFor(uuid.UUID) []ICEServer { return []ICEServer{{URLs: []string{"stun:x"}}} }
 
-type fakeEvents struct{ events []message.SystemEvent }
+type fakeEvents struct{ events []domainmsg.SystemEvent }
 
-func (f *fakeEvents) PostSystemEvent(_ context.Context, _ *conversation.Conversation, _ *uuid.UUID, e message.SystemEvent, _ uuid.UUID, _ string) error {
+func (f *fakeEvents) PostSystemEvent(_ context.Context, _ *conversation.Conversation, _ *uuid.UUID, e domainmsg.SystemEvent, _ uuid.UUID, _ string) error {
 	f.events = append(f.events, e)
 	return nil
 }
@@ -315,7 +315,7 @@ func TestStartCall_HappyPath(t *testing.T) {
 	if got := calls.parts[c.ID]; len(got) != 1 || got[0].UserID != memberID {
 		t.Fatalf("participant rows = %+v, want one for the actor", got)
 	}
-	if len(events.events) != 1 || events.events[0] != message.SystemCallStarted {
+	if len(events.events) != 1 || events.events[0] != domainmsg.SystemCallStarted {
 		t.Fatalf("events = %v, want [call_started]", events.events)
 	}
 	if notif.started != 1 {
@@ -585,7 +585,7 @@ func TestGetLiveForConversation_MissingRoomEndsCall(t *testing.T) {
 	if c.IsLive() {
 		t.Fatal("missing media room left call live")
 	}
-	if len(events.events) != 1 || events.events[0] != message.SystemCallEnded {
+	if len(events.events) != 1 || events.events[0] != domainmsg.SystemCallEnded {
 		t.Fatalf("events = %v, want one call_ended", events.events)
 	}
 }
@@ -633,7 +633,7 @@ func TestEndCall_ByInitiator(t *testing.T) {
 	}
 	var sawEnded bool
 	for _, e := range events.events {
-		if e == message.SystemCallEnded {
+		if e == domainmsg.SystemCallEnded {
 			sawEnded = true
 		}
 	}
@@ -758,7 +758,7 @@ func TestHandleCallEnded_Idempotent(t *testing.T) {
 	}
 	var ended int
 	for _, e := range events.events {
-		if e == message.SystemCallEnded {
+		if e == domainmsg.SystemCallEnded {
 			ended++
 		}
 	}
@@ -814,7 +814,7 @@ func TestReapStaleCalls(t *testing.T) {
 	}
 	var ended int
 	for _, e := range events.events {
-		if e == message.SystemCallEnded {
+		if e == domainmsg.SystemCallEnded {
 			ended++
 		}
 	}
@@ -846,7 +846,7 @@ func TestReapStaleCalls_MissingRoom(t *testing.T) {
 	if n != 1 || c.IsLive() {
 		t.Fatalf("ReapStaleCalls = %d, call live = %v; want 1, false", n, c.IsLive())
 	}
-	if len(events.events) != 1 || events.events[0] != message.SystemCallEnded {
+	if len(events.events) != 1 || events.events[0] != domainmsg.SystemCallEnded {
 		t.Fatalf("events = %v, want one call_ended", events.events)
 	}
 }

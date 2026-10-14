@@ -9,7 +9,7 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	domaincall "pet-messenger/internal/domain/call"
-	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 	usecasecall "pet-messenger/internal/usecase/call"
 
 	conversation "pet-messenger/internal/conversation/domain"
@@ -165,7 +165,7 @@ func (stubICE) ServersFor(uuid.UUID) []usecasecall.ICEServer { return nil }
 
 type stubEvents struct{}
 
-func (stubEvents) PostSystemEvent(context.Context, *conversation.Conversation, *uuid.UUID, message.SystemEvent, uuid.UUID, string) error {
+func (stubEvents) PostSystemEvent(context.Context, *conversation.Conversation, *uuid.UUID, domainmsg.SystemEvent, uuid.UUID, string) error {
 	return nil
 }
 

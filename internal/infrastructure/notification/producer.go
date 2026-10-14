@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	natsgo "github.com/nats-io/nats.go"
 
-	domainmsg "pet-messenger/internal/domain/message"
-	usecasemsg "pet-messenger/internal/usecase/message"
+	domainmsg "pet-messenger/internal/message/domain"
+	messageout "pet-messenger/internal/message/application/port/out"
 
 	domainconv "pet-messenger/internal/conversation/domain"
 )
@@ -40,7 +40,7 @@ type Producer struct{ js natsgo.JetStreamContext }
 
 // NewProducer wires the producer against a JetStream context (provided by
 // NATSModule). The NOTIF stream is ensured on boot by ensureNotifStream.
-func NewProducer(js natsgo.JetStreamContext) usecasemsg.NotificationProducer {
+func NewProducer(js natsgo.JetStreamContext) messageout.NotificationProducer {
 	return &Producer{js: js}
 }
 

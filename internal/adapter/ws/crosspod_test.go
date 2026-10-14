@@ -16,9 +16,10 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	tcnats "github.com/testcontainers/testcontainers-go/modules/nats"
 
-	"pet-messenger/internal/domain/message"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	natsinfra "pet-messenger/internal/infrastructure/nats"
+	messagemessaging "pet-messenger/internal/message/adapter/out/messaging"
+	domainmsg "pet-messenger/internal/message/domain"
 
 	convmsg "pet-messenger/internal/conversation/adapter/out/messaging"
 	convdomain "pet-messenger/internal/conversation/domain"
@@ -91,15 +92,15 @@ func TestCrossPodDelivery(t *testing.T) {
 		t.Fatalf("pod A connect: %v", err)
 	}
 	t.Cleanup(func() { ncA.Close() })
-	publisher := natsinfra.NewPublisher(ncA)
+	publisher := messagemessaging.NewPublisher(ncA)
 
 	sender := uuid.Must(uuid.NewV7())
-	m := &message.Message{
+	m := &domainmsg.Message{
 		ID:             uuid.Must(uuid.NewV7()),
 		ConversationID: convID,
 		Seq:            1,
 		SenderID:       &sender,
-		Type:           message.TypeText,
+		Type:           domainmsg.TypeText,
 		Content:        "cross-pod hello",
 		CreatedAt:      time.Now().UTC(),
 	}
