@@ -8,6 +8,7 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 	usecasemsg "pet-messenger/internal/usecase/message"
 )
 
@@ -40,7 +41,7 @@ func (p *Publisher) publish(t MessageEventType, m *message.Message) error {
 	data, err := json.Marshal(MessageEvent{
 		Type:           t,
 		ConversationID: m.ConversationID.String(),
-		Message:        toPayload(m),
+		Message:        ToPayload(toDomainMsg(m)),
 	})
 	if err != nil {
 		return fmt.Errorf("marshal %s event: %w", t, err)
@@ -49,4 +50,30 @@ func (p *Publisher) publish(t MessageEventType, m *message.Message) error {
 		return fmt.Errorf("publish %s: %w", subject, err)
 	}
 	return nil
+}
+
+// toDomainMsg bridges the OLD internal/domain/message.Message that this
+// legacy publisher still speaks to the NEW internal/message/domain.Message
+// ToPayload now takes. It is a temporary type-bridging shim, not a
+// restatement of the wire-payload mapping (that stays solely in ToPayload) —
+// it is removed when Task 13 deletes this file along with the rest of the
+// old message usecase/domain packages.
+func toDomainMsg(m *message.Message) *domainmsg.Message {
+	return &domainmsg.Message{
+		ID:             m.ID,
+		ConversationID: m.ConversationID,
+		Seq:            m.Seq,
+		SenderID:       m.SenderID,
+		Type:           domainmsg.Type(m.Type),
+		Content:        m.Content,
+		SystemEvent:    domainmsg.SystemEvent(m.SystemEvent),
+		SystemTargetID: m.SystemTargetID,
+		ReplyToID:      m.ReplyToID,
+		IdempotencyKey: m.IdempotencyKey,
+		EditedAt:       m.EditedAt,
+		DeletedAt:      m.DeletedAt,
+		CreatedAt:      m.CreatedAt,
+		ReadBy:         m.ReadBy,
+		RecipientCount: m.RecipientCount,
+	}
 }

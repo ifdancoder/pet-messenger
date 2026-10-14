@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 )
 
 func TestSubjectRoundTrip(t *testing.T) {
@@ -33,17 +33,17 @@ func TestConversationIDFromSubject_Rejects(t *testing.T) {
 func TestToPayload(t *testing.T) {
 	sender := uuid.Must(uuid.NewV7())
 	edited := time.Now().UTC()
-	m := &message.Message{
+	m := &domainmsg.Message{
 		ID:             uuid.Must(uuid.NewV7()),
 		ConversationID: uuid.Must(uuid.NewV7()),
 		Seq:            7,
 		SenderID:       &sender,
-		Type:           message.TypeText,
+		Type:           domainmsg.TypeText,
 		Content:        "hi",
 		EditedAt:       &edited,
 		CreatedAt:      time.Now().UTC(),
 	}
-	p := toPayload(m)
+	p := ToPayload(m)
 	if p.ID != m.ID.String() || p.ConversationID != m.ConversationID.String() || p.Seq != 7 {
 		t.Fatalf("payload ids/seq wrong: %+v", p)
 	}
@@ -56,15 +56,15 @@ func TestToPayload(t *testing.T) {
 }
 
 func TestMessageEvent_JSONShape(t *testing.T) {
-	m := &message.Message{
+	m := &domainmsg.Message{
 		ID:             uuid.Must(uuid.NewV7()),
 		ConversationID: uuid.Must(uuid.NewV7()),
 		Seq:            1,
-		Type:           message.TypeText,
+		Type:           domainmsg.TypeText,
 		Content:        "x",
 		CreatedAt:      time.Now().UTC(),
 	}
-	data, err := json.Marshal(MessageEvent{Type: MessageCreated, ConversationID: m.ConversationID.String(), Message: toPayload(m)})
+	data, err := json.Marshal(MessageEvent{Type: MessageCreated, ConversationID: m.ConversationID.String(), Message: ToPayload(m)})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

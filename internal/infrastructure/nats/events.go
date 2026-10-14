@@ -3,7 +3,7 @@ package nats
 import (
 	"time"
 
-	"pet-messenger/internal/domain/message"
+	domainmsg "pet-messenger/internal/message/domain"
 )
 
 // MessageEventType is the kind of change a MessageEvent carries.
@@ -47,7 +47,9 @@ type MessagePayload struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
-func toPayload(m *message.Message) MessagePayload {
+// ToPayload maps a message aggregate onto the wire payload published on
+// SubjectForConversation.
+func ToPayload(m *domainmsg.Message) MessagePayload {
 	p := MessagePayload{
 		ID:             m.ID.String(),
 		ConversationID: m.ConversationID.String(),
