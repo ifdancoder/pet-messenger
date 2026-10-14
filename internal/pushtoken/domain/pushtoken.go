@@ -17,6 +17,7 @@ import (
 // Platform identifies which push provider a token belongs to.
 type Platform string
 
+// Supported push platforms.
 const (
 	PlatformWeb  Platform = "web"
 	PlatformFCM  Platform = "fcm"
