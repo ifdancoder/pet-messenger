@@ -12,7 +12,6 @@ import (
 	"go.uber.org/fx"
 
 	httpadapter "pet-messenger/internal/adapter/http"
-	notify "pet-messenger/internal/adapter/notify"
 	wsadapter "pet-messenger/internal/adapter/ws"
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/conversation/adapter/out/messaging"
@@ -51,7 +50,9 @@ var ConversationModule = fx.Module("conversation",
 		func(r *persistence.ConversationRepository) messageout.ConversationRosterPort { return r },
 		func(r *persistence.ConversationRepository) messageout.ReadCursorPort { return r },
 		func(r *persistence.ConversationRepository) usecasecall.ConversationReader { return r },
-		func(r *persistence.ConversationRepository) notify.MemberLister { return r },
+		// notify.MemberLister is provided by NotificationModule as
+		// notificationout.MemberLister: the notification context owns that
+		// port now, so this bridge no longer lives here.
 		func(r *persistence.ConversationRepository) wsadapter.MemberChecker { return r },
 		func(r *persistence.ConversationRepository) httpadapter.ConversationMemberChecker { return r },
 

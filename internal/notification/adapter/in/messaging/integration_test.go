@@ -43,7 +43,6 @@ import (
 	"pet-messenger/internal/config"
 	convpersistence "pet-messenger/internal/conversation/adapter/out/persistence"
 	domainconv "pet-messenger/internal/conversation/domain"
-	legacynotif "pet-messenger/internal/domain/notification"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
 	"pet-messenger/internal/infrastructure/push"
 	outmessaging "pet-messenger/internal/notification/adapter/out/messaging"
@@ -163,22 +162,11 @@ func noProvidersConfig() config.PushConfig {
 	return config.PushConfig{}
 }
 
-// pusherShim hands the real push.MultiPusher to this context's out.Pusher
-// port, recording the token of every attempted Send on the way through.
-//
-// The translation step is not cosmetic and not this test's own convenience:
-// internal/infrastructure/push still speaks the pre-retrofit
-// internal/domain/notification.Notification, while out.Pusher was re-declared
-// against internal/notification/domain.Notification, so *push.MultiPusher
-// does NOT structurally satisfy out.Pusher and cannot be passed to
-// NewProcessNotificationIntentHandler directly. Re-pointing
-// internal/infrastructure/push at the new domain package is the cutover
-// task's job (its re-grep of remaining internal/domain/notification
-// importers), and the port's own doc comment claiming MultiPusher implements
-// it only becomes true then; until that lands, every caller wiring a real
-// MultiPusher into this use case needs a conversion like this one, the
-// production fx wiring included. The two structs are field-identical, so the
-// conversion is total and lossless.
+// pusherShim wraps the real push.MultiPusher so the test can record the
+// token of every attempted Send, as the cutover task (re-pointing
+// internal/infrastructure/push at this context's own domain package) has
+// landed: *push.MultiPusher now structurally satisfies out.Pusher directly,
+// so this shim is pure test instrumentation, not a type conversion.
 type pusherShim struct {
 	inner *push.MultiPusher
 	mu    sync.Mutex
@@ -189,10 +177,7 @@ func (p *pusherShim) Send(ctx context.Context, tok *domainpush.PushToken, n *dom
 	p.mu.Lock()
 	p.sent = append(p.sent, tok.Token)
 	p.mu.Unlock()
-	return p.inner.Send(ctx, tok, &legacynotif.Notification{
-		ID: n.ID, UserID: n.UserID, Kind: legacynotif.Kind(n.Kind), Payload: n.Payload,
-		DedupKey: n.DedupKey, CreatedAt: n.CreatedAt, ReadAt: n.ReadAt,
-	})
+	return p.inner.Send(ctx, tok, n)
 }
 
 func (p *pusherShim) sentTokens() []string {

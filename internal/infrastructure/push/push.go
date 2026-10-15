@@ -13,7 +13,8 @@ import (
 	"log"
 
 	"pet-messenger/internal/config"
-	"pet-messenger/internal/domain/notification"
+	notificationout "pet-messenger/internal/notification/application/port/out"
+	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
@@ -27,15 +28,11 @@ var (
 	ErrProviderNotConfigured = errors.New("push: no provider configured for this platform")
 )
 
-type Pusher interface {
-	Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error
-}
-
 type MultiPusher struct {
-	byPlatform map[domainpush.Platform]Pusher
+	byPlatform map[domainpush.Platform]notificationout.Pusher
 }
 
-func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error {
+func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error {
 	p, ok := m.byPlatform[tok.Platform]
 	if !ok {
 		return ErrProviderNotConfigured
@@ -45,7 +42,7 @@ func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *no
 
 // NewMultiPusher registers a provider per platform when its config is present.
 func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, error) {
-	m := &MultiPusher{byPlatform: map[domainpush.Platform]Pusher{
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]notificationout.Pusher{
 		domainpush.PlatformAPNS: apnsStub{},
 	}}
 	if cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "" && cfg.VAPIDSubject != "" {
@@ -65,7 +62,7 @@ func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, e
 
 // Body is the JSON a client receives in a device push / the WS notification
 // envelope's "notification" field.
-func Body(n *notification.Notification) []byte {
+func Body(n *domainnotif.Notification) []byte {
 	b, _ := json.Marshal(struct {
 		ID        string          `json:"id"`
 		Kind      string          `json:"kind"`
