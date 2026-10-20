@@ -28,7 +28,7 @@ type fakeDeviceWriter struct {
 }
 
 type approval struct {
-	approver, target uuid.UUID
+	Approver, Target uuid.UUID
 }
 
 func (f *fakeDeviceWriter) Register(_ context.Context, d *domaine2ee.Device) error {
@@ -43,6 +43,6 @@ func (f *fakeDeviceWriter) Approve(_ context.Context, approver, target uuid.UUID
 	if f.approveErr != nil {
 		return f.approveErr
 	}
-	f.approved = append(f.approved, approval{approver: approver, target: target})
+	f.approved = append(f.approved, approval{Approver: approver, Target: target})
 	return nil
 }
