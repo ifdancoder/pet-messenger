@@ -3,7 +3,7 @@
 // Package domain holds the User aggregate: account identity (username,
 // password hash) and profile (display name, avatar). It is the Entities
 // layer (Clean Architecture) / domain core (Hexagonal) for the user
-// bounded context — no dependency on anything outside the standard
+// bounded context: no dependency on anything outside the standard
 // library, uuid, and time.
 package domain
 
@@ -55,7 +55,7 @@ func New(username, displayName string) (*User, error) {
 	}, nil
 }
 
-// SetDisplayName validates and applies a display-name change in place —
+// SetDisplayName validates and applies a display-name change in place,
 // same rule New enforces at creation, minus New's "default to username
 // when empty" fallback: an explicit profile edit clearing the field is a
 // mistake to reject, not a value to silently substitute.
@@ -68,7 +68,7 @@ func (u *User) SetDisplayName(displayName string) error {
 }
 
 // Rename validates and applies a username change in place. The repository
-// (not this method) is what surfaces a collision, via ErrUsernameTaken —
+// (not this method) is what surfaces a collision, via ErrUsernameTaken,
 // same division of responsibility as Create.
 func (u *User) Rename(username string) error {
 	if !usernamePattern.MatchString(username) {

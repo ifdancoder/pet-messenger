@@ -14,7 +14,7 @@ import (
 
 // ErrNoFields: UpdateProfile was called with both DisplayName and Username
 // nil. The HTTP adapter already rejects this before calling Handle (see
-// the design spec) — this is defense in depth, not the primary enforcement.
+// the design spec). This is defense in depth, not the primary enforcement.
 var ErrNoFields = errors.New("user: no fields to update")
 
 type updateProfileHandler struct {
@@ -27,7 +27,7 @@ func NewUpdateProfileHandler(users out.UserStorePort) in.UpdateProfileUseCase {
 }
 
 // Handle loads the current user, applies whichever of DisplayName/Username
-// is set, and persists both in one Update call — one business intent, one
+// is set, and persists both in one Update call: one business intent, one
 // write, matching today's single-statement SQL UPDATE.
 func (h *updateProfileHandler) Handle(ctx context.Context, cmd in.UpdateProfileCommand) (*domain.User, error) {
 	if cmd.DisplayName == nil && cmd.Username == nil {

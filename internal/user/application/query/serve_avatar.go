@@ -20,7 +20,7 @@ func NewServeAvatarHandler(users out.UserStorePort, avatars out.AvatarStorePort)
 
 // Handle resolves q.Username to a user, then streams their stored avatar.
 // An empty AvatarURL (never uploaded) is reported the same as a missing
-// object, via the shared out.ErrAvatarNotFound — matching today's handler,
+// object, via the shared out.ErrAvatarNotFound, matching today's handler,
 // which does not distinguish the two cases either.
 func (h *serveAvatarHandler) Handle(ctx context.Context, q in.ServeAvatarQuery) (io.ReadCloser, string, error) {
 	u, err := h.users.GetByUsername(ctx, q.Username)

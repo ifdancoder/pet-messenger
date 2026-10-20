@@ -13,7 +13,7 @@ import (
 )
 
 // UserStorePort is this context's own driven port for the write-side user
-// record — everything the application layer's commands and queries need.
+// record: everything the application layer's commands and queries need.
 // It does NOT include Create or GetProfilesByIDs: no use case inside this
 // package creates a user or looks up a batch of profiles (see this
 // context's design spec, "Why Create (and GetProfilesByIDs) are not

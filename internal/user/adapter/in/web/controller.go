@@ -51,7 +51,7 @@ func (h *UserHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // actorID reads the authenticated user id AuthMiddleware stored on the
-// context. Duplicated (not imported — it is unexported in that package)
+// context. Duplicated (not imported: it is unexported in that package)
 // from internal/adapter/http, matching the existing
 // internal/conversation/adapter/in/web precedent.
 func actorID(c *gin.Context) (uuid.UUID, bool) {

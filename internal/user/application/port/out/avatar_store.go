@@ -10,7 +10,7 @@ import (
 
 // ErrAvatarNotFound is returned by AvatarStorePort.Get when no avatar
 // object exists for the user, and by ServeAvatarUseCase when the user's
-// AvatarURL is empty (never uploaded) — the two cases a caller cannot tell
+// AvatarURL is empty (never uploaded): the two cases a caller cannot tell
 // apart from the outside, and should not need to.
 var ErrAvatarNotFound = errors.New("user: avatar not found")
 

@@ -11,7 +11,7 @@ import (
 	"pet-messenger/internal/user/domain"
 )
 
-// fakeUserStore is an in-memory out.UserStorePort — a separate copy from
+// fakeUserStore is an in-memory out.UserStorePort, a separate copy from
 // internal/user/application/command's fake of the same shape, since
 // command and query are different packages and this file's identifiers
 // are not importable across packages.

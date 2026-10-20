@@ -18,7 +18,7 @@ import (
 
 // UserRepository implements this context's own out.UserStorePort. It also
 // exposes two public methods that are NOT part of any port declared inside
-// internal/user/application — Create and GetProfilesByIDs — because no use
+// internal/user/application (Create and GetProfilesByIDs) because no use
 // case inside this context calls either. They exist solely so that
 // auth's own out-port and conversation's own ProfileBatchViewPort (each
 // defined in their own packages) can be satisfied structurally. See
@@ -32,7 +32,7 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// Create persists a new user. Not part of out.UserStorePort — see the type
+// Create persists a new user. Not part of out.UserStorePort: see the type
 // doc comment; consumed by auth's own out-port.
 func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 	const q = `
@@ -94,14 +94,14 @@ func (r *UserRepository) scanOne(ctx context.Context, query string, arg any) (*d
 }
 
 // GetProfilesByIDs resolves a batch of user ids to their public profiles.
-// Not part of out.UserStorePort — see the type doc comment; consumed by
+// Not part of out.UserStorePort: see the type doc comment; consumed by
 // conversation's own ProfileBatchViewPort. Returned in no particular
-// order — callers must index the result by Profile.ID, never by position
+// order: callers must index the result by Profile.ID, never by position
 // relative to ids. An id with no matching row is simply absent from the
 // result, never an error: the project has no user-deletion path today, so
 // this is expected to be unreachable in practice, not a case callers need
 // to branch on. ids are bound as a []string (not []uuid.UUID) cast to
-// uuid[] in SQL — a plain, driver-agnostic array-parameter technique that
+// uuid[] in SQL, a plain, driver-agnostic array-parameter technique that
 // doesn't depend on pgx's native UUID-array encoding.
 func (r *UserRepository) GetProfilesByIDs(ctx context.Context, ids []uuid.UUID) ([]*domain.Profile, error) {
 	if len(ids) == 0 {

@@ -61,7 +61,7 @@ func (f *fakeUploadAvatar) Handle(context.Context, in.UploadAvatarCommand) (*dom
 // newTestRouter wires h behind a real gin engine so tests exercise the
 // actual ServeHTTP dispatch path (status/header writing, route param
 // parsing) instead of calling handler methods directly against a bare
-// gin.Context — a direct call never triggers gin's deferred
+// gin.Context: a direct call never triggers gin's deferred
 // WriteHeaderNow, which would make a bare c.Status(...) response
 // (ServeAvatar's 404 path) appear as a 200 in the test even though it is
 // correct in production. When hasUser is true, userID is injected via a
@@ -183,7 +183,7 @@ func TestUpdateProfile_Success(t *testing.T) {
 	}
 }
 
-// writeProfileError sends err.Error() as the response body — these three
+// writeProfileError sends err.Error() as the response body. These three
 // tests pin the exact body, not just the status, because a future edit
 // that wraps one of these sentinels (e.g. fmt.Errorf("...: %w", err))
 // would still satisfy errors.Is and keep the status correct while
