@@ -42,7 +42,7 @@ func TestListMembers_ReturnsRoster(t *testing.T) {
 // TestListMembers_EnrichesEachMemberByID exercises the zip in Handle: it
 // must index GetProfilesByIDs' result by Profile.ID, not by position. The
 // fake profile view below deliberately returns profiles in the REVERSE order
-// of the members slice — if Handle zipped by position instead of by ID,
+// of the members slice: if Handle zipped by position instead of by ID,
 // every member would come back with the wrong Username/DisplayName/AvatarURL.
 func TestListMembers_EnrichesEachMemberByID(t *testing.T) {
 	convID, actor := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
@@ -70,7 +70,7 @@ func TestListMembers_EnrichesEachMemberByID(t *testing.T) {
 		t.Fatalf("got %d members, want 2", len(got))
 	}
 	// Pagination in internal/conversation/adapter/in/web/controller.go builds
-	// the next-page cursor from got[len(got)-1] — the LAST element — so
+	// the next-page cursor from got[len(got)-1], the LAST element, so
 	// Handle must preserve the input members slice's order (zip by position
 	// into the by-ID profile lookup), not the profiles map's order. Assert
 	// this before any re-indexing below, since re-indexing by UserID would

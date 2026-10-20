@@ -10,7 +10,7 @@ import (
 )
 
 // UserChecker is this context's own narrow out-port for confirming a user
-// id resolves to an account — consumer-owned (per the design spec) instead
+// id resolves to an account, consumer-owned (per the design spec) instead
 // of importing user's full UserStorePort, since OpenDirect/AddMember only
 // ever need an existence check. Implemented by
 // internal/user/adapter/out/persistence.UserRepository.

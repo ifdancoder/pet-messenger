@@ -27,7 +27,7 @@ func NewSetMemberTierHandler(conversations out.LoadConversationPort, writer out.
 }
 
 // Handle promotes, demotes, or retiers cmd.Target on cmd.Actor's authority.
-// It does not publish a MemberRemoved — a retiered member stays in the
+// It does not publish a MemberRemoved: a retiered member stays in the
 // conversation. Who may assign what lives in the domain (CanAssignTier).
 func (h *setMemberTierHandler) Handle(ctx context.Context, cmd in.SetMemberTierCommand) (*domain.Member, error) {
 	if !cmd.Tier.Valid() {

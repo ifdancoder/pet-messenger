@@ -52,7 +52,7 @@ func TestMain(m *testing.M) {
 }
 
 // purgeStream clears the CONVERSATION_EVENTS stream so each test starts
-// from an empty backlog — without this, a WorkQueuePolicy stream shared
+// from an empty backlog: without this, a WorkQueuePolicy stream shared
 // across every test in this package would hand a new consumer whatever
 // unclaimed message an earlier test left behind, not necessarily the one
 // that test itself just published.

@@ -51,7 +51,7 @@ func (h *listMembersHandler) Handle(ctx context.Context, q in.ListMembersQuery) 
 		return nil, fmt.Errorf("load member profiles: %w", err)
 	}
 	// GetProfilesByIDs returns no particular order (see its doc comment on
-	// internal/user/adapter/out/persistence.UserRepository) — index by ID.
+	// internal/user/adapter/out/persistence.UserRepository): index by ID.
 	byID := make(map[uuid.UUID]*domainuser.Profile, len(profiles))
 	for _, p := range profiles {
 		byID[p.ID] = p

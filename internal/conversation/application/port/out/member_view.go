@@ -10,7 +10,7 @@ import (
 )
 
 // MemberViewPort reads a conversation's roster directly off the write-side
-// tables — no dedicated projection. Returns bare membership rows; a caller
+// tables: no dedicated projection. Returns bare membership rows; a caller
 // needing display fields resolves them separately via
 // ProfileBatchViewPort. Implemented by
 // internal/conversation/adapter/out/persistence.ConversationRepository.

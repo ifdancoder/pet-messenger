@@ -713,7 +713,7 @@ func TestConversationRepository_ClaimCreator(t *testing.T) {
 	if _, err := repo.RemoveMemberWithSuccession(ctx, convID, creatorID); err != nil {
 		t.Fatalf("vacate: %v", err)
 	}
-	// the auto-promote already filled it — undo for the test: demote + clear is_creator directly.
+	// the auto-promote already filled it, so undo for the test: demote + clear is_creator directly.
 	if _, err := testDB.ExecContext(ctx, `UPDATE conversation_members SET is_creator = false, admin_tier = 'admin' WHERE conversation_id = $1 AND is_creator`, convID); err != nil {
 		t.Fatalf("reset seat: %v", err)
 	}
@@ -730,7 +730,7 @@ func TestConversationRepository_ClaimCreator(t *testing.T) {
 	if !got.IsCreator || got.AdminTier != domain.TierCreatorAdmin {
 		t.Fatalf("claimed member = %+v", got)
 	}
-	// now the seat is taken — even a random non-member sees the taken seat first.
+	// now the seat is taken: even a random non-member sees the taken seat first.
 	if _, err := repo.ClaimCreator(ctx, convID, plain); !errors.Is(err, domain.ErrCreatorSeatTaken) {
 		t.Fatalf("claim taken seat = %v, want ErrCreatorSeatTaken", err)
 	}
@@ -832,7 +832,7 @@ func TestConversationRepository_ListMembers(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("len = %d, want 3", len(all))
 	}
-	// ordered by joined_at ASC — the creator (seeded first) is index 0.
+	// ordered by joined_at ASC: the creator (seeded first) is index 0.
 	if all[0].UserID != creatorID || all[1].UserID != m1 || all[2].UserID != m2 {
 		t.Fatalf("order = %v", []uuid.UUID{all[0].UserID, all[1].UserID, all[2].UserID})
 	}
@@ -840,7 +840,7 @@ func TestConversationRepository_ListMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMembers(adminsOnly): %v", err)
 	}
-	// creator (is_creator) + m2 (admin_tier) — not m1.
+	// creator (is_creator) + m2 (admin_tier), not m1.
 	if len(adminsOnly) != 2 {
 		t.Fatalf("adminsOnly len = %d, want 2", len(adminsOnly))
 	}

@@ -23,7 +23,7 @@ type ConversationRepository struct {
 // several of this context's out ports at once (LoadConversationPort,
 // UpdateConversationPort, PublicChannelViewPort, MemberViewPort) plus the
 // narrow read-only interfaces other bounded contexts define for
-// themselves (message, call, notify, ws) — see internal/fx/conversation.go.
+// themselves (message, call, notify, ws): see internal/fx/conversation.go.
 func NewConversationRepository(db *sql.DB) *ConversationRepository {
 	return &ConversationRepository{db: db}
 }
@@ -201,7 +201,7 @@ func (r *ConversationRepository) AddMember(ctx context.Context, m *domain.Member
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "conversation_members_pkey" {
-			return nil // the (conversation_id, user_id) PK — already a member
+			return nil // the (conversation_id, user_id) PK, already a member
 		}
 		return fmt.Errorf("insert conversation member: %w", err)
 	}

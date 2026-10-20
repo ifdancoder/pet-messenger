@@ -23,7 +23,7 @@ import (
 
 // ConversationHandler is the primary adapter for every /conversations
 // route. Each field is the one-method use-case interface the matching
-// handler method calls — no dependency wider than what that one route
+// handler method calls: no dependency wider than what that one route
 // needs.
 type ConversationHandler struct {
 	openDirect         in.OpenDirectUseCase
@@ -114,7 +114,7 @@ type addMemberRequest struct {
 	UserID string `json:"user_id" binding:"required"`
 }
 
-// setTierRequest.AdminTier is intentionally not `binding:"required"` — the
+// setTierRequest.AdminTier is intentionally not `binding:"required"`: the
 // empty string is a valid value meaning "no tier".
 type setTierRequest struct {
 	AdminTier string `json:"admin_tier"`
@@ -507,7 +507,7 @@ func (h *ConversationHandler) SetMemberTier(c *gin.Context) {
 	c.JSON(http.StatusOK, toMemberResponse(m))
 }
 
-// SetOwnTier handles PATCH /:id/members/me — the creator stepping down
+// SetOwnTier handles PATCH /:id/members/me: the creator stepping down
 // (admin_tier: "") or restoring themselves (admin_tier: "creator_admin").
 func (h *ConversationHandler) SetOwnTier(c *gin.Context) {
 	me, ok := actorID(c)

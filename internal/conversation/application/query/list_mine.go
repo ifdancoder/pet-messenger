@@ -22,7 +22,7 @@ func NewListMineHandler(inbox out.InboxViewPort) in.ListMineUseCase {
 // conversation_inbox projection. See out.InboxEntry's doc comment: the
 // keyset sorts on last_message_at, a value that changes under the reader,
 // so a conversation that receives new activity while the client is paging
-// can jump above the cursor and be skipped by a later page — inherent to
+// can jump above the cursor and be skipped by a later page, inherent to
 // keyset pagination over an activity timestamp, mitigated client-side by
 // re-fetching from the top on new activity rather than only paging down.
 func (h *listMineHandler) Handle(ctx context.Context, q in.ListMineQuery) ([]*out.InboxEntry, error) {

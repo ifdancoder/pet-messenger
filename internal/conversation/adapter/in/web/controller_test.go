@@ -37,7 +37,7 @@ func newTestRouter(t *testing.T, openDirect in.OpenDirectUseCase) *gin.Engine {
 		c.Next()
 	})
 	// NewConversationHandler takes 13 use cases; this test wires only the
-	// one under test (openDirect) and passes nil for the rest — safe here
+	// one under test (openDirect) and passes nil for the rest: safe here
 	// because the only route exercised is OpenDirect, which never touches
 	// an unused dependency.
 	h := NewConversationHandler(openDirect, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

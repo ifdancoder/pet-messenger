@@ -55,7 +55,7 @@ func (r *ConversationRepository) RemoveMemberWithSuccession(ctx context.Context,
 	// parent row lock first (conversations-then-members, matching
 	// MessageRepository.Create) so a concurrent leaver cannot delete the heir
 	// row out from under the LIMIT 1 ... FOR UPDATE below. A missing id simply
-	// locks nothing — the usecase's GetByID has already 404'd.
+	// locks nothing: the usecase's GetByID has already 404'd.
 	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM conversations WHERE id = $1 FOR UPDATE`, conversationID); err != nil {
 		return nil, fmt.Errorf("lock conversation: %w", err)
 	}
@@ -183,7 +183,7 @@ func (r *ConversationRepository) ClaimCreator(ctx context.Context, conversationI
 	return claimed, nil
 }
 
-// ListMembers returns a page of conversationID's roster — membership rows
+// ListMembers returns a page of conversationID's roster: membership rows
 // only, no user-profile fields. Callers that need display data (the
 // ListMembers query) resolve it separately via out.ProfileBatchViewPort,
 // rather than this adapter joining the users table directly.

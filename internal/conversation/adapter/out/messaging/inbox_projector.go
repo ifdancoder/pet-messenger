@@ -31,8 +31,8 @@ type inboxWriter interface {
 // domain's existing msg.> events (via HandleMessageEvent), keeping the
 // conversation_inbox read model current. It is the one subscriber in this
 // system where losing an event causes permanent read-model drift (unlike
-// the WS fan-out, where a disconnected client re-reads Postgres directly)
-// — see the design spec.
+// the WS fan-out, where a disconnected client re-reads Postgres directly):
+// see the design spec.
 type InboxProjector struct {
 	inbox inboxWriter
 }
@@ -44,7 +44,7 @@ func NewInboxProjector(inbox inboxWriter) *InboxProjector {
 
 // HandleLifecycleEvent is the JetStream durable-consumer callback for
 // conversation.events.>. It never returns an error: unparseable messages
-// are logged and Term'd (never retried — retrying cannot fix a decode
+// are logged and Term'd (never retried: retrying cannot fix a decode
 // error); a downstream write failure is Nak'd for redelivery.
 func (p *InboxProjector) HandleLifecycleEvent(m *natsgo.Msg) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -60,7 +60,7 @@ func (MemberRemoved) EventType() string { return "member.removed" }
 
 // MemberTierChanged is published on a promotion, demotion, retier, or
 // creator claim. It is not consumed by the inbox projector in this slice
-// (the inbox projection does not store role/tier) — published for
+// (the inbox projection does not store role/tier), but published for
 // completeness and future consumers, matching the project's existing
 // practice of recording every lifecycle fact.
 type MemberTierChanged struct {

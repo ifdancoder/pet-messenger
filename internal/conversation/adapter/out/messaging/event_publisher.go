@@ -18,7 +18,7 @@ import (
 const (
 	streamName    = "CONVERSATION_EVENTS"
 	subjectPrefix = "conversation.events."
-	// WildcardSubject is this stream's full subject space — the inbox
+	// WildcardSubject is this stream's full subject space, the inbox
 	// projector's queue-group subscription (wired in internal/fx).
 	WildcardSubject = subjectPrefix + ">"
 )

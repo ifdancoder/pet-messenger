@@ -24,7 +24,7 @@ type InboxRow struct {
 }
 
 // UpsertMember inserts one conversation_inbox row. Naturally idempotent
-// under JetStream redelivery (ON CONFLICT DO NOTHING) — an insert never
+// under JetStream redelivery (ON CONFLICT DO NOTHING): an insert never
 // regresses an existing row, so no seq guard is needed here.
 func (r *InboxRepository) UpsertMember(ctx context.Context, row InboxRow) error {
 	const q = `
@@ -65,7 +65,7 @@ func (r *InboxRepository) UpdateArchived(ctx context.Context, conversationID uui
 
 // UpdateLastMessageAt advances every row's last_message_at for
 // conversationID. Guarded by the column's own value rather than
-// last_event_seq — message.created events arrive on the existing core-NATS
+// last_event_seq: message.created events arrive on the existing core-NATS
 // msg.> subject (no JetStream stream sequence), so lastMessageAt itself is
 // the monotonic guard: redelivery-free core NATS means the only ordering
 // risk is concurrent sends interleaving, and a strictly-greater timestamp

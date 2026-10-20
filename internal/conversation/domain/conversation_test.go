@@ -458,7 +458,7 @@ func TestCanAssignTier(t *testing.T) {
 	if domain.CanAssignTier(admin, plain, domain.TierContentAdmin) {
 		t.Error("admin may not assign tiers")
 	}
-	// nobody assigns creator_admin to someone else — tested against a real
+	// nobody assigns creator_admin to someone else: tested against a real
 	// creator_admin-tier actor so this exercises the TierCreatorAdmin guard,
 	// not the rank gate.
 	if domain.CanAssignTier(creatorAdmin, plain, domain.TierCreatorAdmin) {

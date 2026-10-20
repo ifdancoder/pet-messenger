@@ -1,7 +1,7 @@
 // Package domain holds the Conversation + Member aggregate: direct
 // messages, group chats, and channels, all as one entity keyed by Kind. It
 // is the Entities layer (Clean Architecture) / domain core (Hexagonal) for
-// the conversation bounded context — no dependency on anything outside the
+// the conversation bounded context: no dependency on anything outside the
 // standard library, uuid, and time.
 package domain
 
@@ -173,7 +173,7 @@ type Member struct {
 	UserID         uuid.UUID
 	Role           Role
 	// IsCreator is set once, at conversation creation, on exactly one member.
-	// It is immutable and confers nothing on its own — see CanAssignTier /
+	// It is immutable and confers nothing on its own: see CanAssignTier /
 	// CanManageMember for its only two effects.
 	IsCreator bool
 	// AdminTier is the member's moderation rung; TierNone when not an admin.
@@ -325,7 +325,7 @@ func CanManageMember(actor, target *Member) bool {
 }
 
 // CanArchive reports whether m may archive or unarchive the conversation.
-// superadmin and creator_admin only — the same authority tier that manages
+// superadmin and creator_admin only, the same authority tier that manages
 // admins.
 func CanArchive(m *Member) bool {
 	return m.AdminTier.rank() >= TierSuperAdmin.rank()
