@@ -248,10 +248,9 @@ func TestE2EEDeviceHandler_Integration_RealAdapters(t *testing.T) {
 		t.Fatalf("register B status = %d, body %s", regBW.Code, regBW.Body.String())
 	}
 
-	// 7. List the conversation's trusted devices as A: both A's trusted
-	// device (A1, not the still-pending A2 if approval in step 4 somehow
-	// didn't apply -- but it did, so A1 AND A2) and B's device show up,
-	// each with its public key included (unlike step 5's List).
+	// 7. List conversation devices as A: all three trusted devices appear
+	// (A1, A2 - now approved, and B's device), each with public key included
+	// (unlike step 5's List which omits them).
 	convDevicesW := doE2EEJSON(t, rA, http.MethodGet, "/conversations/"+convID.String()+"/e2ee/devices", "")
 	if convDevicesW.Code != http.StatusOK {
 		t.Fatalf("conversation devices status = %d, body %s", convDevicesW.Code, convDevicesW.Body.String())
@@ -273,7 +272,9 @@ func TestE2EEDeviceHandler_Integration_RealAdapters(t *testing.T) {
 
 	// 8. A (the initiator) publishes the call's session key, wrapped once
 	// per trusted device (A1, A2, B).
-	ct := func(label string) string { return base64.RawURLEncoding.EncodeToString([]byte("ciphertext-for-" + label)) }
+	ct := func(label string) string {
+		return base64.RawURLEncoding.EncodeToString([]byte("ciphertext-for-" + label))
+	}
 	envelopesJSON := `[{"recipient_device_id":"` + devA1.String() + `","ciphertext":"` + ct("a1") + `"},` +
 		`{"recipient_device_id":"` + devA2.String() + `","ciphertext":"` + ct("a2") + `"},` +
 		`{"recipient_device_id":"` + devB.String() + `","ciphertext":"` + ct("b") + `"}]`

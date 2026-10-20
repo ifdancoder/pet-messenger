@@ -11,8 +11,8 @@ import (
 
 // GetCallKeyEnvelopeQuery is the input to GetCallKeyEnvelopeUseCase.
 type GetCallKeyEnvelopeQuery struct {
-	Actor            uuid.UUID
-	CallID           uuid.UUID
+	Actor             uuid.UUID
+	CallID            uuid.UUID
 	RecipientDeviceID uuid.UUID
 }
 
