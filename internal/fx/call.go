@@ -15,7 +15,6 @@ import (
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	iceinfra "pet-messenger/internal/infrastructure/ice"
 	medianodeinfra "pet-messenger/internal/infrastructure/medianode"
-	notifinfra "pet-messenger/internal/infrastructure/notification"
 	"pet-messenger/internal/infrastructure/postgres"
 	usecasecall "pet-messenger/internal/usecase/call"
 )
@@ -37,9 +36,9 @@ var CallModule = fx.Module("call",
 		// ICE
 		func(p *iceinfra.Provider) usecasecall.ICEConfigProvider { return p },
 		iceinfra.NewProvider,
-		// CallNotifier
-		func(n *notifinfra.CallNotifier) usecasecall.CallNotifier { return n },
-		notifinfra.NewCallNotifier,
+		// CallNotifier is provided by NotificationModule: the notification
+		// context owns the concrete producer that satisfies this port, so
+		// its bridge lives in that producer's own fx file.
 	),
 	fx.Invoke(startCallEventSubscription, callevents.StartReaper),
 )

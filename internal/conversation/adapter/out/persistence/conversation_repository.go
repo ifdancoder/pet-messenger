@@ -302,8 +302,8 @@ func (r *ConversationRepository) ListPublicChannels(ctx context.Context, query s
 
 // ListMemberIDs returns just the user ids of a conversation's members, in
 // unspecified order. A missing conversation yields an empty slice and no error.
-// Consumed only by internal/adapter/notify's narrow MemberLister port, not by
-// this context's own application layer.
+// Consumed only by internal/notification/application/port/out's narrow
+// MemberLister port, not by this context's own application layer.
 func (r *ConversationRepository) ListMemberIDs(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT user_id FROM conversation_members WHERE conversation_id = $1`, conversationID)

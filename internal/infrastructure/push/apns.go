@@ -3,7 +3,7 @@ package push
 import (
 	"context"
 
-	"pet-messenger/internal/domain/notification"
+	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
@@ -12,6 +12,6 @@ import (
 // ErrProviderNotConfigured until token-based APNS auth is implemented.
 type apnsStub struct{}
 
-func (apnsStub) Send(context.Context, *domainpush.PushToken, *notification.Notification) error {
+func (apnsStub) Send(context.Context, *domainpush.PushToken, *domainnotif.Notification) error {
 	return ErrProviderNotConfigured
 }

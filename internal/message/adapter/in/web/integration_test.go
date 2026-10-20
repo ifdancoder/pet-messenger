@@ -123,11 +123,11 @@ func setupIntegrationNATS(t *testing.T) *natsgo.Conn {
 }
 
 // noopNotificationProducer discards every call. The real
-// internal/infrastructure/notification.Producer needs a JetStream stream
-// bootstrapped by fx-internal, unexported plumbing — out of proportion for
-// what this integration test is closing (the real wired message path
-// through Postgres and core NATS, not the notification subsystem, which
-// has its own slice later in the retrofit roadmap).
+// internal/notification/adapter/out/messaging.Producer needs a JetStream
+// stream bootstrapped by fx-internal, unexported plumbing - out of
+// proportion for what this integration test is closing (the real wired
+// message path through Postgres and core NATS, not the notification
+// subsystem, which has its own test coverage in its own slice).
 type noopNotificationProducer struct{}
 
 func (noopNotificationProducer) MessageSent(context.Context, *domainmsg.Message, *domainconv.Conversation) error {

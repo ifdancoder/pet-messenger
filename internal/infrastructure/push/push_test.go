@@ -9,20 +9,20 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/config"
-	"pet-messenger/internal/domain/notification"
+	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
 type recordingPusher struct{ calls int }
 
-func (r *recordingPusher) Send(context.Context, *domainpush.PushToken, *notification.Notification) error {
+func (r *recordingPusher) Send(context.Context, *domainpush.PushToken, *domainnotif.Notification) error {
 	r.calls++
 	return nil
 }
 
-func mkNotif(t *testing.T) *notification.Notification {
+func mkNotif(t *testing.T) *domainnotif.Notification {
 	t.Helper()
-	n, err := notification.New(uuid.Must(uuid.NewV7()), notification.KindMessage, []byte(`{"a":1}`), "")
+	n, err := domainnotif.New(uuid.Must(uuid.NewV7()), domainnotif.KindMessage, []byte(`{"a":1}`), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func mkNotif(t *testing.T) *notification.Notification {
 
 func TestMultiPusher_Routes(t *testing.T) {
 	web := &recordingPusher{}
-	m := &MultiPusher{byPlatform: map[domainpush.Platform]Pusher{domainpush.PlatformWeb: web}}
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]provider{domainpush.PlatformWeb: web}}
 	ctx := context.Background()
 	n := mkNotif(t)
 
@@ -78,7 +78,7 @@ func TestBody_Shape(t *testing.T) {
 	if got.ID != n.ID.String() {
 		t.Fatalf("id = %q, want %q", got.ID, n.ID.String())
 	}
-	if got.Kind != string(notification.KindMessage) {
+	if got.Kind != string(domainnotif.KindMessage) {
 		t.Fatalf("kind = %q", got.Kind)
 	}
 	if string(got.Payload) != `{"a":1}` {

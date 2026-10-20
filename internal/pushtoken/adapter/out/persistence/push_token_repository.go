@@ -16,7 +16,7 @@ import (
 
 // PushTokenRepository is the Postgres-backed implementation of
 // out.PushTokenWriter and out.PushTokenEraser (and, structurally,
-// internal/adapter/notify's own PushTokenLister).
+// internal/notification/application/port/out's own PushTokenLister).
 type PushTokenRepository struct{ db *sql.DB }
 
 // NewPushTokenRepository returns a PushTokenRepository bound to db.

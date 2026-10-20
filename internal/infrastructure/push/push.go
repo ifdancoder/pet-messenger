@@ -13,7 +13,7 @@ import (
 	"log"
 
 	"pet-messenger/internal/config"
-	"pet-messenger/internal/domain/notification"
+	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
@@ -27,15 +27,21 @@ var (
 	ErrProviderNotConfigured = errors.New("push: no provider configured for this platform")
 )
 
-type Pusher interface {
-	Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error
+// provider is the per-platform push sender MultiPusher dispatches to.
+// Declared locally (rather than reusing notificationout.Pusher, which has
+// an identical method signature) so this package does not import
+// internal/notification/application/port/out: command already imports this
+// package for ErrTokenGone, and port/out importing this package back would
+// create a cycle if it ever re-exports ErrTokenGone.
+type provider interface {
+	Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error
 }
 
 type MultiPusher struct {
-	byPlatform map[domainpush.Platform]Pusher
+	byPlatform map[domainpush.Platform]provider
 }
 
-func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error {
+func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error {
 	p, ok := m.byPlatform[tok.Platform]
 	if !ok {
 		return ErrProviderNotConfigured
@@ -45,7 +51,7 @@ func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *no
 
 // NewMultiPusher registers a provider per platform when its config is present.
 func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, error) {
-	m := &MultiPusher{byPlatform: map[domainpush.Platform]Pusher{
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]provider{
 		domainpush.PlatformAPNS: apnsStub{},
 	}}
 	if cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "" && cfg.VAPIDSubject != "" {
@@ -65,7 +71,7 @@ func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, e
 
 // Body is the JSON a client receives in a device push / the WS notification
 // envelope's "notification" field.
-func Body(n *notification.Notification) []byte {
+func Body(n *domainnotif.Notification) []byte {
 	b, _ := json.Marshal(struct {
 		ID        string          `json:"id"`
 		Kind      string          `json:"kind"`

@@ -9,7 +9,7 @@ import (
 
 	webpushlib "github.com/SherClockHolmes/webpush-go"
 
-	"pet-messenger/internal/domain/notification"
+	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
@@ -30,7 +30,7 @@ func NewWebPush(vapidPublic, vapidPrivate, vapidSubject string) *WebPush {
 	}}
 }
 
-func (w *WebPush) Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error {
+func (w *WebPush) Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error {
 	var sub webpushlib.Subscription
 	if err := json.Unmarshal([]byte(tok.Token), &sub); err != nil {
 		return fmt.Errorf("%w: bad web-push subscription json", ErrTokenGone)

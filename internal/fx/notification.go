@@ -12,31 +12,64 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 
-	httpadapter "pet-messenger/internal/adapter/http"
-	notify "pet-messenger/internal/adapter/notify"
 	wsadapter "pet-messenger/internal/adapter/ws"
 	"pet-messenger/internal/config"
-	notifinfra "pet-messenger/internal/infrastructure/notification"
-	"pet-messenger/internal/infrastructure/postgres"
+	convpersistence "pet-messenger/internal/conversation/adapter/out/persistence"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
 	"pet-messenger/internal/infrastructure/push"
+	messageout "pet-messenger/internal/message/application/port/out"
+	notificationworker "pet-messenger/internal/notification/adapter/in/messaging"
+	notificationweb "pet-messenger/internal/notification/adapter/in/web"
+	notificationmessaging "pet-messenger/internal/notification/adapter/out/messaging"
+	notificationpersistence "pet-messenger/internal/notification/adapter/out/persistence"
+	notificationcommand "pet-messenger/internal/notification/application/command"
+	notificationout "pet-messenger/internal/notification/application/port/out"
+	notificationquery "pet-messenger/internal/notification/application/query"
 	pushtokenweb "pet-messenger/internal/pushtoken/adapter/in/web"
 	pushtokenpersistence "pet-messenger/internal/pushtoken/adapter/out/persistence"
 	pushtokencommand "pet-messenger/internal/pushtoken/application/command"
 	pushtokenout "pet-messenger/internal/pushtoken/application/port/out"
-	usecasenotif "pet-messenger/internal/usecase/notification"
+	usecasecall "pet-messenger/internal/usecase/call"
 )
 
 var NotificationModule = fx.Module("notification",
 	fx.Provide(
-		postgres.NewNotificationRepository,
-		usecasenotif.NewService,
-		httpadapter.NewNotificationHandler,
-		notifinfra.NewProducer,
-		notifinfra.NewWSNotifier,
-		notify.NewWorker,
-		func(w *notifinfra.WSNotifier) notify.WSNotifier { return w },
-		func(p *presenceinfra.RedisPresence) notify.Presence { return p },
+		// Secondary adapters.
+		notificationpersistence.NewNotificationRepository,
+		notificationmessaging.NewProducer,
+
+		// Bridges from the concrete persistence adapter to this context's
+		// own out ports.
+		func(r *notificationpersistence.NotificationRepository) notificationout.NotificationWriter { return r },
+		func(r *notificationpersistence.NotificationRepository) notificationout.NotificationReader { return r },
+		func(r *notificationpersistence.NotificationRepository) notificationout.NotificationMarker { return r },
+
+		// Bridges from the concrete producer to this context's own
+		// WSNotifier port and to the OTHER bounded contexts' own
+		// consumer-owned ports (message's NotificationProducer, call's
+		// CallNotifier); relocated here from internal/fx/call.go, because
+		// this context is the producer of the concrete type.
+		func(p *notificationmessaging.Producer) notificationout.WSNotifier { return p },
+		func(p *notificationmessaging.Producer) messageout.NotificationProducer { return p },
+		func(p *notificationmessaging.Producer) usecasecall.CallNotifier { return p },
+
+		// Bridges to this context's own remaining consumer-owned ports.
+		func(r *convpersistence.ConversationRepository) notificationout.MemberLister { return r },
+		func(r *pushtokenpersistence.PushTokenRepository) notificationout.PushTokenLister { return r },
+		func(p *presenceinfra.RedisPresence) notificationout.Presence { return p },
+		provideNotificationPusher,
+
+		// CQRS write side.
+		notificationcommand.NewMarkReadThroughHandler,
+		notificationcommand.NewProcessNotificationIntentHandler,
+
+		// CQRS read side.
+		notificationquery.NewListNotificationsHandler,
+		notificationquery.NewUnreadCountHandler,
+
+		// Primary adapters.
+		notificationweb.NewNotificationHandler,
+		notificationworker.NewWorker,
 	),
 	fx.Invoke(startNotifWorker),
 	fx.Invoke(startNotifWSSubscription),
@@ -51,25 +84,18 @@ var PushModule = fx.Module("push",
 		func(r *pushtokenpersistence.PushTokenRepository) pushtokenout.PushTokenWriter { return r },
 		func(r *pushtokenpersistence.PushTokenRepository) pushtokenout.PushTokenEraser { return r },
 
-		// Bridge from the concrete persistence adapter to internal/adapter/
-		// notify's own consumer-owned PushTokenLister port. Lives here, in
-		// the producer's own fx file, per the bridge-placement rule.
-		func(r *pushtokenpersistence.PushTokenRepository) notify.PushTokenLister { return r },
-
 		pushtokencommand.NewRegisterPushTokenHandler,
 		pushtokencommand.NewUnregisterPushTokenHandler,
 
 		pushtokenweb.NewPushTokenHandler,
-
-		provideMultiPusher,
 	),
 )
 
-// provideMultiPusher builds the per-platform device pusher from config. A
-// misconfigured provider (e.g. bad FCM credentials) is a hard boot failure —
-// returning the error lets fx fail fast rather than start with a silently
-// degraded push subsystem.
-func provideMultiPusher(cfg *config.Config) (push.Pusher, error) {
+// provideNotificationPusher builds the per-platform device pusher from
+// config, as notificationout.Pusher. A misconfigured provider (e.g. bad FCM
+// credentials) is a hard boot failure; returning the error lets fx fail
+// fast rather than start with a silently degraded push subsystem.
+func provideNotificationPusher(cfg *config.Config) (notificationout.Pusher, error) {
 	return push.NewMultiPusher(context.Background(), cfg.Push)
 }
 
@@ -77,7 +103,7 @@ func provideMultiPusher(cfg *config.Config) (push.Pusher, error) {
 // notification delivery worker. One instance runs per api pod; JetStream
 // load-balances "notif.>" across the "notif-workers" group, redelivering an
 // unacked message up to MaxDeliver times.
-func startNotifWorker(lc fx.Lifecycle, js natsgo.JetStreamContext, w *notify.Worker) {
+func startNotifWorker(lc fx.Lifecycle, js natsgo.JetStreamContext, w *notificationworker.Worker) {
 	var sub *natsgo.Subscription
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

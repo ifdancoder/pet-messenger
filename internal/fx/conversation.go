@@ -12,7 +12,6 @@ import (
 	"go.uber.org/fx"
 
 	httpadapter "pet-messenger/internal/adapter/http"
-	notify "pet-messenger/internal/adapter/notify"
 	wsadapter "pet-messenger/internal/adapter/ws"
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/conversation/adapter/out/messaging"
@@ -51,7 +50,9 @@ var ConversationModule = fx.Module("conversation",
 		func(r *persistence.ConversationRepository) messageout.ConversationRosterPort { return r },
 		func(r *persistence.ConversationRepository) messageout.ReadCursorPort { return r },
 		func(r *persistence.ConversationRepository) usecasecall.ConversationReader { return r },
-		func(r *persistence.ConversationRepository) notify.MemberLister { return r },
+		// The MemberLister bridge for the notification context now lives
+		// in NotificationModule (internal/fx/notification.go) as
+		// notificationout.MemberLister, not here.
 		func(r *persistence.ConversationRepository) wsadapter.MemberChecker { return r },
 		func(r *persistence.ConversationRepository) httpadapter.ConversationMemberChecker { return r },
 

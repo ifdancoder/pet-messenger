@@ -11,7 +11,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"pet-messenger/internal/domain/notification"
+	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
 
@@ -45,7 +45,7 @@ func NewFCM(ctx context.Context, projectID string, credentialsJSON []byte, baseU
 	}, nil
 }
 
-func (f *FCM) Send(ctx context.Context, tok *domainpush.PushToken, n *notification.Notification) error {
+func (f *FCM) Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error {
 	body, _ := json.Marshal(map[string]any{
 		"message": map[string]any{
 			"token": tok.Token,
