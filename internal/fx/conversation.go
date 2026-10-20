@@ -50,9 +50,9 @@ var ConversationModule = fx.Module("conversation",
 		func(r *persistence.ConversationRepository) messageout.ConversationRosterPort { return r },
 		func(r *persistence.ConversationRepository) messageout.ReadCursorPort { return r },
 		func(r *persistence.ConversationRepository) usecasecall.ConversationReader { return r },
-		// notify.MemberLister is provided by NotificationModule as
-		// notificationout.MemberLister: the notification context owns that
-		// port now, so this bridge no longer lives here.
+		// The MemberLister bridge for the notification context now lives
+		// in NotificationModule (internal/fx/notification.go) as
+		// notificationout.MemberLister, not here.
 		func(r *persistence.ConversationRepository) wsadapter.MemberChecker { return r },
 		func(r *persistence.ConversationRepository) httpadapter.ConversationMemberChecker { return r },
 

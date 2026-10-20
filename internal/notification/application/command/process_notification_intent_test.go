@@ -3,7 +3,9 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -302,6 +304,32 @@ func TestProcessNotificationIntent_WriterTransientError_Propagates(t *testing.T)
 	}
 	if err := h.Handle(context.Background(), cmd); err == nil {
 		t.Fatal("Handle: want error, got nil")
+	}
+}
+
+// TestWireEnvelope_MatchesPushBodyShape pins wireEnvelope's output
+// byte-identical (as JSON, modulo key order) to push.Body's: both must
+// serialize the exact same wire shape for the same Notification, since one
+// feeds the WS delivery path (notif.ws.<uid>) and the other the device-push
+// path, and clients on either path expect the same envelope.
+func TestWireEnvelope_MatchesPushBodyShape(t *testing.T) {
+	n, err := domainnotif.New(uuid.Must(uuid.NewV7()), domainnotif.KindMessage, []byte(`{"a":1}`), "")
+	if err != nil {
+		t.Fatalf("domainnotif.New: %v", err)
+	}
+
+	wsBytes := wireEnvelope(n)
+	pushBytes := push.Body(n)
+
+	var wsMap, pushMap map[string]any
+	if err := json.Unmarshal(wsBytes, &wsMap); err != nil {
+		t.Fatalf("wireEnvelope output is not valid JSON: %v", err)
+	}
+	if err := json.Unmarshal(pushBytes, &pushMap); err != nil {
+		t.Fatalf("push.Body output is not valid JSON: %v", err)
+	}
+	if !reflect.DeepEqual(wsMap, pushMap) {
+		t.Fatalf("wireEnvelope and push.Body disagree on wire shape:\n  wireEnvelope=%v\n  push.Body   =%v", wsMap, pushMap)
 	}
 }
 

@@ -13,10 +13,8 @@ import (
 )
 
 // testNC / testJS are a single JetStream-enabled nats container shared by
-// every test in the package, mirroring
-// internal/infrastructure/notification/main_test.go's rationale: one
-// container plus a retrying connect avoids the nats startup race a fresh
-// container per test would hit.
+// every test in the package: one container plus a retrying connect avoids
+// the nats startup race a fresh container per test would hit.
 var (
 	testNC *natsgo.Conn
 	testJS natsgo.JetStreamContext

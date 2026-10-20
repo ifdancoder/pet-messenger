@@ -13,7 +13,6 @@ import (
 	"log"
 
 	"pet-messenger/internal/config"
-	notificationout "pet-messenger/internal/notification/application/port/out"
 	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
@@ -28,8 +27,18 @@ var (
 	ErrProviderNotConfigured = errors.New("push: no provider configured for this platform")
 )
 
+// provider is the per-platform push sender MultiPusher dispatches to.
+// Declared locally (rather than reusing notificationout.Pusher, which has
+// an identical method signature) so this package does not import
+// internal/notification/application/port/out: command already imports this
+// package for ErrTokenGone, and port/out importing this package back would
+// create a cycle if it ever re-exports ErrTokenGone.
+type provider interface {
+	Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error
+}
+
 type MultiPusher struct {
-	byPlatform map[domainpush.Platform]notificationout.Pusher
+	byPlatform map[domainpush.Platform]provider
 }
 
 func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *domainnotif.Notification) error {
@@ -42,7 +51,7 @@ func (m *MultiPusher) Send(ctx context.Context, tok *domainpush.PushToken, n *do
 
 // NewMultiPusher registers a provider per platform when its config is present.
 func NewMultiPusher(ctx context.Context, cfg config.PushConfig) (*MultiPusher, error) {
-	m := &MultiPusher{byPlatform: map[domainpush.Platform]notificationout.Pusher{
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]provider{
 		domainpush.PlatformAPNS: apnsStub{},
 	}}
 	if cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "" && cfg.VAPIDSubject != "" {

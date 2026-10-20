@@ -10,9 +10,9 @@ import (
 
 // MarkReadThroughCommand is the input to MarkReadThroughUseCase.
 type MarkReadThroughCommand struct {
-	Actor             uuid.UUID
-	ThroughCreatedAt  time.Time
-	ThroughID         uuid.UUID
+	Actor            uuid.UUID
+	ThroughCreatedAt time.Time
+	ThroughID        uuid.UUID
 }
 
 // MarkReadThroughUseCase marks every currently-unread notification of the

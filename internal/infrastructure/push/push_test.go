@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/config"
-	notificationout "pet-messenger/internal/notification/application/port/out"
 	domainnotif "pet-messenger/internal/notification/domain"
 	domainpush "pet-messenger/internal/pushtoken/domain"
 )
@@ -32,7 +31,7 @@ func mkNotif(t *testing.T) *domainnotif.Notification {
 
 func TestMultiPusher_Routes(t *testing.T) {
 	web := &recordingPusher{}
-	m := &MultiPusher{byPlatform: map[domainpush.Platform]notificationout.Pusher{domainpush.PlatformWeb: web}}
+	m := &MultiPusher{byPlatform: map[domainpush.Platform]provider{domainpush.PlatformWeb: web}}
 	ctx := context.Background()
 	n := mkNotif(t)
 

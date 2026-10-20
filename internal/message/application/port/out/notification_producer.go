@@ -12,8 +12,9 @@ import (
 
 // NotificationProducer enqueues a "something happened that a user may need
 // to be notified about" intent onto the notifications work queue, after the
-// write commits. Implemented by internal/infrastructure/notification.Producer.
-// Delivery is best-effort — same contract as MessagePublisher — so a command
+// write commits. Implemented by
+// internal/notification/adapter/out/messaging.Producer.
+// Delivery is best-effort - same contract as MessagePublisher - so a command
 // handler logs an error and still returns success.
 type NotificationProducer interface {
 	// MessageSent is called for every newly created message. The producer
