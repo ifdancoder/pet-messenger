@@ -10,8 +10,8 @@ import (
 // MessagePublisher broadcasts a message change to connected clients across
 // pods, after the write commits. Implemented by
 // internal/message/adapter/out/messaging.Publisher. Delivery is
-// best-effort — the message is already persisted and a reconnecting client
-// recovers via ListMessages — so a command handler logs a publish error and
+// best-effort: the message is already persisted and a reconnecting client
+// recovers via ListMessages, so a command handler logs a publish error and
 // still returns success.
 //
 // Consumers must order by the message's Seq; NATS/WS arrival order is not

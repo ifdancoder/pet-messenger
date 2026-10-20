@@ -11,8 +11,8 @@ import (
 
 // ConversationMembershipPort reads a conversation or one of its memberships
 // for the write side: every command re-derives current state before
-// deciding whether an action is allowed. Consumer-owned by this context —
-// defined here rather than imported from conversation's own ports — since
+// deciding whether an action is allowed. Consumer-owned by this context
+// (defined here rather than imported from conversation's own ports) since
 // this context only ever needs these two methods. Implemented by
 // internal/conversation/adapter/out/persistence.ConversationRepository.
 type ConversationMembershipPort interface {

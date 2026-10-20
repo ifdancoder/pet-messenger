@@ -83,7 +83,7 @@ func (h *listMessagesHandler) Handle(ctx context.Context, q in.ListMessagesQuery
 
 // annotateReadStatus sets ReadBy/RecipientCount on each message by comparing
 // every other member's last-read Seq against the message's own Seq. It
-// never fails the request — a lookup error here is logged and the page is
+// never fails the request: a lookup error here is logged and the page is
 // returned with read-status left at its zero value.
 func (h *listMessagesHandler) annotateReadStatus(ctx context.Context, convID uuid.UUID, messages []*domainmsg.Message) {
 	members, err := h.roster.ListMembers(ctx, convID, false, time.Time{}, uuid.Nil, 200)

@@ -14,8 +14,8 @@ type MessageWriter interface {
 	// per-conversation monotonic sequence) as part of the write. If
 	// m.IdempotencyKey is set and a message with that (ConversationID,
 	// SenderID, key) already exists, Create returns
-	// domain.ErrDuplicateIdempotencyKey and the whole transaction — including
-	// the seq allocation — is rolled back, so no seq is consumed.
+	// domain.ErrDuplicateIdempotencyKey and the whole transaction (including
+	// the seq allocation) is rolled back, so no seq is consumed.
 	Create(ctx context.Context, m *domainmsg.Message) error
 	// Update persists a mutated message (Edit / MarkDeleted).
 	Update(ctx context.Context, m *domainmsg.Message) error

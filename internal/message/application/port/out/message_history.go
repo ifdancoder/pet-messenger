@@ -10,7 +10,7 @@ import (
 )
 
 // MessageHistoryPort reads a conversation's message history for the
-// ListMessages query — both paging directions, since exactly one consumer
+// ListMessages query: both paging directions, since exactly one consumer
 // needs both. Implemented by
 // internal/message/adapter/out/persistence.MessageRepository.
 type MessageHistoryPort interface {
@@ -27,7 +27,7 @@ type MessageHistoryPort interface {
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, afterSeq int64, limit int) ([]*domainmsg.Message, error)
 	// ListBeforeSeq returns the conversation's messages ordered by Seq
 	// DESCENDING (newest first), taking those with Seq < beforeSeq; beforeSeq
-	// <= 0 means "from the newest message". This is the history-scroll read —
+	// <= 0 means "from the newest message". This is the history-scroll read:
 	// opening a conversation (beforeSeq 0) and then paging upward (beforeSeq =
 	// the oldest Seq already held). The forward reconnect-catch-up read is
 	// ListByConversation. Soft-deleted messages are returned, with Content

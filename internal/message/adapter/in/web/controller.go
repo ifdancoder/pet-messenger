@@ -51,7 +51,7 @@ func (h *MessageHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // actorID reads the authenticated user id AuthMiddleware stored on the
-// context. Duplicated (not imported — it is unexported in that package)
+// context. Duplicated (not imported, since it is unexported in that package)
 // from internal/adapter/http, matching the existing
 // internal/conversation/adapter/in/web and internal/user/adapter/in/web
 // precedent.
@@ -279,7 +279,7 @@ func (h *MessageHandler) List(c *gin.Context) {
 		resp.Messages = append(resp.Messages, toMessageResponse(m))
 	}
 	// A page that is exactly the effective limit may have more behind it; hand
-	// back the far-edge seq (min for a backward page, max for a forward page —
+	// back the far-edge seq (min for a backward page, max for a forward page;
 	// in both cases the last element) so the client re-issues the same
 	// direction param with it.
 	if eff := query.PageLimit(limit); len(msgs) == eff && len(msgs) > 0 {

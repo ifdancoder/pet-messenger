@@ -16,7 +16,7 @@ import (
 // PostSystemEventHandler implements the system-event-posting capability
 // consumed by conversation's own SystemEventPoster port and call's own
 // re-declared SystemEventPoster interface (both consumer-owned, per the
-// design spec). It gets no port/in of its own — nothing inside this
+// design spec). It gets no port/in of its own: nothing inside this
 // context's own HTTP controller ever calls it, so NewPostSystemEventHandler
 // returns the concrete type directly rather than an interface.
 type PostSystemEventHandler struct {

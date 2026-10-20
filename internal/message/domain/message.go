@@ -2,7 +2,7 @@
 // several kinds, keyed by Type. Message owns its own state transitions (Edit,
 // MarkDeleted); the application layer orchestrates, it does not reimplement
 // them. It is the Entities layer (Clean Architecture) / domain core
-// (Hexagonal) for the message bounded context — no dependency on anything
+// (Hexagonal) for the message bounded context: no dependency on anything
 // outside the standard library, uuid, and time.
 package domain
 
@@ -212,7 +212,7 @@ const maxSystemDetailBytes = 64
 // conversation-lifecycle change. actorID is the user who caused it (nil for
 // system-initiated events such as auto-succession). targetID is the member the
 // event concerns (uuid.Nil for conversation-level events). detail is an
-// optional short token — for member_tier_changed the resulting tier
+// optional short token: for member_tier_changed the resulting tier
 // ("creator_admin", "admin", "" for a demotion to no tier); "" otherwise. It is
 // NOT run through validateContent.
 func NewSystemEvent(conversationID uuid.UUID, actorID *uuid.UUID, event SystemEvent, targetID uuid.UUID, detail string) (*Message, error) {
@@ -273,7 +273,7 @@ func (m *Message) Edit(newContent string, now time.Time) error {
 
 // MarkDeleted soft-deletes the message: it records the deletion time (normalized
 // to UTC) and clears the stored content so deleted text is not retained. It is
-// idempotent — calling it on an already-deleted message is a no-op that keeps
+// idempotent: calling it on an already-deleted message is a no-op that keeps
 // the first deletion time.
 func (m *Message) MarkDeleted(now time.Time) {
 	if m.IsDeleted() {

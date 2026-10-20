@@ -21,7 +21,7 @@ type MessageRepository struct {
 }
 
 // NewMessageRepository constructs the adapter. It returns the concrete type
-// because it satisfies three ports at once — fx bridges each one
+// because it satisfies three ports at once: fx bridges each one
 // separately (see internal/fx/message.go).
 func NewMessageRepository(db *sql.DB) *MessageRepository {
 	return &MessageRepository{db: db}
@@ -95,8 +95,8 @@ func scanMessage(s rowScanner) (*domainmsg.Message, error) {
 // 40001 serialization error instead.
 //
 // The same UPDATE also advances the conversation's last_message_at to
-// GREATEST(last_message_at, m.CreatedAt) — the conversation-list activity sort
-// key — under the same row lock, so it is monotonic across serialized sends.
+// GREATEST(last_message_at, m.CreatedAt) (the conversation-list activity sort
+// key) under the same row lock, so it is monotonic across serialized sends.
 //
 // Create locks the conversations row first, then the FK targets (users,
 // messages); any future usecase sharing this transaction must keep that lock
@@ -178,7 +178,7 @@ func (r *MessageRepository) GetByIdempotencyKey(ctx context.Context, conversatio
 // ListByConversation returns the conversation's messages ordered by seq
 // ascending, starting after afterSeq (afterSeq <= 0 means from the first
 // message). seq is a per-conversation monotonic sequence allocated under a row
-// lock at commit time, so the page is gap-free and in commit order — a client
+// lock at commit time, so the page is gap-free and in commit order: a client
 // that passes the highest seq of the contiguous prefix it holds never misses a
 // message. Because seq is gap-free, a client that receives a seq more than one
 // above its last contiguous seq knows it has a gap and must re-fetch from the

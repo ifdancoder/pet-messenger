@@ -17,7 +17,7 @@ type DeleteMessageCommand struct {
 }
 
 // DeleteMessageUseCase soft-deletes the actor's own message (idempotent), or
-// — for a non-author with a moderating admin tier — someone else's. It
+// (for a non-author with a moderating admin tier) someone else's. It
 // returns the tombstoned message (Content cleared, DeletedAt set).
 type DeleteMessageUseCase interface {
 	Handle(ctx context.Context, cmd DeleteMessageCommand) (*domainmsg.Message, error)

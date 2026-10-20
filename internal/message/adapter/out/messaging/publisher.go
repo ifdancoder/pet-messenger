@@ -2,7 +2,7 @@
 // real-time adapter: it implements out.MessagePublisher over the shared
 // core-NATS wire schema in internal/infrastructure/nats, which is also
 // consumed directly by conversation's own InboxProjector and the WS Hub
-// subscriber (internal/fx/nats.go) — that schema stays shared rather than
+// subscriber (internal/fx/nats.go): that schema stays shared rather than
 // moving here, since those other two consumers need it too.
 package messaging
 
@@ -19,7 +19,7 @@ import (
 )
 
 // Publisher fans message changes out on core NATS. Delivery is best-effort:
-// a failed publish returns an error for the caller to log — the message is
+// a failed publish returns an error for the caller to log; the message is
 // already persisted and a reconnecting client recovers via
 // GET .../messages.
 type Publisher struct {
