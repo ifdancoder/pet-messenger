@@ -4,7 +4,6 @@ package fxapp
 import (
 	"go.uber.org/fx"
 
-	httpadapter "pet-messenger/internal/adapter/http"
 	authweb "pet-messenger/internal/auth/adapter/in/web"
 	authbcrypt "pet-messenger/internal/auth/adapter/out/bcrypt"
 	authjwt "pet-messenger/internal/auth/adapter/out/jwt"
@@ -14,7 +13,6 @@ import (
 	authout "pet-messenger/internal/auth/application/port/out"
 	"pet-messenger/internal/config"
 	infraauth "pet-messenger/internal/infrastructure/auth"
-	"pet-messenger/internal/infrastructure/postgres"
 )
 
 func newRefreshTTL(cfg *config.Config) authout.RefreshTTL {
@@ -24,7 +22,6 @@ func newRefreshTTL(cfg *config.Config) authout.RefreshTTL {
 var AuthModule = fx.Module("auth",
 	fx.Provide(
 		authpersistence.NewSessionRepository,
-		postgres.NewE2EEDeviceRepository,
 		authbcrypt.NewHasher,
 		authrefreshtoken.NewGenerator,
 		authjwt.NewIssuer,
@@ -37,6 +34,5 @@ var AuthModule = fx.Module("auth",
 		authcommand.NewLogoutHandler,
 
 		authweb.NewAuthHandler,
-		httpadapter.NewE2EEDeviceHandler,
 	),
 )

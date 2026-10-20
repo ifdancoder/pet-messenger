@@ -19,6 +19,7 @@ import (
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/database"
+	e2eeweb "pet-messenger/internal/e2ee/adapter/in/web"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	messageweb "pet-messenger/internal/message/adapter/in/web"
 	notificationweb "pet-messenger/internal/notification/adapter/in/web"
@@ -31,7 +32,7 @@ func newGinEngine(
 	db database.Service,
 	authHandler *authweb.AuthHandler,
 	userHandler *userweb.UserHandler,
-	e2eeDeviceHandler *httpadapter.E2EEDeviceHandler,
+	e2eeDeviceHandler *e2eeweb.E2EEDeviceHandler,
 	convHandler *web.ConversationHandler,
 	msgHandler *messageweb.MessageHandler,
 	notifHandler *notificationweb.NotificationHandler,

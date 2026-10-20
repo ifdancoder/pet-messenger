@@ -11,7 +11,6 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 
-	httpadapter "pet-messenger/internal/adapter/http"
 	wsadapter "pet-messenger/internal/adapter/ws"
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/conversation/adapter/out/messaging"
@@ -20,6 +19,7 @@ import (
 	"pet-messenger/internal/conversation/application/port/out"
 	"pet-messenger/internal/conversation/application/query"
 	"pet-messenger/internal/conversation/domain"
+	e2eeout "pet-messenger/internal/e2ee/application/port/out"
 	natsinfra "pet-messenger/internal/infrastructure/nats"
 	messageout "pet-messenger/internal/message/application/port/out"
 	usecasecall "pet-messenger/internal/usecase/call"
@@ -54,7 +54,7 @@ var ConversationModule = fx.Module("conversation",
 		// in NotificationModule (internal/fx/notification.go) as
 		// notificationout.MemberLister, not here.
 		func(r *persistence.ConversationRepository) wsadapter.MemberChecker { return r },
-		func(r *persistence.ConversationRepository) httpadapter.ConversationMemberChecker { return r },
+		func(r *persistence.ConversationRepository) e2eeout.ConversationMemberChecker { return r },
 
 		// CQRS write side — one provider per command.
 		command.NewOpenDirectHandler,
