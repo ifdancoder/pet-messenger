@@ -12,6 +12,8 @@ import (
 	httpadapter "pet-messenger/internal/adapter/http"
 	rpcadapter "pet-messenger/internal/adapter/rpc"
 	"pet-messenger/internal/config"
+	domaincall "pet-messenger/internal/domain/call"
+	e2eeout "pet-messenger/internal/e2ee/application/port/out"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	iceinfra "pet-messenger/internal/infrastructure/ice"
 	medianodeinfra "pet-messenger/internal/infrastructure/medianode"
@@ -25,6 +27,9 @@ var CallModule = fx.Module("call",
 		usecasecall.NewService,
 		httpadapter.NewCallHandler,
 		callevents.NewConsumer,
+		// CallLoader is e2ee's own narrow, consumer-defined read port onto
+		// this context's call repository.
+		func(r domaincall.Repository) e2eeout.CallLoader { return r },
 		// RoomControl (gRPC client)
 		func(cfg *config.Config) usecasecall.RoomControl { return rpcadapter.NewRoomControlClient(cfg) },
 		// MediaNodeRegistry (Redis, read side)
