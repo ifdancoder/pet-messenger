@@ -4,6 +4,7 @@ package domain_test
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -74,7 +75,10 @@ func TestNewDevice_SameKeysSameFingerprint(t *testing.T) {
 }
 
 func TestNewDevice_InvalidKeys(t *testing.T) {
-	validSigning, _, _ := ed25519.GenerateKey(rand.Reader)
+	validSigning, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate signing key: %v", err)
+	}
 	validPublic := make([]byte, 32)
 
 	tests := []struct {
@@ -89,7 +93,7 @@ func TestNewDevice_InvalidKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := domain.NewDevice(uuid.New(), uuid.New(), tt.publicKey, tt.signingPublicKey, ""); err != domain.ErrInvalidKey {
+			if _, err := domain.NewDevice(uuid.New(), uuid.New(), tt.publicKey, tt.signingPublicKey, ""); !errors.Is(err, domain.ErrInvalidKey) {
 				t.Fatalf("err = %v, want ErrInvalidKey", err)
 			}
 		})
