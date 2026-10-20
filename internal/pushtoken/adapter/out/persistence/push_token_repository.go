@@ -57,7 +57,7 @@ func (r *PushTokenRepository) DeleteByToken(ctx context.Context, userID uuid.UUI
 	return nil
 }
 
-// DeleteToken removes a token regardless of owner — used by the
+// DeleteToken removes a token regardless of owner. It is used by the
 // notification worker when a push provider reports the token is
 // permanently gone.
 func (r *PushTokenRepository) DeleteToken(ctx context.Context, token string) error {

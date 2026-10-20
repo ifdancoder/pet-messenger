@@ -2,7 +2,7 @@
 // endpoint (web-push subscription JSON / FCM registration token / APNS
 // device token) a user may receive device push notifications on. It is the
 // Entities layer (Clean Architecture) / domain core (Hexagonal) for the
-// pushtoken bounded context — no dependency on anything outside the
+// pushtoken bounded context: no dependency on anything outside the
 // standard library plus uuid.
 package domain
 

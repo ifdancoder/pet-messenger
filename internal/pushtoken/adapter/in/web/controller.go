@@ -20,7 +20,7 @@ import (
 )
 
 // actorID reads the authenticated user id AuthMiddleware stored on the
-// context. Duplicated (not imported) from internal/adapter/http — it is
+// context. Duplicated (not imported) from internal/adapter/http. It is
 // unexported there, matching the precedent every other context's own
 // controller already follows.
 func actorID(c *gin.Context) (uuid.UUID, bool) {
