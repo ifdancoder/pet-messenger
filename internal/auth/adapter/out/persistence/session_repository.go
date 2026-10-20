@@ -22,7 +22,7 @@ type SessionRepository struct {
 	db *sql.DB
 }
 
-// NewSessionRepository constructs the port directly — nothing else in the
+// NewSessionRepository constructs the port directly: nothing else in the
 // repo needs the concrete type.
 func NewSessionRepository(db *sql.DB) out.SessionStore {
 	return &SessionRepository{db: db}

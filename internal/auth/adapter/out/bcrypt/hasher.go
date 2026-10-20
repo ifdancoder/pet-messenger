@@ -13,8 +13,8 @@ import (
 // Hasher implements out.PasswordHasher.
 type Hasher struct{}
 
-// NewHasher constructs the port directly — the same convention
-// internal/infrastructure/nats.NewPublisher already uses — so no separate
+// NewHasher constructs the port directly, the same convention
+// internal/infrastructure/nats.NewPublisher already uses, so no separate
 // fx bridge function is needed.
 func NewHasher() out.PasswordHasher {
 	return &Hasher{}

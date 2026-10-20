@@ -2,8 +2,8 @@
 
 // Package domain holds the Session aggregate: a refresh-token session
 // tied to one user and one device. It is the Entities layer (Clean
-// Architecture) / domain core (Hexagonal) for the auth bounded context —
-// no dependency on anything outside the standard library and uuid.
+// Architecture) / domain core (Hexagonal) for the auth bounded context,
+// with no dependency on anything outside the standard library and uuid.
 package domain
 
 import (

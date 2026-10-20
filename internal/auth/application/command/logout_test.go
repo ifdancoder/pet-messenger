@@ -27,7 +27,7 @@ func TestLogout_Success(t *testing.T) {
 
 	// Logout must hash with the SAME generator Register used to create the
 	// session, so build it with a generator whose Hash is deterministic
-	// and shared — the fakeRefreshGenerator.Hash method is pure (no
+	// and shared: the fakeRefreshGenerator.Hash method is pure (no
 	// internal state), so a fresh instance hashes identically.
 	if err := logout.Handle(ctx, in.LogoutCommand{RefreshToken: reg.RefreshToken}); err != nil {
 		t.Fatalf("Logout: %v", err)

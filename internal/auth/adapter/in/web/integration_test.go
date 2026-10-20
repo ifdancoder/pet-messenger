@@ -112,7 +112,7 @@ func newIntegrationRouter(t *testing.T, db *sql.DB) *AuthHandler {
 
 // TestAuthHandler_Integration_RealAdapters drives the full register/login/
 // refresh/logout lifecycle through the real AuthHandler, real bcrypt, real
-// JWT issuance, and real Postgres-backed user/session stores — no fakes
+// JWT issuance, and real Postgres-backed user/session stores: no fakes
 // anywhere in the call path.
 func TestAuthHandler_Integration_RealAdapters(t *testing.T) {
 	db := setupIntegrationDB(t)

@@ -31,7 +31,7 @@ func NewAuthHandler(register in.RegisterUseCase, login in.LoginUseCase, refresh 
 }
 
 // RegisterRoutes mounts the auth routes on rg. These routes are
-// deliberately NOT behind AuthMiddleware — registering, logging in, and
+// deliberately NOT behind AuthMiddleware: registering, logging in, and
 // refreshing all happen before a client has an access token.
 func (h *AuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/register", h.Register)
