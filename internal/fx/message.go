@@ -4,6 +4,7 @@ package fxapp
 import (
 	"go.uber.org/fx"
 
+	callout "pet-messenger/internal/call/application/port/out"
 	convout "pet-messenger/internal/conversation/application/port/out"
 	messageweb "pet-messenger/internal/message/adapter/in/web"
 	messagemessaging "pet-messenger/internal/message/adapter/out/messaging"
@@ -11,7 +12,6 @@ import (
 	messagecommand "pet-messenger/internal/message/application/command"
 	messageout "pet-messenger/internal/message/application/port/out"
 	messagequery "pet-messenger/internal/message/application/query"
-	usecasecall "pet-messenger/internal/usecase/call"
 )
 
 var MessageModule = fx.Module("message",
@@ -42,7 +42,7 @@ var MessageModule = fx.Module("message",
 		// concrete type, so the bridge belongs in its own fx file, not the
 		// consumers'.
 		func(h *messagecommand.PostSystemEventHandler) convout.SystemEventPoster { return h },
-		func(h *messagecommand.PostSystemEventHandler) usecasecall.SystemEventPoster { return h },
+		func(h *messagecommand.PostSystemEventHandler) callout.SystemEventPoster { return h },
 
 		// CQRS read side.
 		messagequery.NewListMessagesHandler,

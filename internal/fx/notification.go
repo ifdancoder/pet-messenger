@@ -13,6 +13,7 @@ import (
 	"go.uber.org/fx"
 
 	wsadapter "pet-messenger/internal/adapter/ws"
+	callout "pet-messenger/internal/call/application/port/out"
 	"pet-messenger/internal/config"
 	convpersistence "pet-messenger/internal/conversation/adapter/out/persistence"
 	presenceinfra "pet-messenger/internal/infrastructure/presence"
@@ -29,7 +30,6 @@ import (
 	pushtokenpersistence "pet-messenger/internal/pushtoken/adapter/out/persistence"
 	pushtokencommand "pet-messenger/internal/pushtoken/application/command"
 	pushtokenout "pet-messenger/internal/pushtoken/application/port/out"
-	usecasecall "pet-messenger/internal/usecase/call"
 )
 
 var NotificationModule = fx.Module("notification",
@@ -51,7 +51,7 @@ var NotificationModule = fx.Module("notification",
 		// this context is the producer of the concrete type.
 		func(p *notificationmessaging.Producer) notificationout.WSNotifier { return p },
 		func(p *notificationmessaging.Producer) messageout.NotificationProducer { return p },
-		func(p *notificationmessaging.Producer) usecasecall.CallNotifier { return p },
+		func(p *notificationmessaging.Producer) callout.CallNotifier { return p },
 
 		// Bridges to this context's own remaining consumer-owned ports.
 		func(r *convpersistence.ConversationRepository) notificationout.MemberLister { return r },

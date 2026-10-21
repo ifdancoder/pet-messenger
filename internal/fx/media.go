@@ -16,11 +16,11 @@ import (
 	"pet-messenger/internal/adapter/rpc/mediav1"
 	"pet-messenger/internal/adapter/sfu"
 	"pet-messenger/internal/adapter/signaling"
+	callout "pet-messenger/internal/call/application/port/out"
 	"pet-messenger/internal/config"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 	medianodeinfra "pet-messenger/internal/infrastructure/medianode"
 	natsinfra "pet-messenger/internal/infrastructure/nats"
-	usecasecall "pet-messenger/internal/usecase/call"
 )
 
 // --- media-side NATS: publisher-only core connection ---
@@ -102,8 +102,8 @@ var RPCServerModule = fx.Module("rpc-server",
 
 // --- media-node registry heartbeat ---
 
-func mediaNodeIdentity(cfg *config.Config) usecasecall.Node {
-	return usecasecall.Node{ID: config.MediaNodeID(cfg), GRPCAddr: cfg.Media.GRPCAddr, WSAddr: cfg.Media.WSAddr}
+func mediaNodeIdentity(cfg *config.Config) callout.Node {
+	return callout.Node{ID: config.MediaNodeID(cfg), GRPCAddr: cfg.Media.GRPCAddr, WSAddr: cfg.Media.WSAddr}
 }
 
 func startMediaNodeHeartbeat(lc fx.Lifecycle, cfg *config.Config, reg *medianodeinfra.RedisRegistry, mgr sfu.Manager) {

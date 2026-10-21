@@ -21,13 +21,13 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	callpersistence "pet-messenger/internal/call/adapter/out/persistence"
+	domaincall "pet-messenger/internal/call/domain"
 	convpersistence "pet-messenger/internal/conversation/adapter/out/persistence"
 	domainconv "pet-messenger/internal/conversation/domain"
-	domaincall "pet-messenger/internal/domain/call"
 	e2eepersistence "pet-messenger/internal/e2ee/adapter/out/persistence"
 	e2eecommand "pet-messenger/internal/e2ee/application/command"
 	e2eequery "pet-messenger/internal/e2ee/application/query"
-	"pet-messenger/internal/infrastructure/postgres"
 	domainuser "pet-messenger/internal/user/domain"
 )
 
@@ -125,7 +125,7 @@ func seedE2EEIntegrationFixtures(t *testing.T, db *sql.DB) (userA, userB uuid.UU
 	if err != nil {
 		t.Fatalf("domaincall.New: %v", err)
 	}
-	callRepo := postgres.NewCallRepository(db)
+	callRepo := callpersistence.NewCallRepository(db)
 	if err := callRepo.Create(ctx, call); err != nil {
 		t.Fatalf("create call: %v", err)
 	}
@@ -139,7 +139,7 @@ func seedE2EEIntegrationFixtures(t *testing.T, db *sql.DB) (userA, userB uuid.UU
 func newE2EEIntegrationHandler(db *sql.DB) *E2EEDeviceHandler {
 	deviceRepo := e2eepersistence.NewDeviceRepository(db)
 	convRepo := convpersistence.NewConversationRepository(db)
-	callRepo := postgres.NewCallRepository(db)
+	callRepo := callpersistence.NewCallRepository(db)
 
 	register := e2eecommand.NewRegisterDeviceHandler(deviceRepo, deviceRepo)
 	approve := e2eecommand.NewApproveDeviceHandler(deviceRepo, deviceRepo)

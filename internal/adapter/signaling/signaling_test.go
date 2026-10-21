@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/adapter/sfu"
+	call "pet-messenger/internal/call/domain"
 	"pet-messenger/internal/config"
-	"pet-messenger/internal/domain/call"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 )
 
@@ -78,9 +78,9 @@ func (f *fakeManager) Remove(_, userID uuid.UUID) error {
 	return nil
 }
 
-func (f *fakeManager) Stats(uuid.UUID) sfu.RoomStats           { return sfu.RoomStats{} }
+func (f *fakeManager) Stats(uuid.UUID) sfu.RoomStats                     { return sfu.RoomStats{} }
 func (f *fakeManager) ListParticipants(uuid.UUID) ([]sfu.PeerInfo, bool) { return nil, false }
-func (f *fakeManager) Totals() sfu.Totals                      { return sfu.Totals{} }
+func (f *fakeManager) Totals() sfu.Totals                                { return sfu.Totals{} }
 
 func (f *fakeManager) frameCount() int {
 	f.mu.Lock()

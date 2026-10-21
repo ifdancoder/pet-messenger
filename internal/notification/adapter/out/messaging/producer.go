@@ -36,7 +36,7 @@ type NotifIntent struct {
 
 // Producer publishes NotifIntent messages onto the NOTIF work queue and
 // per-user WS payloads onto core NATS. Structurally satisfies message's own
-// NotificationProducer port, usecase/call's own CallNotifier port, and this
+// NotificationProducer port, call's own CallNotifier port, and this
 // context's own WSNotifier port.
 type Producer struct {
 	js natsgo.JetStreamContext

@@ -13,8 +13,8 @@ import (
 
 	"github.com/google/uuid"
 
+	callout "pet-messenger/internal/call/application/port/out"
 	"pet-messenger/internal/config"
-	usecasecall "pet-messenger/internal/usecase/call"
 )
 
 type Provider struct {
@@ -39,10 +39,10 @@ func NewProvider(cfg *config.Config) *Provider {
 
 // ServersFor returns the STUN entry and, when TURN is configured, one TURN
 // entry with fresh credentials scoped to userID.
-func (p *Provider) ServersFor(userID uuid.UUID) []usecasecall.ICEServer {
-	out := make([]usecasecall.ICEServer, 0, 2)
+func (p *Provider) ServersFor(userID uuid.UUID) []callout.ICEServer {
+	out := make([]callout.ICEServer, 0, 2)
 	if len(p.stun) > 0 {
-		out = append(out, usecasecall.ICEServer{URLs: append([]string(nil), p.stun...)})
+		out = append(out, callout.ICEServer{URLs: append([]string(nil), p.stun...)})
 	}
 	if p.turnURL == "" || p.secret == "" {
 		return out
@@ -70,10 +70,10 @@ func (p *Provider) ServersFor(userID uuid.UUID) []usecasecall.ICEServer {
 	// entries are also the conventional way real TURN deployments (Twilio's
 	// NTS docs, for one) advertise multiple transports, so this sidesteps
 	// the ambiguity entirely instead of relying on multi-URL handling.
-	out = append(out, usecasecall.ICEServer{URLs: []string{p.turnURL}, Username: username, Credential: cred})
-	out = append(out, usecasecall.ICEServer{URLs: []string{turnURLWithTCP(p.turnURL)}, Username: username, Credential: cred})
+	out = append(out, callout.ICEServer{URLs: []string{p.turnURL}, Username: username, Credential: cred})
+	out = append(out, callout.ICEServer{URLs: []string{turnURLWithTCP(p.turnURL)}, Username: username, Credential: cred})
 	if p.turnTLS != "" {
-		out = append(out, usecasecall.ICEServer{URLs: []string{p.turnTLS}, Username: username, Credential: cred})
+		out = append(out, callout.ICEServer{URLs: []string{p.turnTLS}, Username: username, Credential: cred})
 	}
 	return out
 }

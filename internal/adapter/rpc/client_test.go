@@ -13,8 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"pet-messenger/internal/adapter/rpc/mediav1"
+	callout "pet-messenger/internal/call/application/port/out"
 	"pet-messenger/internal/config"
-	usecasecall "pet-messenger/internal/usecase/call"
 )
 
 type fakeRoomServer struct {
@@ -72,7 +72,7 @@ func TestRoomControlClient_CreateRoom(t *testing.T) {
 	t.Cleanup(c.Close)
 
 	id := uuid.Must(uuid.NewV7())
-	if err := c.CreateRoom(context.Background(), usecasecall.Node{ID: "n", GRPCAddr: addr}, id); err != nil {
+	if err := c.CreateRoom(context.Background(), callout.Node{ID: "n", GRPCAddr: addr}, id); err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
 	if len(fake.created) != 1 || fake.created[0] != id.String() {
@@ -84,7 +84,7 @@ func TestRoomControlClient_BadToken(t *testing.T) {
 	addr := startServer(t, "right", &fakeRoomServer{})
 	c := NewRoomControlClient(&config.Config{Media: config.MediaConfig{RPCToken: "wrong"}})
 	t.Cleanup(c.Close)
-	err := c.CreateRoom(context.Background(), usecasecall.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
+	err := c.CreateRoom(context.Background(), callout.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("want Unauthenticated, got %v", err)
 	}
@@ -99,14 +99,14 @@ func TestRoomControlClient_ListParticipants(t *testing.T) {
 	t.Cleanup(c.Close)
 
 	callID := uuid.Must(uuid.NewV7())
-	got, err := c.ListParticipants(context.Background(), usecasecall.Node{GRPCAddr: addr}, callID)
+	got, err := c.ListParticipants(context.Background(), callout.Node{GRPCAddr: addr}, callID)
 	if err != nil {
 		t.Fatalf("ListParticipants: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("ListParticipants = %+v, want 1 entry", got)
 	}
-	want := usecasecall.ParticipantInfo{UserID: "u1", Role: "publisher", Muted: true, SelfMuted: false, TrackKinds: []string{"mic", "camera"}}
+	want := callout.ParticipantInfo{UserID: "u1", Role: "publisher", Muted: true, SelfMuted: false, TrackKinds: []string{"mic", "camera"}}
 	if got[0].UserID != want.UserID || got[0].Role != want.Role || got[0].Muted != want.Muted || got[0].SelfMuted != want.SelfMuted || !slices.Equal(got[0].TrackKinds, want.TrackKinds) {
 		t.Fatalf("ListParticipants[0] = %+v, want %+v", got[0], want)
 	}
@@ -143,7 +143,7 @@ func TestRoomControlClient_ListParticipants_NilTrackKinds(t *testing.T) {
 	c := NewRoomControlClient(&config.Config{Media: config.MediaConfig{RPCToken: "sekret"}})
 	t.Cleanup(c.Close)
 
-	got, err := c.ListParticipants(context.Background(), usecasecall.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
+	got, err := c.ListParticipants(context.Background(), callout.Node{GRPCAddr: addr}, uuid.Must(uuid.NewV7()))
 	if err != nil {
 		t.Fatalf("ListParticipants: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestRoomControlClient_UnmuteParticipant(t *testing.T) {
 	c := NewRoomControlClient(&config.Config{Media: config.MediaConfig{RPCToken: "secret"}})
 	t.Cleanup(c.Close)
 	callID, userID := uuid.New(), uuid.New()
-	if err := c.UnmuteParticipant(context.Background(), usecasecall.Node{GRPCAddr: addr}, callID, userID); err != nil {
+	if err := c.UnmuteParticipant(context.Background(), callout.Node{GRPCAddr: addr}, callID, userID); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.unmuted) != 1 || fake.unmuted[0] != callID.String()+"/"+userID.String() {
