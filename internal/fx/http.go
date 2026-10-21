@@ -16,6 +16,7 @@ import (
 	httpadapter "pet-messenger/internal/adapter/http"
 	wsadapter "pet-messenger/internal/adapter/ws"
 	authweb "pet-messenger/internal/auth/adapter/in/web"
+	callweb "pet-messenger/internal/call/adapter/in/web"
 	"pet-messenger/internal/config"
 	"pet-messenger/internal/conversation/adapter/in/web"
 	"pet-messenger/internal/database"
@@ -38,7 +39,7 @@ func newGinEngine(
 	notifHandler *notificationweb.NotificationHandler,
 	pushTokenHandler *pushtokenweb.PushTokenHandler,
 	wsHandler *wsadapter.WSHandler,
-	callHandler *httpadapter.CallHandler,
+	callHandler *callweb.CallHandler,
 	verifier *infraauth.JWTVerifier,
 ) *gin.Engine {
 	r := gin.Default()

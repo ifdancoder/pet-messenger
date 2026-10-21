@@ -91,7 +91,9 @@ type fakeMediaNodeRegistry struct {
 	getErr error
 }
 
-func (f *fakeMediaNodeRegistry) PickLeastLoaded(context.Context) (out.Node, error) { return out.Node{}, nil }
+func (f *fakeMediaNodeRegistry) PickLeastLoaded(context.Context) (out.Node, error) {
+	return out.Node{}, nil
+}
 func (f *fakeMediaNodeRegistry) Get(context.Context, string) (out.Node, error) {
 	if f.getErr != nil {
 		return out.Node{}, f.getErr
@@ -104,7 +106,7 @@ type fakeRoomControl struct {
 	listParticipantsErr error
 }
 
-func (fakeRoomControl) CreateRoom(context.Context, out.Node, uuid.UUID) error  { return nil }
+func (fakeRoomControl) CreateRoom(context.Context, out.Node, uuid.UUID) error { return nil }
 func (fakeRoomControl) CloseRoom(context.Context, out.Node, uuid.UUID) error  { return nil }
 func (fakeRoomControl) MuteParticipant(context.Context, out.Node, uuid.UUID, uuid.UUID) error {
 	return nil

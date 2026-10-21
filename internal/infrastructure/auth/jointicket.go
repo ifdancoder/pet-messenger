@@ -9,8 +9,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
+	call "pet-messenger/internal/call/domain"
 	"pet-messenger/internal/config"
-	"pet-messenger/internal/domain/call"
 )
 
 // joinTicketAudience marks a token as a media join-ticket. Access tokens carry

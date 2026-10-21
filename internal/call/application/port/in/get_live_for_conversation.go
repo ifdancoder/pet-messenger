@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/uuid"
 
-	domain "pet-messenger/internal/call/domain"
 	out "pet-messenger/internal/call/application/port/out"
+	domain "pet-messenger/internal/call/domain"
 )
 
 // GetLiveForConversationQuery reads a conversation's live call and its

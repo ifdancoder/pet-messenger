@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	domain "pet-messenger/internal/call/domain"
 	out "pet-messenger/internal/call/application/port/out"
+	domain "pet-messenger/internal/call/domain"
 )
 
 // StartCallCommand starts a new call for a conversation, or joins the

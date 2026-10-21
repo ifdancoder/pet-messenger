@@ -7,18 +7,26 @@ package medianode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 
-	usecasecall "pet-messenger/internal/usecase/call"
+	callout "pet-messenger/internal/call/application/port/out"
 )
 
 const (
 	keyPrefix  = "medianode:"
 	defaultTTL = 15 * time.Second
 )
+
+// ErrNoMediaNodes means the registry has no node matching the request
+// (none registered at all, or the specific id looked up is not present).
+// The call command package recognizes any error from MediaNodeRegistry
+// uniformly as "no media nodes" rather than matching this sentinel
+// specifically, so it stays local to this adapter.
+var ErrNoMediaNodes = errors.New("medianode: no media nodes available")
 
 type Load struct {
 	Rooms        int `json:"rooms"`
@@ -35,8 +43,8 @@ type entry struct {
 	UpdatedAt    int64  `json:"updated_at"`
 }
 
-func (e entry) node() usecasecall.Node {
-	return usecasecall.Node{ID: e.ID, GRPCAddr: e.GRPCAddr, WSAddr: e.WSAddr}
+func (e entry) node() callout.Node {
+	return callout.Node{ID: e.ID, GRPCAddr: e.GRPCAddr, WSAddr: e.WSAddr}
 }
 
 type RedisRegistry struct {
@@ -60,11 +68,11 @@ func (r *RedisRegistry) put(ctx context.Context, e entry) error {
 	return nil
 }
 
-func (r *RedisRegistry) Register(ctx context.Context, self usecasecall.Node, capacity int) error {
+func (r *RedisRegistry) Register(ctx context.Context, self callout.Node, capacity int) error {
 	return r.put(ctx, entry{ID: self.ID, GRPCAddr: self.GRPCAddr, WSAddr: self.WSAddr, Capacity: capacity})
 }
 
-func (r *RedisRegistry) Heartbeat(ctx context.Context, self usecasecall.Node, capacity int, load Load) error {
+func (r *RedisRegistry) Heartbeat(ctx context.Context, self callout.Node, capacity int, load Load) error {
 	return r.put(ctx, entry{
 		ID: self.ID, GRPCAddr: self.GRPCAddr, WSAddr: self.WSAddr, Capacity: capacity,
 		Rooms: load.Rooms, Participants: load.Participants,
@@ -78,22 +86,22 @@ func (r *RedisRegistry) Deregister(ctx context.Context, nodeID string) error {
 	return nil
 }
 
-func (r *RedisRegistry) Get(ctx context.Context, nodeID string) (usecasecall.Node, error) {
+func (r *RedisRegistry) Get(ctx context.Context, nodeID string) (callout.Node, error) {
 	raw, err := r.rdb.Get(ctx, keyPrefix+nodeID).Bytes()
 	if err == goredis.Nil {
-		return usecasecall.Node{}, usecasecall.ErrNoMediaNodes
+		return callout.Node{}, ErrNoMediaNodes
 	}
 	if err != nil {
-		return usecasecall.Node{}, fmt.Errorf("get media node: %w", err)
+		return callout.Node{}, fmt.Errorf("get media node: %w", err)
 	}
 	var e entry
 	if err := json.Unmarshal(raw, &e); err != nil {
-		return usecasecall.Node{}, fmt.Errorf("unmarshal media node: %w", err)
+		return callout.Node{}, fmt.Errorf("unmarshal media node: %w", err)
 	}
 	return e.node(), nil
 }
 
-func (r *RedisRegistry) PickLeastLoaded(ctx context.Context) (usecasecall.Node, error) {
+func (r *RedisRegistry) PickLeastLoaded(ctx context.Context) (callout.Node, error) {
 	var best *entry
 	iter := r.rdb.Scan(ctx, 0, keyPrefix+"*", 100).Iterator()
 	for iter.Next(ctx) {
@@ -117,14 +125,14 @@ func (r *RedisRegistry) PickLeastLoaded(ctx context.Context) (usecasecall.Node, 
 		}
 	}
 	if err := iter.Err(); err != nil {
-		return usecasecall.Node{}, fmt.Errorf("scan media nodes: %w", err)
+		return callout.Node{}, fmt.Errorf("scan media nodes: %w", err)
 	}
 	if best == nil {
-		return usecasecall.Node{}, usecasecall.ErrNoMediaNodes
+		return callout.Node{}, ErrNoMediaNodes
 	}
 	return best.node(), nil
 }
 
 var (
-	_ usecasecall.MediaNodeRegistry = (*RedisRegistry)(nil)
+	_ callout.MediaNodeRegistry = (*RedisRegistry)(nil)
 )

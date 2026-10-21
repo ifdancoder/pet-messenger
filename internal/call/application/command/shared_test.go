@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	domain "pet-messenger/internal/call/domain"
 	out "pet-messenger/internal/call/application/port/out"
+	domain "pet-messenger/internal/call/domain"
 	conversation "pet-messenger/internal/conversation/domain"
 	domainmsg "pet-messenger/internal/message/domain"
 )

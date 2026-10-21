@@ -25,8 +25,8 @@ import (
 	"pet-messenger/internal/adapter/rpc/mediav1"
 	"pet-messenger/internal/adapter/sfu"
 	"pet-messenger/internal/adapter/signaling"
+	call "pet-messenger/internal/call/domain"
 	"pet-messenger/internal/config"
-	"pet-messenger/internal/domain/call"
 	infraauth "pet-messenger/internal/infrastructure/auth"
 )
 

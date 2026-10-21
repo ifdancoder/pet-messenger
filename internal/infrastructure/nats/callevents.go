@@ -9,8 +9,9 @@ import (
 )
 
 // CallEventPublisher emits the media-service's room events on core NATS
-// (call.<id>.<event>), consumed by every api pod's callevents.Consumer.
-// Best-effort: a publish failure is logged, nothing blocks the room.
+// (call.<id>.<event>), consumed by every api pod's call context messaging
+// Consumer (internal/call/adapter/in/messaging). Best-effort: a publish
+// failure is logged, nothing blocks the room.
 type CallEventPublisher struct{ nc *natsgo.Conn }
 
 func NewCallEventPublisher(nc *natsgo.Conn) *CallEventPublisher { return &CallEventPublisher{nc: nc} }
