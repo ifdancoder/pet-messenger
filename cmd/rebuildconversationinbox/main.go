@@ -14,7 +14,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"pet-messenger/internal/config"
+	"pet-messenger/internal/platform/config"
 )
 
 func main() {

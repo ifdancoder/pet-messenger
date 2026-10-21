@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"pet-messenger/internal/infrastructure/push"
+	"pet-messenger/internal/platform/infrastructure/push"
 	"pet-messenger/internal/notification/application/port/in"
 	"pet-messenger/internal/notification/application/port/out"
 	domainnotif "pet-messenger/internal/notification/domain"

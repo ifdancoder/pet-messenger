@@ -13,7 +13,7 @@ import (
 
 	natsgo "github.com/nats-io/nats.go"
 
-	natsinfra "pet-messenger/internal/infrastructure/nats"
+	natsinfra "pet-messenger/internal/platform/infrastructure/nats"
 	"pet-messenger/internal/message/application/port/out"
 	domainmsg "pet-messenger/internal/message/domain"
 )

@@ -4,7 +4,7 @@ package main
 import (
 	"go.uber.org/fx"
 
-	fxapp "pet-messenger/internal/fx"
+	fxapp "pet-messenger/internal/platform/fx"
 )
 
 func main() {

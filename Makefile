@@ -39,7 +39,7 @@ test:
 # Integrations Tests for the application
 itest:
 	@echo "Running integration tests..."
-	@go test ./internal/database ./internal/infrastructure/postgres -v
+	@go test ./internal/platform/database ./internal/platform/infrastructure/postgres -v
 
 # Clean the binary
 clean:

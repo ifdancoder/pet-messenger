@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	httpadapter "pet-messenger/internal/adapter/http"
+	httpadapter "pet-messenger/internal/platform/adapter/http"
 	"pet-messenger/internal/notification/application/port/in"
 	"pet-messenger/internal/notification/application/query"
 	domainnotif "pet-messenger/internal/notification/domain"

@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	httpadapter "pet-messenger/internal/adapter/http"
+	httpadapter "pet-messenger/internal/platform/adapter/http"
 	callcommand "pet-messenger/internal/call/application/command"
 	in "pet-messenger/internal/call/application/port/in"
 	out "pet-messenger/internal/call/application/port/out"

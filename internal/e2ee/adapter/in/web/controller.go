@@ -16,7 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	httpadapter "pet-messenger/internal/adapter/http"
+	httpadapter "pet-messenger/internal/platform/adapter/http"
 	"pet-messenger/internal/e2ee/application/command"
 	"pet-messenger/internal/e2ee/application/port/in"
 	"pet-messenger/internal/e2ee/application/query"

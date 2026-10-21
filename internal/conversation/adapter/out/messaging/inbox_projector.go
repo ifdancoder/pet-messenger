@@ -12,7 +12,7 @@ import (
 
 	"pet-messenger/internal/conversation/adapter/out/persistence"
 	"pet-messenger/internal/conversation/domain"
-	natsmsg "pet-messenger/internal/infrastructure/nats"
+	natsmsg "pet-messenger/internal/platform/infrastructure/nats"
 )
 
 // inboxWriter is the slice of persistence.InboxRepository this projector

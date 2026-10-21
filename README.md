@@ -61,7 +61,7 @@ Go module. `api-service` drives the chosen media pod over a gRPC control plane
 
 ### Regenerating the gRPC code
 
-Generated code lives in `internal/adapter/rpc/mediav1/` and is committed — there
+Generated code lives in `internal/platform/adapter/rpc/mediav1/` and is committed — there
 is no codegen step in CI. Regenerate only when the `.proto` changes.
 
 Install the toolchain (local plugins; no `protoc` needed):
@@ -81,7 +81,7 @@ buf generate
 
 `buf.gen.yaml` uses the **local** `protoc-gen-go` / `protoc-gen-go-grpc` plugins
 (not the remote `buf.build/...` plugins) with `opt: [module=pet-messenger]`, so
-the files land at `internal/adapter/rpc/mediav1/media.pb.go` and
+the files land at `internal/platform/adapter/rpc/mediav1/media.pb.go` and
 `media_grpc.pb.go` per the proto's `go_package`.
 
 ### Running the call stack

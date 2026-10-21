@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	httpadapter "pet-messenger/internal/adapter/http"
+	httpadapter "pet-messenger/internal/platform/adapter/http"
 	"pet-messenger/internal/user/application/port/in"
 	"pet-messenger/internal/user/domain"
 )

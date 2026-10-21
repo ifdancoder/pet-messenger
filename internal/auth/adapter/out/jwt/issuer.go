@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"pet-messenger/internal/auth/application/port/out"
-	"pet-messenger/internal/config"
+	"pet-messenger/internal/platform/config"
 )
 
 type claims struct {
