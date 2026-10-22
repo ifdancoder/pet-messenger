@@ -1,6 +1,6 @@
 # pet-messenger
 
-Читать на [английском](README.md).
+*[English version](README.md)*
 
 Backend (и небольшой React-клиент) для мессенджера в реальном времени:
 личные сообщения, групповые чаты в стиле Slack и broadcast-каналы в
