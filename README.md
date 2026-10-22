@@ -1,5 +1,7 @@
 # pet-messenger
 
+Read this in [Russian](README.ru.md).
+
 Backend (plus a small React client) for a real-time messenger: direct
 messages, Slack-style group chats and Telegram-style broadcast channels,
 group audio/video calls with screen sharing over a self-hosted WebRTC
@@ -70,14 +72,19 @@ Hexagonal + CQRS retrofit, organized into 8 independent bounded contexts.
 
 ## How to run
 
-### Quick loop: API against Postgres only (no calls, no push)
+`cmd/api` connects to Postgres, Redis, NATS, and MinIO at startup and
+fails to boot if any one of them is unreachable (each is checked eagerly,
+not lazily on first use). There is no reduced "Postgres only" mode.
+Bring up all four first:
 
 ```bash
 cp .env.example .env
-# fill in at least:
-#   JWT_ED25519_SEED_BASE64  (go run ./cmd/genkey)
-#   BLUEPRINT_DB_*           (defaults match the compose service below)
-docker compose up -d psql_bp
+# fill in at least JWT_ED25519_SEED_BASE64 (go run ./cmd/genkey)
+docker compose up -d psql_bp                    # Postgres only; see note below
+docker run -d --name pm-redis --network host redis:7 --port 6379
+docker run -d --name pm-nats  --network host nats:2.10 -js
+docker run -d --name pm-minio --network host -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin minio/minio server /data
 go run ./cmd/migrate -direction up
 make run   # go run cmd/api/main.go, plus the frontend dev server on :5173
 ```
@@ -86,7 +93,8 @@ make run   # go run cmd/api/main.go, plus the frontend dev server on :5173
 + `psql_bp` stack) predates NATS/Redis/MinIO/calls being added to this
 project and does not pass those through to the `app` container; use it
 only for `psql_bp`, not for a working containerized `app`. See
-Limitations below.
+Limitations below for a startup bug this exposes even once all four
+dependencies are reachable.
 
 ### Full stack, including calls
 
@@ -96,10 +104,13 @@ docker compose -f deploy/media/docker-compose.yml up --build
 cd frontend && npm install && npm run dev
 ```
 
-See `deploy/media/README.md` for the manual two-tab call verification
-procedure (including forcing the TURN relay path), and
-`deploy/kubernetes/README.md` for the Minikube path, which runs the same
-manifests the production overlay does.
+`deploy/media/docker-compose.yml` does not run MinIO either, so avatar
+upload/serve will fail there the same way; everything else (chat,
+channels, calls) works. See `deploy/media/README.md` for the manual
+two-tab call verification procedure (including forcing the TURN relay
+path), and `deploy/kubernetes/README.md` for the Minikube path, which
+runs the same manifests the production overlay does and does include
+MinIO.
 
 ### Other Makefile targets
 
@@ -176,6 +187,22 @@ regression from scheduling flake.
 
 ## Limitations
 
+- **A fully fresh NATS JetStream instance currently fails `cmd/api`'s
+  startup.** `internal/platform/fx/conversation.go`'s
+  `startMemberRevocationFanout` opens a second, ephemeral, non-durable
+  consumer on the same subject the durable queue-group consumer in
+  `startInboxProjector` already covers, on a stream created with
+  `WorkQueuePolicy` retention. NATS rejects that combination outright:
+  `subscribe conversation.events.> (revocation fanout): nats: filtered
+  consumer not unique on workqueue stream`. Confirmed by running
+  `cmd/api` against brand-new Postgres/Redis/NATS/MinIO containers with
+  no prior state; every previous run in this project appears to have
+  reused an already-provisioned `CONVERSATION_EVENTS` stream, which
+  masked it. `WorkQueuePolicy` only allows one logical consumer across
+  the whole stream, which is also at odds with the fanout's own stated
+  goal (every pod seeing every `member.removed` event); this needs its
+  own fix, not a one-line patch, so it is recorded here rather than
+  silently patched.
 - `make docker-run` / the root `docker-compose.yml`'s `app` service does
   not boot as-is: it's missing `JWT_ED25519_SEED_BASE64` and has no
   NATS/Redis/MinIO services for it to reach even if that were fixed.
