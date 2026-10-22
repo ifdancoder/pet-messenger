@@ -41,6 +41,12 @@ itest:
 	@echo "Running integration tests..."
 	@go test ./internal/platform/database ./internal/platform/infrastructure/postgres -v
 
+# Regenerate the Swagger/OpenAPI spec from the @-annotations on the HTTP
+# controllers (see internal/<context>/adapter/in/web/controller.go). Run
+# this after adding or changing a route or its annotations.
+swagger:
+	@go tool swag init -g cmd/api/main.go -o docs/swagger --parseInternal --parseDependency
+
 # Clean the binary
 clean:
 	@echo "Cleaning..."
@@ -121,5 +127,5 @@ minikube-stop:
 	@pkill -f "port-forward svc/frontend 8082:80" 2>/dev/null || true
 	@minikube stop
 
-.PHONY: all build run test clean watch docker-run docker-down itest \
+.PHONY: all build run test clean watch docker-run docker-down itest swagger \
 	minikube-start minikube-secrets minikube-deploy minikube-port-forward minikube-up minikube-stop

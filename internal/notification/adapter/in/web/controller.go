@@ -125,8 +125,19 @@ type markReadRequest struct {
 	ThroughCursor string `json:"through_cursor"`
 }
 
-// List returns a page of the authenticated user's notifications, newest
-// first, along with their current unread count.
+// List godoc
+//
+//	@Summary		List notifications
+//	@Description	Returns a page of the authenticated user's notifications, newest first, along with their current unread count.
+//	@Tags			notifications
+//	@Produce		json
+//	@Param			cursor	query		string	false	"Opaque pagination cursor from a previous response's next_cursor"
+//	@Param			limit	query		int		false	"Page size"
+//	@Success		200		{object}	notificationListResponse
+//	@Failure		400		{object}	map[string]string	"invalid cursor or limit"
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/notifications [get]
 func (h *NotificationHandler) List(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -176,8 +187,19 @@ func (h *NotificationHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// MarkRead marks every notification of the authenticated user up through
-// ThroughCursor as read; an absent or empty cursor marks everything read.
+// MarkRead godoc
+//
+//	@Summary		Mark notifications as read
+//	@Description	Marks every notification of the authenticated user up through through_cursor as read; an absent or empty cursor marks everything read.
+//	@Tags			notifications
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		markReadRequest	false	"Cursor to mark through"
+//	@Success		200		{object}	map[string]int	"marked"
+//	@Failure		400		{object}	map[string]string	"invalid cursor"
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/notifications/read [post]
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {

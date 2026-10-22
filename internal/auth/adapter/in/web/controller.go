@@ -97,8 +97,18 @@ func writeAuthError(c *gin.Context, err error) {
 	}
 }
 
-// Register handles POST /auth/register: it creates a new account and
-// responds 201 with the same session payload Login would produce.
+// Register godoc
+//
+//	@Summary		Register a new account
+//	@Description	Creates a new user account and responds with the same session payload Login would produce.
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		registerRequest	true	"New account details"
+//	@Success		201		{object}	authResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		409		{object}	map[string]string	"username already taken"
+//	@Router			/auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -113,8 +123,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, toAuthResponse(result))
 }
 
-// Login handles POST /auth/login: it verifies credentials and responds
-// 200 with a new session payload.
+// Login godoc
+//
+//	@Summary		Log in
+//	@Description	Verifies credentials and responds with a new session payload (access + refresh tokens).
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		loginRequest	true	"Credentials"
+//	@Success		200		{object}	authResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"invalid credentials"
+//	@Router			/auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -129,8 +149,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, toAuthResponse(result))
 }
 
-// Refresh handles POST /auth/refresh: it rotates a refresh token and
-// responds 200 with a new session payload.
+// Refresh godoc
+//
+//	@Summary		Rotate a refresh token
+//	@Description	Exchanges a valid refresh token for a new session payload (new access + refresh tokens).
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		refreshRequest	true	"Refresh token"
+//	@Success		200		{object}	authResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"invalid or expired refresh token"
+//	@Router			/auth/refresh [post]
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	var req refreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -145,8 +175,16 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	c.JSON(http.StatusOK, toAuthResponse(result))
 }
 
-// Logout handles POST /auth/logout: it revokes the given refresh token's
-// session and responds 204 with no body.
+// Logout godoc
+//
+//	@Summary		Log out
+//	@Description	Revokes the session tied to the given refresh token.
+//	@Tags			auth
+//	@Accept			json
+//	@Param			request	body	refreshRequest	true	"Refresh token"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Router			/auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	var req refreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -133,9 +133,20 @@ type markConversationReadRequest struct {
 	MessageID string `json:"message_id" binding:"required"`
 }
 
-// MarkRead persists the last message currently visible to the authenticated
-// user. The client sends one cursor per newly loaded page, not one request per
-// individual message.
+// MarkRead godoc
+//
+//	@Summary		Mark a conversation read through a message
+//	@Description	Persists the last message currently visible to the authenticated user. The client sends one cursor per newly loaded page, not one request per individual message.
+//	@Tags			messages
+//	@Accept			json
+//	@Param			id		path	string							true	"Conversation ID"
+//	@Param			request	body	markConversationReadRequest	true	"Message to mark through"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not a member"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/read [post]
 func (h *MessageHandler) MarkRead(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -201,7 +212,22 @@ func parseSeqQuery(c *gin.Context, name string) (*int64, error) {
 	return &n, nil
 }
 
-// Send posts a new text message to the route's conversation.
+// Send godoc
+//
+//	@Summary		Send a message
+//	@Description	Posts a new text message to the route's conversation.
+//	@Tags			messages
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Conversation ID"
+//	@Param			request	body		sendMessageRequest	true	"Message content"
+//	@Success		201		{object}	messageResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not a member, or cannot post"
+//	@Failure		404		{object}	map[string]string	"conversation not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/messages [post]
 func (h *MessageHandler) Send(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -236,7 +262,22 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	c.JSON(http.StatusCreated, toMessageResponse(m))
 }
 
-// List returns a page of the route's conversation history.
+// List godoc
+//
+//	@Summary		List messages in a conversation
+//	@Description	Returns a page of the route's conversation history, keyset-paginated by seq.
+//	@Tags			messages
+//	@Produce		json
+//	@Param			id			path		string	true	"Conversation ID"
+//	@Param			after_seq	query		int		false	"Return messages after this seq (forward page)"
+//	@Param			before_seq	query		int		false	"Return messages before this seq (backward page)"
+//	@Param			limit		query		int		false	"Page size"
+//	@Success		200			{object}	messageListResponse
+//	@Failure		400			{object}	map[string]string
+//	@Failure		401			{object}	map[string]string	"unauthenticated"
+//	@Failure		403			{object}	map[string]string	"not a member"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/messages [get]
 func (h *MessageHandler) List(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -289,7 +330,24 @@ func (h *MessageHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// Edit replaces the content of the route's message.
+// Edit godoc
+//
+//	@Summary		Edit a message
+//	@Description	Replaces the content of the route's message. Only the original author may edit.
+//	@Tags			messages
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Conversation ID"
+//	@Param			mid		path		string				true	"Message ID"
+//	@Param			request	body		editMessageRequest	true	"New content"
+//	@Success		200		{object}	messageResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not the author"
+//	@Failure		404		{object}	map[string]string	"message not found"
+//	@Failure		409		{object}	map[string]string	"not editable"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/messages/{mid} [patch]
 func (h *MessageHandler) Edit(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -319,7 +377,21 @@ func (h *MessageHandler) Edit(c *gin.Context) {
 	c.JSON(http.StatusOK, toMessageResponse(m))
 }
 
-// Delete soft-deletes the route's message.
+// Delete godoc
+//
+//	@Summary		Delete a message
+//	@Description	Soft-deletes the route's message.
+//	@Tags			messages
+//	@Produce		json
+//	@Param			id	path		string	true	"Conversation ID"
+//	@Param			mid	path		string	true	"Message ID"
+//	@Success		200	{object}	messageResponse
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		403	{object}	map[string]string	"not the author"
+//	@Failure		404	{object}	map[string]string	"message not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/messages/{mid} [delete]
 func (h *MessageHandler) Delete(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {

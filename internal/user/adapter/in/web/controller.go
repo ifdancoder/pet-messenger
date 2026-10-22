@@ -74,6 +74,16 @@ func toUserProfileResponse(u *domain.User) userProfileResponse {
 	return userProfileResponse{ID: u.ID.String(), Username: u.Username, DisplayName: u.DisplayName, AvatarURL: u.AvatarURL}
 }
 
+// GetByUsername godoc
+//
+//	@Summary		Get a user profile by username
+//	@Tags			users
+//	@Produce		json
+//	@Param			username	path		string	true	"Username"
+//	@Success		200			{object}	userProfileResponse
+//	@Failure		404			{object}	map[string]string	"user not found"
+//	@Security		BearerAuth
+//	@Router			/users/{username} [get]
 func (h *UserHandler) GetByUsername(c *gin.Context) {
 	u, err := h.getByUsername.Handle(c.Request.Context(), in.GetByUsernameQuery{Username: c.Param("username")})
 	if errors.Is(err, domain.ErrNotFound) {
@@ -103,6 +113,20 @@ func writeProfileError(c *gin.Context, err error) {
 	}
 }
 
+// UpdateProfile godoc
+//
+//	@Summary		Update the authenticated user's profile
+//	@Description	Updates display name and/or username. At least one field must be set.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		updateProfileRequest	true	"Fields to update"
+//	@Success		200		{object}	userProfileResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		409		{object}	map[string]string	"username already taken"
+//	@Security		BearerAuth
+//	@Router			/users/me [patch]
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -128,6 +152,19 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 const maxAvatarBytes = 2 << 20 // 2MiB
 
+// UploadAvatar godoc
+//
+//	@Summary		Upload the authenticated user's avatar
+//	@Description	Multipart form upload, field name "avatar". Accepts png, jpeg, or webp, up to 2MiB.
+//	@Tags			users
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Param			avatar	formData	file	true	"Avatar image (png, jpeg, or webp; max 2MiB)"
+//	@Success		200		{object}	userProfileResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/users/me/avatar [post]
 func (h *UserHandler) UploadAvatar(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -159,6 +196,16 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 	c.JSON(http.StatusOK, toUserProfileResponse(u))
 }
 
+// ServeAvatar godoc
+//
+//	@Summary		Serve a user's avatar image
+//	@Tags			users
+//	@Produce		image/png,image/jpeg,image/webp
+//	@Param			username	path	string	true	"Username"
+//	@Success		200			{file}	file
+//	@Failure		404			"not found"
+//	@Security		BearerAuth
+//	@Router			/users/{username}/avatar [get]
 func (h *UserHandler) ServeAvatar(c *gin.Context) {
 	data, contentType, err := h.serveAvatar.Handle(c.Request.Context(), in.ServeAvatarQuery{Username: c.Param("username")})
 	if err != nil {

@@ -111,6 +111,22 @@ func toParticipantDTOs(participants []out.ParticipantInfo) []participantDTO {
 
 // Start starts a new call for the route's conversation, or joins its
 // already-live call.
+// Start godoc
+//
+//	@Summary		Start (or join) a conversation's call
+//	@Description	Starts a new call for the route's conversation, or joins its already-live call.
+//	@Tags			calls
+//	@Produce		json
+//	@Param			id	path		string	true	"Conversation ID"
+//	@Success		201	{object}	map[string]interface{}	"call and join payload"
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		403	{object}	map[string]string	"not a conversation member"
+//	@Failure		404	{object}	map[string]string	"conversation not found"
+//	@Failure		409	{object}	map[string]string	"call not supported, or conversation archived"
+//	@Failure		503	{object}	map[string]string	"no media nodes available"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/calls [post]
 func (h *CallHandler) Start(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -131,6 +147,20 @@ func (h *CallHandler) Start(c *gin.Context) {
 
 // Live returns the route's conversation's live call and current
 // participant roster.
+// Live godoc
+//
+//	@Summary		Get a conversation's live call
+//	@Description	Returns the route's conversation's live call and current participant roster.
+//	@Tags			calls
+//	@Produce		json
+//	@Param			id	path		string					true	"Conversation ID"
+//	@Success		200	{object}	map[string]interface{}	"call and participants"
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		403	{object}	map[string]string	"not a conversation member"
+//	@Failure		404	{object}	map[string]string	"conversation or live call not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/calls/live [get]
 func (h *CallHandler) Live(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -157,6 +187,23 @@ type joinRequest struct {
 // Join joins the route's already-live call. An invalid or missing
 // requested role falls back to RolePublisher; the request body itself is
 // optional.
+// Join godoc
+//
+//	@Summary		Join a live call
+//	@Description	Joins the route's already-live call. An invalid or missing requested role falls back to "publisher"; the request body itself is optional.
+//	@Tags			calls
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string					true	"Call ID"
+//	@Param			request	body		joinRequest				false	"Requested role"
+//	@Success		200		{object}	map[string]interface{}	"join payload"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not a conversation member"
+//	@Failure		404		{object}	map[string]string	"call not found or not live"
+//	@Failure		503		{object}	map[string]string	"media unavailable"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/join [post]
 func (h *CallHandler) Join(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -181,28 +228,76 @@ func (h *CallHandler) Join(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"join": join})
 }
 
-// End ends the route's call.
+// End godoc
+//
+//	@Summary		End a call
+//	@Description	Ends the route's call. Ending an already-ended call is a no-op 204, not an error.
+//	@Tags			calls
+//	@Param			id	path	string	true	"Call ID"
+//	@Success		204	"no body"
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		403	{object}	map[string]string	"not permitted to end this call"
+//	@Failure		404	{object}	map[string]string	"call not found"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/end [post]
 func (h *CallHandler) End(c *gin.Context) {
 	h.mutate(c, func(ctx context.Context, actor, callID uuid.UUID) error {
 		return h.end.Handle(ctx, in.EndCallCommand{Actor: actor, CallID: callID})
 	})
 }
 
-// Mute mutes the route's target participant.
+// Mute godoc
+//
+//	@Summary		Mute a call participant
+//	@Tags			calls
+//	@Param			id		path	string	true	"Call ID"
+//	@Param			userId	path	string	true	"Target participant's user ID"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted, or cannot target self"
+//	@Failure		404		{object}	map[string]string	"call not found"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/participants/{userId}/mute [post]
 func (h *CallHandler) Mute(c *gin.Context) {
 	h.targeted(c, func(ctx context.Context, actor, callID, target uuid.UUID) error {
 		return h.mute.Handle(ctx, in.MuteParticipantCommand{Actor: actor, CallID: callID, TargetID: target})
 	})
 }
 
-// Unmute unmutes the route's target participant.
+// Unmute godoc
+//
+//	@Summary		Unmute a call participant
+//	@Tags			calls
+//	@Param			id		path	string	true	"Call ID"
+//	@Param			userId	path	string	true	"Target participant's user ID"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted, or cannot target self"
+//	@Failure		404		{object}	map[string]string	"call not found"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/participants/{userId}/unmute [post]
 func (h *CallHandler) Unmute(c *gin.Context) {
 	h.targeted(c, func(ctx context.Context, actor, callID, target uuid.UUID) error {
 		return h.unmute.Handle(ctx, in.UnmuteParticipantCommand{Actor: actor, CallID: callID, TargetID: target})
 	})
 }
 
-// Remove removes the route's target participant.
+// Remove godoc
+//
+//	@Summary		Remove a call participant
+//	@Tags			calls
+//	@Param			id		path	string	true	"Call ID"
+//	@Param			userId	path	string	true	"Target participant's user ID"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted, or cannot target self"
+//	@Failure		404		{object}	map[string]string	"call not found"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/participants/{userId} [delete]
 func (h *CallHandler) Remove(c *gin.Context) {
 	h.targeted(c, func(ctx context.Context, actor, callID, target uuid.UUID) error {
 		return h.remove.Handle(ctx, in.RemoveParticipantCommand{Actor: actor, CallID: callID, TargetID: target})

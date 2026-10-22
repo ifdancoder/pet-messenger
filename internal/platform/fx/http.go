@@ -11,8 +11,11 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	swaggerfiles "github.com/swaggo/files"
+	ginswagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/fx"
 
+	_ "pet-messenger/docs/swagger"
 	httpadapter "pet-messenger/internal/platform/adapter/http"
 	wsadapter "pet-messenger/internal/platform/adapter/ws"
 	authweb "pet-messenger/internal/auth/adapter/in/web"
@@ -54,6 +57,10 @@ func newGinEngine(
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, db.Health())
 	})
+
+	if cfg.SwaggerEnabled {
+		r.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
+	}
 
 	authHandler.RegisterRoutes(r.Group("/auth"))
 	users := r.Group("/users")

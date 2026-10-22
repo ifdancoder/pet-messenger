@@ -109,17 +109,18 @@ func MediaNodeID(cfg *Config) string {
 }
 
 type Config struct {
-	Port     int
-	DB       DBConfig
-	JWT      JWTConfig
-	NATS     NATSConfig
-	Redis    RedisConfig
-	Push     PushConfig
-	MinIO    MinIOConfig
-	CORS     CORSConfig
-	Media    MediaConfig
-	TURN     TURNConfig
-	STUNURLs []string
+	Port           int
+	DB             DBConfig
+	JWT            JWTConfig
+	NATS           NATSConfig
+	Redis          RedisConfig
+	Push           PushConfig
+	MinIO          MinIOConfig
+	CORS           CORSConfig
+	Media          MediaConfig
+	TURN           TURNConfig
+	STUNURLs       []string
+	SwaggerEnabled bool
 }
 
 // Load reads configuration from the environment (and .env, if present).
@@ -254,6 +255,7 @@ func Load() (*Config, error) {
 			Secret:        os.Getenv("TURN_SECRET"),
 			CredentialTTL: credTTL,
 		},
-		STUNURLs: stun,
+		STUNURLs:       stun,
+		SwaggerEnabled: os.Getenv("SWAGGER_ENABLED") == "true",
 	}, nil
 }

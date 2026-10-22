@@ -71,8 +71,19 @@ type pushTokenResponse struct {
 	LastUsedAt time.Time `json:"last_used_at"`
 }
 
-// Register handles POST requests to register (or refresh) the
-// authenticated actor's device push endpoint.
+// Register godoc
+//
+//	@Summary		Register (or refresh) a push token
+//	@Description	Registers the authenticated actor's device push endpoint for notification delivery.
+//	@Tags			push-tokens
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		registerPushTokenRequest	true	"Platform and token"
+//	@Success		201		{object}	pushTokenResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/push-tokens [post]
 func (h *PushTokenHandler) Register(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -104,8 +115,18 @@ func (h *PushTokenHandler) Register(c *gin.Context) {
 	})
 }
 
-// Unregister handles DELETE requests to remove the authenticated actor's
-// device push endpoint.
+// Unregister godoc
+//
+//	@Summary		Unregister a push token
+//	@Description	Removes the authenticated actor's device push endpoint.
+//	@Tags			push-tokens
+//	@Accept			json
+//	@Param			request	body	deletePushTokenRequest	true	"Token to remove"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/push-tokens [delete]
 func (h *PushTokenHandler) Unregister(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {

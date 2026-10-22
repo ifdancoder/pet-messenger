@@ -221,6 +221,20 @@ func writeConversationError(c *gin.Context, err error) {
 	}
 }
 
+// OpenDirect godoc
+//
+//	@Summary		Open (or fetch) a direct conversation
+//	@Description	Returns the existing direct conversation with the given user, creating it if none exists.
+//	@Tags			conversations
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openDirectRequest	true	"Other user's id"
+//	@Success		200		{object}	conversationResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		404		{object}	map[string]string	"user not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/direct [post]
 func (h *ConversationHandler) OpenDirect(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -245,6 +259,18 @@ func (h *ConversationHandler) OpenDirect(c *gin.Context) {
 	c.JSON(http.StatusOK, toConversationResponse(conv))
 }
 
+// CreateGroupChat godoc
+//
+//	@Summary		Create a group chat
+//	@Tags			conversations
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		createGroupRequest	true	"Group title"
+//	@Success		201		{object}	conversationResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/conversations/groups [post]
 func (h *ConversationHandler) CreateGroupChat(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -265,6 +291,19 @@ func (h *ConversationHandler) CreateGroupChat(c *gin.Context) {
 	c.JSON(http.StatusCreated, toConversationResponse(conv))
 }
 
+// ListMine godoc
+//
+//	@Summary		List my conversations
+//	@Description	Returns a page of the authenticated user's conversation inbox, newest activity first.
+//	@Tags			conversations
+//	@Produce		json
+//	@Param			cursor	query		string	false	"Opaque pagination cursor from a previous response's next_cursor"
+//	@Param			limit	query		int		false	"Page size"
+//	@Success		200		{object}	conversationListResponse
+//	@Failure		400		{object}	map[string]string	"invalid cursor or limit"
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/conversations [get]
 func (h *ConversationHandler) ListMine(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -303,6 +342,18 @@ func (h *ConversationHandler) ListMine(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// CreateChannel godoc
+//
+//	@Summary		Create a channel
+//	@Tags			conversations
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		createChannelRequest	true	"Channel kind, title, and visibility"
+//	@Success		201		{object}	conversationResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/conversations/channels [post]
 func (h *ConversationHandler) CreateChannel(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -323,6 +374,20 @@ func (h *ConversationHandler) CreateChannel(c *gin.Context) {
 	c.JSON(http.StatusCreated, toConversationResponse(conv))
 }
 
+// ListPublicChannels godoc
+//
+//	@Summary		List public channels
+//	@Description	Returns a page of public channels, optionally filtered by a search query.
+//	@Tags			conversations
+//	@Produce		json
+//	@Param			q		query		string	false	"Search query (truncated to 100 chars)"
+//	@Param			cursor	query		string	false	"Opaque pagination cursor from a previous response's next_cursor"
+//	@Param			limit	query		int		false	"Page size"
+//	@Success		200		{object}	channelListResponse
+//	@Failure		400		{object}	map[string]string	"invalid cursor or limit"
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/conversations/channels [get]
 func (h *ConversationHandler) ListPublicChannels(c *gin.Context) {
 	if _, ok := actorID(c); !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
@@ -364,6 +429,18 @@ func (h *ConversationHandler) ListPublicChannels(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// JoinChannel godoc
+//
+//	@Summary		Join a public channel
+//	@Tags			conversations
+//	@Produce		json
+//	@Param			id	path		string	true	"Channel ID"
+//	@Success		200	{object}	conversationResponse
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		404	{object}	map[string]string	"channel not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/join [post]
 func (h *ConversationHandler) JoinChannel(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -383,6 +460,21 @@ func (h *ConversationHandler) JoinChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, toConversationResponse(conv))
 }
 
+// AddMember godoc
+//
+//	@Summary		Add a member to a conversation
+//	@Tags			conversations
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Conversation ID"
+//	@Param			request	body		addMemberRequest	true	"User to invite"
+//	@Success		201		{object}	memberResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted to add members"
+//	@Failure		404		{object}	map[string]string	"conversation or user not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/members [post]
 func (h *ConversationHandler) AddMember(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -412,6 +504,21 @@ func (h *ConversationHandler) AddMember(c *gin.Context) {
 	c.JSON(http.StatusCreated, toMemberResponse(m))
 }
 
+// ListMembers godoc
+//
+//	@Summary		List conversation members
+//	@Tags			conversations
+//	@Produce		json
+//	@Param			id			path		string	true	"Conversation ID"
+//	@Param			admins_only	query		bool	false	"Only return admin members"
+//	@Param			cursor		query		string	false	"Opaque pagination cursor from a previous response's next_cursor"
+//	@Param			limit		query		int		false	"Page size"
+//	@Success		200			{object}	memberListResponse
+//	@Failure		400			{object}	map[string]string	"invalid cursor or limit"
+//	@Failure		401			{object}	map[string]string	"unauthenticated"
+//	@Failure		403			{object}	map[string]string	"not a member"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/members [get]
 func (h *ConversationHandler) ListMembers(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -455,6 +562,19 @@ func (h *ConversationHandler) ListMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// RemoveMember godoc
+//
+//	@Summary		Remove a member from a conversation
+//	@Tags			conversations
+//	@Param			id		path	string	true	"Conversation ID"
+//	@Param			user_id	path	string	true	"Member user ID to remove"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted to remove this member"
+//	@Failure		404		{object}	map[string]string	"conversation or member not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/members/{user_id} [delete]
 func (h *ConversationHandler) RemoveMember(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -478,6 +598,22 @@ func (h *ConversationHandler) RemoveMember(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// SetMemberTier godoc
+//
+//	@Summary		Set another member's admin tier
+//	@Tags			conversations
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string			true	"Conversation ID"
+//	@Param			user_id	path		string			true	"Member user ID"
+//	@Param			request	body		setTierRequest	true	"New admin tier (empty string clears it)"
+//	@Success		200		{object}	memberResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted to set this tier"
+//	@Failure		404		{object}	map[string]string	"conversation or member not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/members/{user_id} [patch]
 func (h *ConversationHandler) SetMemberTier(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -509,6 +645,22 @@ func (h *ConversationHandler) SetMemberTier(c *gin.Context) {
 
 // SetOwnTier handles PATCH /:id/members/me: the creator stepping down
 // (admin_tier: "") or restoring themselves (admin_tier: "creator_admin").
+// SetOwnTier godoc
+//
+//	@Summary		Set my own admin tier
+//	@Description	Handles the creator stepping down (admin_tier: "") or restoring themselves (admin_tier: "creator_admin").
+//	@Tags			conversations
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string			true	"Conversation ID"
+//	@Param			request	body		setTierRequest	true	"New admin tier (empty string clears it)"
+//	@Success		200		{object}	memberResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not permitted"
+//	@Failure		404		{object}	map[string]string	"conversation not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/members/me [patch]
 func (h *ConversationHandler) SetOwnTier(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -533,6 +685,17 @@ func (h *ConversationHandler) SetOwnTier(c *gin.Context) {
 	c.JSON(http.StatusOK, toMemberResponse(m))
 }
 
+// LeaveConversation godoc
+//
+//	@Summary		Leave a conversation
+//	@Tags			conversations
+//	@Param			id	path	string	true	"Conversation ID"
+//	@Success		204	"no body"
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		404	{object}	map[string]string	"conversation not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/members/me [delete]
 func (h *ConversationHandler) LeaveConversation(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {
@@ -551,7 +714,30 @@ func (h *ConversationHandler) LeaveConversation(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *ConversationHandler) Archive(c *gin.Context)   { h.setArchivedRoute(c, true) }
+// Archive godoc
+//
+//	@Summary		Archive a conversation
+//	@Tags			conversations
+//	@Param			id	path	string	true	"Conversation ID"
+//	@Success		204	"no body"
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		404	{object}	map[string]string	"conversation not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/archive [post]
+func (h *ConversationHandler) Archive(c *gin.Context) { h.setArchivedRoute(c, true) }
+
+// Unarchive godoc
+//
+//	@Summary		Unarchive a conversation
+//	@Tags			conversations
+//	@Param			id	path	string	true	"Conversation ID"
+//	@Success		204	"no body"
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		404	{object}	map[string]string	"conversation not found"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/unarchive [post]
 func (h *ConversationHandler) Unarchive(c *gin.Context) { h.setArchivedRoute(c, false) }
 
 func (h *ConversationHandler) setArchivedRoute(c *gin.Context, archived bool) {
@@ -572,6 +758,21 @@ func (h *ConversationHandler) setArchivedRoute(c *gin.Context, archived bool) {
 	c.Status(http.StatusNoContent)
 }
 
+// ClaimCreator godoc
+//
+//	@Summary		Claim the creator seat of a conversation
+//	@Description	Lets a creator-heir admin claim the vacant creator seat.
+//	@Tags			conversations
+//	@Produce		json
+//	@Param			id	path		string	true	"Conversation ID"
+//	@Success		200	{object}	memberResponse
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		403	{object}	map[string]string	"not a creator-heir"
+//	@Failure		404	{object}	map[string]string	"conversation not found"
+//	@Failure		409	{object}	map[string]string	"creator seat already taken"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/claim-creator [post]
 func (h *ConversationHandler) ClaimCreator(c *gin.Context) {
 	me, ok := actorID(c)
 	if !ok {

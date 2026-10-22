@@ -108,6 +108,21 @@ func toE2EEDeviceResponse(d *domaine2ee.Device) e2eeDeviceResponse {
 // Register registers a new e2ee device for the authenticated user, or
 // returns their own already-registered device unchanged if the same
 // id/keys were submitted again.
+// Register godoc
+//
+//	@Summary		Register an e2ee device
+//	@Description	Registers a new e2ee device for the authenticated user, or returns their own already-registered device unchanged if the same id/keys were submitted again.
+//	@Tags			e2ee
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		registerE2EEDeviceRequest	true	"Device id and public keys"
+//	@Success		200		{object}	e2eeDeviceResponse			"already registered, unchanged"
+//	@Success		201		{object}	e2eeDeviceResponse			"newly registered"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		409		{object}	map[string]string	"device id conflict or already registered"
+//	@Security		BearerAuth
+//	@Router			/users/me/e2ee/devices [post]
 func (h *E2EEDeviceHandler) Register(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -155,6 +170,16 @@ func (h *E2EEDeviceHandler) Register(c *gin.Context) {
 
 // List returns every non-revoked device belonging to the authenticated
 // user's own account.
+// List godoc
+//
+//	@Summary		List my e2ee devices
+//	@Description	Returns every non-revoked device belonging to the authenticated user's own account.
+//	@Tags			e2ee
+//	@Produce		json
+//	@Success		200	{object}	map[string][]e2eeDeviceResponse
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Security		BearerAuth
+//	@Router			/users/me/e2ee/devices [get]
 func (h *E2EEDeviceHandler) List(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -178,6 +203,19 @@ func (h *E2EEDeviceHandler) List(c *gin.Context) {
 // member. Unlike List, the public key is included here -- the client
 // needs it to encrypt a new message's key to every trusted recipient
 // device.
+// ListConversationDevices godoc
+//
+//	@Summary		List trusted devices in a conversation
+//	@Description	Returns every trusted device belonging to any member of the route's conversation, for a caller who is themselves a member. Unlike List, the public key is included -- the client needs it to encrypt a new message's key to every trusted recipient device.
+//	@Tags			e2ee
+//	@Produce		json
+//	@Param			id	path		string	true	"Conversation ID"
+//	@Success		200	{object}	map[string][]e2eeDeviceResponse
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string	"unauthenticated"
+//	@Failure		403	{object}	map[string]string	"not a conversation member"
+//	@Security		BearerAuth
+//	@Router			/conversations/{id}/e2ee/devices [get]
 func (h *E2EEDeviceHandler) ListConversationDevices(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -215,6 +253,21 @@ type approveE2EEDeviceRequest struct {
 
 // Approve trusts the authenticated user's own pending device on the
 // vouching of one of their already-trusted devices.
+// Approve godoc
+//
+//	@Summary		Approve a pending e2ee device
+//	@Description	Trusts the authenticated user's own pending device on the vouching of one of their already-trusted devices.
+//	@Tags			e2ee
+//	@Accept			json
+//	@Param			id		path	string						true	"Pending device ID"
+//	@Param			request	body	approveE2EEDeviceRequest	true	"Approving device id and signature"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"approver not trusted, invalid signature, or cannot approve"
+//	@Failure		404		{object}	map[string]string	"pending device not found"
+//	@Security		BearerAuth
+//	@Router			/users/me/e2ee/devices/{id}/approve [post]
 func (h *E2EEDeviceHandler) Approve(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -276,6 +329,21 @@ type putCallKeyEnvelopesRequest struct {
 // PutCallKeyEnvelopes publishes the route's call's encrypted session key,
 // wrapped once for every trusted device in the call's conversation. The
 // caller must be the call's initiator.
+// PutCallKeyEnvelopes godoc
+//
+//	@Summary		Publish a call's encrypted session key
+//	@Description	Publishes the route's call's encrypted session key, wrapped once for every trusted device in the call's conversation. The caller must be the call's initiator.
+//	@Tags			e2ee
+//	@Accept			json
+//	@Param			id		path	string						true	"Call ID"
+//	@Param			request	body	putCallKeyEnvelopesRequest	true	"Owner device id and per-recipient envelopes"
+//	@Success		204		"no body"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string	"unauthenticated"
+//	@Failure		403		{object}	map[string]string	"not a conversation member, not the initiator, or owner device not trusted"
+//	@Failure		404		{object}	map[string]string	"active call not found"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/e2ee/key-envelopes [put]
 func (h *E2EEDeviceHandler) PutCallKeyEnvelopes(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {
@@ -333,6 +401,22 @@ func (h *E2EEDeviceHandler) PutCallKeyEnvelopes(c *gin.Context) {
 // GetCallKeyEnvelope returns the route's call's encrypted session key,
 // wrapped for the caller's own recipient device, once the owning device
 // has published it.
+// GetCallKeyEnvelope godoc
+//
+//	@Summary		Get my wrapped copy of a call's session key
+//	@Description	Returns the route's call's encrypted session key, wrapped for the caller's own recipient device, once the owning device has published it.
+//	@Tags			e2ee
+//	@Produce		json
+//	@Param			id			path		string	true	"Call ID"
+//	@Param			device_id	query		string	true	"Caller's recipient device ID"
+//	@Success		200			{object}	map[string]string
+//	@Failure		400			{object}	map[string]string
+//	@Failure		401			{object}	map[string]string	"unauthenticated"
+//	@Failure		403			{object}	map[string]string	"not a conversation member, or device not trusted"
+//	@Failure		404			{object}	map[string]string	"active call not found, or key not ready"
+//	@Failure		409			{object}	map[string]string	"call key owner is no longer trusted"
+//	@Security		BearerAuth
+//	@Router			/calls/{id}/e2ee/key-envelope [get]
 func (h *E2EEDeviceHandler) GetCallKeyEnvelope(c *gin.Context) {
 	actor, ok := actorID(c)
 	if !ok {

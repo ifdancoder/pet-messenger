@@ -1,0 +1,2335 @@
+basePath: /
+definitions:
+  internal_auth_adapter_in_web.authResponse:
+    properties:
+      access_token:
+        type: string
+      access_token_expires_at:
+        type: string
+      refresh_token:
+        type: string
+      user:
+        $ref: '#/definitions/internal_auth_adapter_in_web.userResponse'
+    type: object
+  internal_auth_adapter_in_web.loginRequest:
+    properties:
+      device_info:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  internal_auth_adapter_in_web.refreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  internal_auth_adapter_in_web.registerRequest:
+    properties:
+      display_name:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  internal_auth_adapter_in_web.userResponse:
+    properties:
+      avatar_url:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_call_adapter_in_web.joinRequest:
+    properties:
+      role:
+        type: string
+    type: object
+  internal_conversation_adapter_in_web.addMemberRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
+  internal_conversation_adapter_in_web.channelListResponse:
+    properties:
+      channels:
+        items:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.conversationResponse'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  internal_conversation_adapter_in_web.conversationListResponse:
+    properties:
+      conversations:
+        items:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.conversationResponse'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  internal_conversation_adapter_in_web.conversationResponse:
+    properties:
+      archived_at:
+        type: string
+      avatar_url:
+        type: string
+      created_at:
+        type: string
+      direct_avatar_url:
+        type: string
+      direct_display_name:
+        type: string
+      direct_username:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      last_message_at:
+        type: string
+      public:
+        type: boolean
+      title:
+        type: string
+      unread_count:
+        type: integer
+    type: object
+  internal_conversation_adapter_in_web.createChannelRequest:
+    properties:
+      kind:
+        type: string
+      public:
+        type: boolean
+      title:
+        type: string
+    required:
+    - kind
+    - title
+    type: object
+  internal_conversation_adapter_in_web.createGroupRequest:
+    properties:
+      title:
+        type: string
+    required:
+    - title
+    type: object
+  internal_conversation_adapter_in_web.memberListResponse:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.memberProfileResponse'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  internal_conversation_adapter_in_web.memberProfileResponse:
+    properties:
+      admin_tier:
+        type: string
+      avatar_url:
+        type: string
+      display_name:
+        type: string
+      is_creator:
+        type: boolean
+      joined_at:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_conversation_adapter_in_web.memberResponse:
+    properties:
+      admin_tier:
+        type: string
+      is_creator:
+        type: boolean
+      joined_at:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_conversation_adapter_in_web.openDirectRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
+  internal_conversation_adapter_in_web.setTierRequest:
+    properties:
+      admin_tier:
+        type: string
+    type: object
+  internal_e2ee_adapter_in_web.approveE2EEDeviceRequest:
+    properties:
+      approver_id:
+        type: string
+      signature:
+        type: string
+    required:
+    - approver_id
+    - signature
+    type: object
+  internal_e2ee_adapter_in_web.e2eeDeviceResponse:
+    properties:
+      created_at:
+        type: string
+      fingerprint:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      public_key:
+        type: string
+      status:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_e2ee_adapter_in_web.putCallKeyEnvelope:
+    properties:
+      ciphertext:
+        type: string
+      recipient_device_id:
+        type: string
+    required:
+    - ciphertext
+    - recipient_device_id
+    type: object
+  internal_e2ee_adapter_in_web.putCallKeyEnvelopesRequest:
+    properties:
+      envelopes:
+        items:
+          $ref: '#/definitions/internal_e2ee_adapter_in_web.putCallKeyEnvelope'
+        maxItems: 500
+        type: array
+      owner_device_id:
+        type: string
+    required:
+    - envelopes
+    - owner_device_id
+    type: object
+  internal_e2ee_adapter_in_web.registerE2EEDeviceRequest:
+    properties:
+      id:
+        type: string
+      label:
+        maxLength: 120
+        type: string
+      public_key:
+        type: string
+      signing_public_key:
+        type: string
+    required:
+    - id
+    - public_key
+    - signing_public_key
+    type: object
+  internal_message_adapter_in_web.editMessageRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
+  internal_message_adapter_in_web.markConversationReadRequest:
+    properties:
+      message_id:
+        type: string
+    required:
+    - message_id
+    type: object
+  internal_message_adapter_in_web.messageListResponse:
+    properties:
+      has_more:
+        type: boolean
+      messages:
+        items:
+          $ref: '#/definitions/internal_message_adapter_in_web.messageResponse'
+        type: array
+      next_seq:
+        type: integer
+    type: object
+  internal_message_adapter_in_web.messageResponse:
+    properties:
+      content:
+        type: string
+      conversation_id:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        type: string
+      edited_at:
+        type: string
+      id:
+        type: string
+      read_by:
+        type: integer
+      recipient_count:
+        type: integer
+      reply_to_id:
+        type: string
+      sender_id:
+        type: string
+      seq:
+        type: integer
+      system_event:
+        type: string
+      system_target_id:
+        type: string
+      type:
+        type: string
+    type: object
+  internal_message_adapter_in_web.sendMessageRequest:
+    properties:
+      content:
+        type: string
+      idempotency_key:
+        maxLength: 255
+        type: string
+      reply_to_id:
+        type: string
+    required:
+    - content
+    type: object
+  internal_notification_adapter_in_web.markReadRequest:
+    properties:
+      through_cursor:
+        type: string
+    type: object
+  internal_notification_adapter_in_web.notificationListResponse:
+    properties:
+      next_cursor:
+        type: string
+      notifications:
+        items:
+          $ref: '#/definitions/internal_notification_adapter_in_web.notificationResponse'
+        type: array
+      unread_count:
+        type: integer
+    type: object
+  internal_notification_adapter_in_web.notificationResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      payload:
+        items:
+          type: integer
+        type: array
+      read_at:
+        type: string
+    type: object
+  internal_pushtoken_adapter_in_web.deletePushTokenRequest:
+    properties:
+      token:
+        type: string
+    required:
+    - token
+    type: object
+  internal_pushtoken_adapter_in_web.pushTokenResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      platform:
+        type: string
+      token:
+        type: string
+    type: object
+  internal_pushtoken_adapter_in_web.registerPushTokenRequest:
+    properties:
+      platform:
+        type: string
+      token:
+        type: string
+    required:
+    - platform
+    - token
+    type: object
+  internal_user_adapter_in_web.updateProfileRequest:
+    properties:
+      display_name:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_user_adapter_in_web.userProfileResponse:
+    properties:
+      avatar_url:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: string
+      username:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: 'REST API for the pet-messenger backend: auth, conversations, messages,
+    calls, push notifications, and end-to-end encryption key exchange.'
+  title: pet-messenger API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Verifies credentials and responds with a new session payload (access
+        + refresh tokens).
+      parameters:
+      - description: Credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth_adapter_in_web.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_auth_adapter_in_web.authResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: invalid credentials
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Log in
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Revokes the session tied to the given refresh token.
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth_adapter_in_web.refreshRequest'
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Log out
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a valid refresh token for a new session payload (new
+        access + refresh tokens).
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth_adapter_in_web.refreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_auth_adapter_in_web.authResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: invalid or expired refresh token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Rotate a refresh token
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user account and responds with the same session payload
+        Login would produce.
+      parameters:
+      - description: New account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_auth_adapter_in_web.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_auth_adapter_in_web.authResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: username already taken
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Register a new account
+      tags:
+      - auth
+  /calls/{id}/e2ee/key-envelope:
+    get:
+      description: Returns the route's call's encrypted session key, wrapped for the
+        caller's own recipient device, once the owning device has published it.
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Caller's recipient device ID
+        in: query
+        name: device_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a conversation member, or device not trusted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: active call not found, or key not ready
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: call key owner is no longer trusted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get my wrapped copy of a call's session key
+      tags:
+      - e2ee
+  /calls/{id}/e2ee/key-envelopes:
+    put:
+      consumes:
+      - application/json
+      description: Publishes the route's call's encrypted session key, wrapped once
+        for every trusted device in the call's conversation. The caller must be the
+        call's initiator.
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Owner device id and per-recipient envelopes
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_e2ee_adapter_in_web.putCallKeyEnvelopesRequest'
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a conversation member, not the initiator, or owner device
+            not trusted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: active call not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Publish a call's encrypted session key
+      tags:
+      - e2ee
+  /calls/{id}/end:
+    post:
+      description: Ends the route's call. Ending an already-ended call is a no-op
+        204, not an error.
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted to end this call
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: call not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: End a call
+      tags:
+      - calls
+  /calls/{id}/join:
+    post:
+      consumes:
+      - application/json
+      description: Joins the route's already-live call. An invalid or missing requested
+        role falls back to "publisher"; the request body itself is optional.
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Requested role
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_call_adapter_in_web.joinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: join payload
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a conversation member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: call not found or not live
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: media unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Join a live call
+      tags:
+      - calls
+  /calls/{id}/participants/{userId}:
+    delete:
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Target participant's user ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted, or cannot target self
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: call not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a call participant
+      tags:
+      - calls
+  /calls/{id}/participants/{userId}/mute:
+    post:
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Target participant's user ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted, or cannot target self
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: call not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mute a call participant
+      tags:
+      - calls
+  /calls/{id}/participants/{userId}/unmute:
+    post:
+      parameters:
+      - description: Call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Target participant's user ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted, or cannot target self
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: call not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unmute a call participant
+      tags:
+      - calls
+  /conversations:
+    get:
+      description: Returns a page of the authenticated user's conversation inbox,
+        newest activity first.
+      parameters:
+      - description: Opaque pagination cursor from a previous response's next_cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.conversationListResponse'
+        "400":
+          description: invalid cursor or limit
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List my conversations
+      tags:
+      - conversations
+  /conversations/{id}/archive:
+    post:
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Archive a conversation
+      tags:
+      - conversations
+  /conversations/{id}/calls:
+    post:
+      description: Starts a new call for the route's conversation, or joins its already-live
+        call.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: call and join payload
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a conversation member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: call not supported, or conversation archived
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: no media nodes available
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Start (or join) a conversation's call
+      tags:
+      - calls
+  /conversations/{id}/calls/live:
+    get:
+      description: Returns the route's conversation's live call and current participant
+        roster.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: call and participants
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a conversation member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation or live call not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a conversation's live call
+      tags:
+      - calls
+  /conversations/{id}/claim-creator:
+    post:
+      description: Lets a creator-heir admin claim the vacant creator seat.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.memberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a creator-heir
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: creator seat already taken
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Claim the creator seat of a conversation
+      tags:
+      - conversations
+  /conversations/{id}/e2ee/devices:
+    get:
+      description: Returns every trusted device belonging to any member of the route's
+        conversation, for a caller who is themselves a member. Unlike List, the public
+        key is included -- the client needs it to encrypt a new message's key to every
+        trusted recipient device.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/internal_e2ee_adapter_in_web.e2eeDeviceResponse'
+              type: array
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a conversation member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List trusted devices in a conversation
+      tags:
+      - e2ee
+  /conversations/{id}/join:
+    post:
+      parameters:
+      - description: Channel ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.conversationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: channel not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Join a public channel
+      tags:
+      - conversations
+  /conversations/{id}/members:
+    get:
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Only return admin members
+        in: query
+        name: admins_only
+        type: boolean
+      - description: Opaque pagination cursor from a previous response's next_cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.memberListResponse'
+        "400":
+          description: invalid cursor or limit
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List conversation members
+      tags:
+      - conversations
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User to invite
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.addMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.memberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted to add members
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation or user not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add a member to a conversation
+      tags:
+      - conversations
+  /conversations/{id}/members/{user_id}:
+    delete:
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Member user ID to remove
+        in: path
+        name: user_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted to remove this member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation or member not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a member from a conversation
+      tags:
+      - conversations
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Member user ID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      - description: New admin tier (empty string clears it)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.setTierRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.memberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted to set this tier
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation or member not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set another member's admin tier
+      tags:
+      - conversations
+  /conversations/{id}/members/me:
+    delete:
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Leave a conversation
+      tags:
+      - conversations
+    patch:
+      consumes:
+      - application/json
+      description: 'Handles the creator stepping down (admin_tier: "") or restoring
+        themselves (admin_tier: "creator_admin").'
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New admin tier (empty string clears it)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.setTierRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.memberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not permitted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set my own admin tier
+      tags:
+      - conversations
+  /conversations/{id}/messages:
+    get:
+      description: Returns a page of the route's conversation history, keyset-paginated
+        by seq.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Return messages after this seq (forward page)
+        in: query
+        name: after_seq
+        type: integer
+      - description: Return messages before this seq (backward page)
+        in: query
+        name: before_seq
+        type: integer
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_message_adapter_in_web.messageListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List messages in a conversation
+      tags:
+      - messages
+    post:
+      consumes:
+      - application/json
+      description: Posts a new text message to the route's conversation.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_message_adapter_in_web.sendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_message_adapter_in_web.messageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a member, or cannot post
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send a message
+      tags:
+      - messages
+  /conversations/{id}/messages/{mid}:
+    delete:
+      description: Soft-deletes the route's message.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message ID
+        in: path
+        name: mid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_message_adapter_in_web.messageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not the author
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: message not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a message
+      tags:
+      - messages
+    patch:
+      consumes:
+      - application/json
+      description: Replaces the content of the route's message. Only the original
+        author may edit.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message ID
+        in: path
+        name: mid
+        required: true
+        type: string
+      - description: New content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_message_adapter_in_web.editMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_message_adapter_in_web.messageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not the author
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: message not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: not editable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Edit a message
+      tags:
+      - messages
+  /conversations/{id}/read:
+    post:
+      consumes:
+      - application/json
+      description: Persists the last message currently visible to the authenticated
+        user. The client sends one cursor per newly loaded page, not one request per
+        individual message.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message to mark through
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_message_adapter_in_web.markConversationReadRequest'
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: not a member
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark a conversation read through a message
+      tags:
+      - messages
+  /conversations/{id}/unarchive:
+    post:
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: conversation not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unarchive a conversation
+      tags:
+      - conversations
+  /conversations/channels:
+    get:
+      description: Returns a page of public channels, optionally filtered by a search
+        query.
+      parameters:
+      - description: Search query (truncated to 100 chars)
+        in: query
+        name: q
+        type: string
+      - description: Opaque pagination cursor from a previous response's next_cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.channelListResponse'
+        "400":
+          description: invalid cursor or limit
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List public channels
+      tags:
+      - conversations
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Channel kind, title, and visibility
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.createChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.conversationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a channel
+      tags:
+      - conversations
+  /conversations/direct:
+    post:
+      consumes:
+      - application/json
+      description: Returns the existing direct conversation with the given user, creating
+        it if none exists.
+      parameters:
+      - description: Other user's id
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.openDirectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.conversationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: user not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Open (or fetch) a direct conversation
+      tags:
+      - conversations
+  /conversations/groups:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group title
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_conversation_adapter_in_web.createGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_conversation_adapter_in_web.conversationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a group chat
+      tags:
+      - conversations
+  /notifications:
+    get:
+      description: Returns a page of the authenticated user's notifications, newest
+        first, along with their current unread count.
+      parameters:
+      - description: Opaque pagination cursor from a previous response's next_cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_notification_adapter_in_web.notificationListResponse'
+        "400":
+          description: invalid cursor or limit
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List notifications
+      tags:
+      - notifications
+  /notifications/read:
+    post:
+      consumes:
+      - application/json
+      description: Marks every notification of the authenticated user up through through_cursor
+        as read; an absent or empty cursor marks everything read.
+      parameters:
+      - description: Cursor to mark through
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_notification_adapter_in_web.markReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: marked
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: invalid cursor
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark notifications as read
+      tags:
+      - notifications
+  /push-tokens:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the authenticated actor's device push endpoint.
+      parameters:
+      - description: Token to remove
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_pushtoken_adapter_in_web.deletePushTokenRequest'
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unregister a push token
+      tags:
+      - push-tokens
+    post:
+      consumes:
+      - application/json
+      description: Registers the authenticated actor's device push endpoint for notification
+        delivery.
+      parameters:
+      - description: Platform and token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_pushtoken_adapter_in_web.registerPushTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_pushtoken_adapter_in_web.pushTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register (or refresh) a push token
+      tags:
+      - push-tokens
+  /users/{username}:
+    get:
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_user_adapter_in_web.userProfileResponse'
+        "404":
+          description: user not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a user profile by username
+      tags:
+      - users
+  /users/{username}/avatar:
+    get:
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - image/png
+      - image/jpeg
+      - image/webp
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: not found
+      security:
+      - BearerAuth: []
+      summary: Serve a user's avatar image
+      tags:
+      - users
+  /users/me:
+    patch:
+      consumes:
+      - application/json
+      description: Updates display name and/or username. At least one field must be
+        set.
+      parameters:
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_user_adapter_in_web.updateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_user_adapter_in_web.userProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: username already taken
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update the authenticated user's profile
+      tags:
+      - users
+  /users/me/avatar:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Multipart form upload, field name "avatar". Accepts png, jpeg,
+        or webp, up to 2MiB.
+      parameters:
+      - description: Avatar image (png, jpeg, or webp; max 2MiB)
+        in: formData
+        name: avatar
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_user_adapter_in_web.userProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload the authenticated user's avatar
+      tags:
+      - users
+  /users/me/e2ee/devices:
+    get:
+      description: Returns every non-revoked device belonging to the authenticated
+        user's own account.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/internal_e2ee_adapter_in_web.e2eeDeviceResponse'
+              type: array
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List my e2ee devices
+      tags:
+      - e2ee
+    post:
+      consumes:
+      - application/json
+      description: Registers a new e2ee device for the authenticated user, or returns
+        their own already-registered device unchanged if the same id/keys were submitted
+        again.
+      parameters:
+      - description: Device id and public keys
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_e2ee_adapter_in_web.registerE2EEDeviceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: already registered, unchanged
+          schema:
+            $ref: '#/definitions/internal_e2ee_adapter_in_web.e2eeDeviceResponse'
+        "201":
+          description: newly registered
+          schema:
+            $ref: '#/definitions/internal_e2ee_adapter_in_web.e2eeDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: device id conflict or already registered
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register an e2ee device
+      tags:
+      - e2ee
+  /users/me/e2ee/devices/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: Trusts the authenticated user's own pending device on the vouching
+        of one of their already-trusted devices.
+      parameters:
+      - description: Pending device ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Approving device id and signature
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_e2ee_adapter_in_web.approveE2EEDeviceRequest'
+      responses:
+        "204":
+          description: no body
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: unauthenticated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: approver not trusted, invalid signature, or cannot approve
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: pending device not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Approve a pending e2ee device
+      tags:
+      - e2ee
+securityDefinitions:
+  BearerAuth:
+    description: Access token issued by POST /auth/login or /auth/register, sent as
+      "Bearer <token>".
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

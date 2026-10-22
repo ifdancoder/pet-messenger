@@ -6,6 +6,27 @@ One Paragraph of project description goes here
 
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
 
+## API documentation
+
+The REST API is documented with Swagger (OpenAPI 2.0), generated from `@`-annotations on each bounded context's HTTP controller (`internal/<context>/adapter/in/web/controller.go`). Regenerate the spec after changing a route with:
+
+```bash
+make swagger
+```
+
+The Swagger UI is gated behind `SWAGGER_ENABLED=true` (off by default) and served at `/swagger/index.html` when enabled.
+
+Example requests:
+
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "a-strong-password", "display_name": "Alice"}'
+
+curl http://localhost:8080/conversations \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ## MakeFile
 
 Run build make command with tests
