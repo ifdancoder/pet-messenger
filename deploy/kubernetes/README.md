@@ -16,7 +16,9 @@ JWT_ED25519_SEED_BASE64="$(go run ./cmd/genkey)"
 minikube kubectl -- create namespace pet-messenger --dry-run=client -o yaml | minikube kubectl -- apply -f -
 minikube kubectl -- -n pet-messenger create secret generic pet-messenger-secrets \
   --from-literal=JWT_ED25519_SEED_BASE64="$JWT_ED25519_SEED_BASE64" \
-  --from-literal=BLUEPRINT_DB_PASSWORD=app --dry-run=client -o yaml | minikube kubectl -- apply -f -
+  --from-literal=BLUEPRINT_DB_PASSWORD=app \
+  --from-literal=MEDIA_RPC_TOKEN=devtoken \
+  --from-literal=TURN_SECRET=devsecret --dry-run=client -o yaml | minikube kubectl -- apply -f -
 minikube kubectl -- -n pet-messenger create secret generic registry-credentials \
   --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$HOME/.docker/config.json" \
   --dry-run=client -o yaml | minikube kubectl -- apply -f -

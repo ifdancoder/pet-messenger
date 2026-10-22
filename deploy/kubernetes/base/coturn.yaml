@@ -6,6 +6,11 @@ data:
     listening-port=3478
     fingerprint
     use-auth-secret
+    # Must equal pet-messenger-secrets' TURN_SECRET exactly (coturn's TURN
+    # REST API shared secret, used to validate the HMAC the api/media
+    # pods compute). devsecret is fine for minikube; edit this to match
+    # the real TURN_SECRET before applying to production (see
+    # docs/deploy-guide.md step 6).
     static-auth-secret=devsecret
     realm=media.local
     no-tls

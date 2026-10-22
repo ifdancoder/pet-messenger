@@ -93,38 +93,49 @@ runner.
 
 ```bash
 JWT_ED25519_SEED_BASE64="$(go run ./cmd/genkey)"
+MEDIA_RPC_TOKEN="$(openssl rand -hex 32)"
+TURN_SECRET="$(openssl rand -hex 32)"
 kubectl create namespace pet-messenger --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n pet-messenger create secret generic pet-messenger-secrets \
   --from-literal=JWT_ED25519_SEED_BASE64="$JWT_ED25519_SEED_BASE64" \
-  --from-literal=BLUEPRINT_DB_PASSWORD=<a real password, not "app">
+  --from-literal=BLUEPRINT_DB_PASSWORD=<a real password, not "app"> \
+  --from-literal=MEDIA_RPC_TOKEN="$MEDIA_RPC_TOKEN" \
+  --from-literal=TURN_SECRET="$TURN_SECRET"
 kubectl -n pet-messenger create secret generic registry-credentials \
   --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$HOME/.docker/config.json"
 ```
 
-Keep `JWT_ED25519_SEED_BASE64` somewhere safe outside the cluster too:
-losing it invalidates every issued session and refresh token with no way
-back.
+`MEDIA_RPC_TOKEN` (gRPC control plane between `api` and `media`) and
+`TURN_SECRET` (TURN credential minting) used to ship as plain-text
+`devtoken`/`devsecret` literals in the committed `config.yaml` ConfigMap,
+with no production override. They're now sourced from this Secret
+instead, the same way `JWT_ED25519_SEED_BASE64` already was; `api` and
+`media`'s existing `envFrom: [..., {secretRef: {name: pet-messenger-secrets}}]`
+picks them up with no manifest change. Minikube still defaults both to
+`devtoken`/`devsecret` (see `make minikube-secrets`), which is fine for
+a local stack nothing else can reach.
 
-### 7. Replace the dev placeholders baked into the ConfigMap
+**`TURN_SECRET` has a second copy that must match.** coturn validates
+TURN credentials against its own `static-auth-secret` in
+`deploy/kubernetes/base/coturn.yaml`, which still reads the literal
+`devsecret`. Edit that line to the same value as `$TURN_SECRET` above
+before applying to production, or TURN auth will fail: the api/media
+pods and coturn will be signing and checking against two different
+secrets.
 
-`deploy/kubernetes/base/config.yaml` ships `MEDIA_RPC_TOKEN: devtoken`
-and `TURN_SECRET: devsecret` as literal values, committed in plain text.
-They're fine for minikube; shipped unchanged to production they mean the
-gRPC control plane between `api` and `media`, and TURN credential
-minting, both run on a password anyone who reads this repo already
-knows. The production overlay does not currently override them.
+Keep all of these somewhere safe outside the cluster too: losing
+`JWT_ED25519_SEED_BASE64` invalidates every issued session and refresh
+token with no way back.
 
-Fix before going live, not after: move both into
-`pet-messenger-secrets` instead of the ConfigMap, drop them from
-`config.yaml`, and add a small patch to
-`deploy/kubernetes/overlays/production/kustomization.yaml` (or just
-extend step 6's `kubectl create secret` command) so `api`/`media`'s
-existing `envFrom: [..., {secretRef: {name: pet-messenger-secrets}}]`
-picks up the real values the same way `JWT_ED25519_SEED_BASE64` already
-does. `TURN_URL`/`STUN_URLS` in the same ConfigMap also still point at
-`127.0.0.1:3478`: update them to the real coturn address reachable from
-outside the cluster once that's known, or calls will fail to establish a
-TURN relay path from a real client network.
+### 7. Point TURN at the real relay address
+
+`deploy/kubernetes/base/config.yaml`'s `TURN_URL`/`STUN_URLS` still
+point at `127.0.0.1:3478`, which only works from inside a pod on the
+same node as coturn. Once coturn's real reachable address is known,
+either patch these two keys in
+`deploy/kubernetes/overlays/production/kustomization.yaml` or edit them
+directly for the production path, or calls will fail to establish a TURN
+relay path from a real client network.
 
 ## First deploy
 

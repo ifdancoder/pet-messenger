@@ -93,7 +93,9 @@ minikube-secrets:
 		seed="$$(go run ./cmd/genkey)"; \
 		$(MINIKUBE_KUBECTL) -n $(MINIKUBE_NS) create secret generic pet-messenger-secrets \
 			--from-literal=JWT_ED25519_SEED_BASE64="$$seed" \
-			--from-literal=BLUEPRINT_DB_PASSWORD=app; \
+			--from-literal=BLUEPRINT_DB_PASSWORD=app \
+			--from-literal=MEDIA_RPC_TOKEN=devtoken \
+			--from-literal=TURN_SECRET=devsecret; \
 	fi
 	@if $(MINIKUBE_KUBECTL) -n $(MINIKUBE_NS) get secret registry-credentials >/dev/null 2>&1; then \
 		echo "secret/registry-credentials already exists, leaving it alone"; \
