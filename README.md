@@ -93,8 +93,7 @@ make run   # go run cmd/api/main.go, plus the frontend dev server on :5173
 + `psql_bp` stack) predates NATS/Redis/MinIO/calls being added to this
 project and does not pass those through to the `app` container; use it
 only for `psql_bp`, not for a working containerized `app`. See
-Limitations below for a startup bug this exposes even once all four
-dependencies are reachable.
+Limitations below.
 
 ### Full stack, including calls
 
@@ -187,22 +186,6 @@ regression from scheduling flake.
 
 ## Limitations
 
-- **A fully fresh NATS JetStream instance currently fails `cmd/api`'s
-  startup.** `internal/platform/fx/conversation.go`'s
-  `startMemberRevocationFanout` opens a second, ephemeral, non-durable
-  consumer on the same subject the durable queue-group consumer in
-  `startInboxProjector` already covers, on a stream created with
-  `WorkQueuePolicy` retention. NATS rejects that combination outright:
-  `subscribe conversation.events.> (revocation fanout): nats: filtered
-  consumer not unique on workqueue stream`. Confirmed by running
-  `cmd/api` against brand-new Postgres/Redis/NATS/MinIO containers with
-  no prior state; every previous run in this project appears to have
-  reused an already-provisioned `CONVERSATION_EVENTS` stream, which
-  masked it. `WorkQueuePolicy` only allows one logical consumer across
-  the whole stream, which is also at odds with the fanout's own stated
-  goal (every pod seeing every `member.removed` event); this needs its
-  own fix, not a one-line patch, so it is recorded here rather than
-  silently patched.
 - `make docker-run` / the root `docker-compose.yml`'s `app` service does
   not boot as-is: it's missing `JWT_ED25519_SEED_BASE64` and has no
   NATS/Redis/MinIO services for it to reach even if that were fixed.

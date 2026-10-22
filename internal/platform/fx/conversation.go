@@ -126,47 +126,50 @@ func startInboxProjector(lc fx.Lifecycle, nc *natsgo.Conn, js natsgo.JetStreamCo
 	})
 }
 
-// startMemberRevocationFanout opens a per-pod, non-durable JetStream
-// subscription to conversation.events.> and drops a removed member's live
-// WebSocket subscription to that conversation on this pod. Deliberately
-// NOT a queue-group consumer (unlike startInboxProjector's lifecycle
-// subscription): every pod must see every member.removed event to drop
-// its own local socket, so this uses an ephemeral per-connection consumer
-// instead — the direct successor to the pre-retrofit
-// member.revoked.> core-NATS fan-out (see the design spec's "Migration of
-// existing wiring").
-func startMemberRevocationFanout(lc fx.Lifecycle, js natsgo.JetStreamContext, hub *wsadapter.Hub) {
+// startMemberRevocationFanout opens a per-pod, plain core-NATS subscription
+// to conversation.events.> and drops a removed member's live WebSocket
+// subscription to that conversation on this pod. This is the direct
+// successor to the pre-retrofit member.revoked.> core-NATS fan-out (see the
+// design spec's "Migration of existing wiring"), and deliberately stays on
+// core NATS rather than JetStream for the same reason startInboxProjector's
+// own msg.> subscription a few lines up does: every pod must see every
+// event (not a queue group), and missing one here only means a client
+// re-reads Postgres on its next request, not permanent read-model drift —
+// so JetStream's delivery guarantees aren't needed. It also keeps this
+// subscription off the CONVERSATION_EVENTS stream entirely: that stream
+// uses WorkQueuePolicy retention, which NATS restricts to a single logical
+// consumer across the whole stream, so a second, independent JetStream
+// consumer on the same subject (as this used to be) fails outright with
+// "filtered consumer not unique on workqueue stream" the moment both this
+// and startInboxProjector's durable consumer try to exist together.
+func startMemberRevocationFanout(lc fx.Lifecycle, nc *natsgo.Conn, hub *wsadapter.Hub) {
 	var sub *natsgo.Subscription
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			s, err := js.Subscribe(messaging.WildcardSubject, func(m *natsgo.Msg) {
+			s, err := nc.Subscribe(messaging.WildcardSubject, func(m *natsgo.Msg) {
 				var env struct {
 					Type    string          `json:"type"`
 					Payload json.RawMessage `json:"payload"`
 				}
 				if err := json.Unmarshal(m.Data, &env); err != nil {
 					log.Printf("nats: ws revocation fanout: bad envelope: %v", err)
-					_ = m.Ack()
 					return
 				}
 				if env.Type != "member.removed" {
-					_ = m.Ack()
 					return
 				}
 				var ev domain.MemberRemoved
 				if err := json.Unmarshal(env.Payload, &ev); err != nil {
 					log.Printf("nats: ws revocation fanout: bad member.removed payload: %v", err)
-					_ = m.Ack()
 					return
 				}
 				hub.DropSubscription(ev.UserID, ev.ConversationID)
-				_ = m.Ack()
-			}, natsgo.ManualAck())
+			})
 			if err != nil {
 				return fmt.Errorf("subscribe %s (revocation fanout): %w", messaging.WildcardSubject, err)
 			}
 			sub = s
-			log.Printf("nats: ws revocation fanout subscribed to %s (ephemeral, per-pod)", messaging.WildcardSubject)
+			log.Printf("nats: ws revocation fanout subscribed to %s (core NATS, per-pod)", messaging.WildcardSubject)
 			return nil
 		},
 		OnStop: func(context.Context) error {

@@ -140,10 +140,12 @@ func TestCrossPodDelivery(t *testing.T) {
 // TestCrossPodMemberRevocation: a member.removed event published on one NATS
 // connection ("pod A") makes a different pod ("pod B") drop that user's local
 // Hub subscription to the conversation. This exercises the same
-// conversation.events.> envelope + ephemeral JetStream subscription shape as
-// internal/fx/conversation.go's startMemberRevocationFanout (the pre-retrofit
-// member.revoked.> core-NATS mechanism this superseded — see the design
-// spec's "Migration of existing wiring").
+// conversation.events.> envelope + plain core-NATS subscription shape as
+// internal/platform/fx/conversation.go's startMemberRevocationFanout: every
+// pod needs its own independent broadcast subscription here, not a
+// JetStream consumer, since the CONVERSATION_EVENTS stream's WorkQueuePolicy
+// retention only allows one logical consumer across the whole stream (see
+// that function's own doc comment).
 func TestCrossPodMemberRevocation(t *testing.T) {
 	ctx := context.Background()
 
@@ -157,8 +159,11 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 		t.Fatalf("connection string: %v", err)
 	}
 
-	// pod B: Hub + an ephemeral conversation.events.> subscription that
-	// calls hub.DropSubscription on a member.removed event.
+	// pod B: Hub + a plain core-NATS conversation.events.> subscription that
+	// calls hub.DropSubscription on a member.removed event. EnsureStream
+	// still has to run once (CONVERSATION_EVENTS must exist for pod A's
+	// JetStream publish below to get an ack at all), even though pod B's
+	// own subscription here is plain core NATS, not a stream consumer.
 	hub := NewHub()
 	ncB, err := connectTestNATS(url)
 	if err != nil {
@@ -172,29 +177,25 @@ func TestCrossPodMemberRevocation(t *testing.T) {
 	if err := convmsg.EnsureStream(jsB); err != nil {
 		t.Fatalf("ensure stream: %v", err)
 	}
-	subB, err := jsB.Subscribe(convmsg.WildcardSubject, func(m *natsgo.Msg) {
+	subB, err := ncB.Subscribe(convmsg.WildcardSubject, func(m *natsgo.Msg) {
 		var env struct {
 			Type    string          `json:"type"`
 			Payload json.RawMessage `json:"payload"`
 		}
 		if err := json.Unmarshal(m.Data, &env); err != nil {
 			t.Logf("pod B: unmarshal envelope %q: %v", m.Data, err)
-			_ = m.Ack()
 			return
 		}
 		if env.Type != "member.removed" {
-			_ = m.Ack()
 			return
 		}
 		var ev convdomain.MemberRemoved
 		if err := json.Unmarshal(env.Payload, &ev); err != nil {
 			t.Logf("pod B: unmarshal member.removed payload %q: %v", env.Payload, err)
-			_ = m.Ack()
 			return
 		}
 		hub.DropSubscription(ev.UserID, ev.ConversationID)
-		_ = m.Ack()
-	}, natsgo.ManualAck())
+	})
 	if err != nil {
 		t.Fatalf("pod B subscribe: %v", err)
 	}

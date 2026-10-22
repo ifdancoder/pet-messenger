@@ -95,9 +95,8 @@ make run   # go run cmd/api/main.go, плюс dev-сервер фронтенд�
 `make docker-run` (полный стек `app` + `frontend` + `psql_bp` из
 корневого `docker-compose.yml`) старше, чем добавление NATS/Redis/MinIO/
 звонков в проект, и не передаёт их в контейнер `app`. Используйте его
-только для `psql_bp`, а не для рабочего контейнеризованного `app`. Про
-баг при старте, который это вскрывает даже когда все четыре зависимости
-доступны, см. раздел "Известные ограничения" ниже.
+только для `psql_bp`, а не для рабочего контейнеризованного `app`. См.
+раздел "Известные ограничения" ниже.
 
 ### Полный стек, включая звонки
 
@@ -193,23 +192,6 @@ make itest   # только internal/platform/database и internal/platform/infr
 
 ## Известные ограничения
 
-- **Полностью свежий инстанс NATS JetStream сейчас ломает старт
-  `cmd/api`.** `startMemberRevocationFanout` в
-  `internal/platform/fx/conversation.go` открывает второй, эфемерный,
-  non-durable consumer на тот же subject, который уже покрывает durable
-  queue-group consumer в `startInboxProjector`, на стриме, созданном с
-  retention-политикой `WorkQueuePolicy`. NATS отвергает такое сочетание
-  напрямую: `subscribe conversation.events.> (revocation fanout): nats:
-  filtered consumer not unique on workqueue stream`. Подтверждено
-  запуском `cmd/api` против полностью новых контейнеров
-  Postgres/Redis/NATS/MinIO без предыдущего состояния; судя по всему,
-  каждый предыдущий запуск в этом проекте переиспользовал уже созданный
-  стрим `CONVERSATION_EVENTS`, что маскировало проблему. `WorkQueuePolicy`
-  допускает только одного логического consumer'а на весь стрим, что
-  само по себе противоречит заявленной цели fanout'а (чтобы каждый под
-  видел каждое событие `member.removed`); это требует отдельного
-  исправления, не однострочного патча, поэтому зафиксировано здесь, а
-  не тихо исправлено.
 - `make docker-run` / сервис `app` из корневого `docker-compose.yml` не
   поднимается как есть: ему не передан `JWT_ED25519_SEED_BASE64`, и там
   нет сервисов NATS/Redis/MinIO, до которых он мог бы достучаться, даже
