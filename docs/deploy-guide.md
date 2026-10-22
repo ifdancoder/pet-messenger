@@ -82,12 +82,21 @@ ever need to leave the server.
 
 ### 5. Registry
 
-Set the repository variable `REGISTRY` (Settings → Secrets and
-variables → Actions → Variables → New repository variable) to the real
-registry host:port. `130.17.20.23:5000`, hardcoded in old manifests
-before this overlay existed, is explicitly unconfirmed: do not reuse it
-without checking it still points somewhere real and reachable from the
-runner.
+Set the repository variable `REGISTRY` to the real registry host:port.
+`130.17.20.23:5000`, hardcoded in old manifests before this overlay
+existed, is explicitly unconfirmed: do not reuse it without checking it
+still points somewhere real and reachable from the runner.
+
+Via the GitHub UI: Settings → Secrets and variables → Actions →
+Variables → New repository variable. Via the `gh` CLI, from a clone with
+a GitHub remote and `gh auth login` already done:
+
+```bash
+gh variable set REGISTRY --body "<real-registry-host>:<port>"
+```
+
+`deploy.yml` reads this one as `vars.REGISTRY`; it is the only
+GitHub-side variable the pipeline actually consumes today.
 
 ### 6. Runtime secrets
 
@@ -122,6 +131,27 @@ TURN credentials against its own `static-auth-secret` in
 before applying to production, or TURN auth will fail: the api/media
 pods and coturn will be signing and checking against two different
 secrets.
+
+#### Optional: back the same values up as GitHub Actions secrets
+
+Nothing in `ci.yml`/`deploy.yml` reads these today, so this step is not
+required for the pipeline to work. It exists only so the values above
+aren't the one and only copy, living solely in the cluster's etcd and
+whoever's terminal history generated them. Run it right after the
+`kubectl create secret` step above, reusing the same shell variables:
+
+```bash
+gh secret set JWT_ED25519_SEED_BASE64 --body "$JWT_ED25519_SEED_BASE64"
+gh secret set MEDIA_RPC_TOKEN --body "$MEDIA_RPC_TOKEN"
+gh secret set TURN_SECRET --body "$TURN_SECRET"
+gh secret set BLUEPRINT_DB_PASSWORD --body "<the same real password used above>"
+```
+
+If a workflow is later changed to apply the cluster Secret itself
+(instead of a human running `kubectl create secret` by hand), it would
+read these as `${{ secrets.JWT_ED25519_SEED_BASE64 }}` etc. That change
+is not part of this design; these commands alone only store the values
+on GitHub, they do not change anything in the running cluster.
 
 Keep all of these somewhere safe outside the cluster too: losing
 `JWT_ED25519_SEED_BASE64` invalidates every issued session and refresh
