@@ -20,9 +20,13 @@ this order.
 
 ### 1. DNS
 
-Point `messenger.ifdancoder.ru`'s A record at the server's public IP.
-cert-manager's HTTP-01 challenge (step 3) needs this resolvable from the
-public internet before it will succeed.
+Point three A records at the server's public IP: `messenger.ifdancoder.ru`,
+`turn.messenger.ifdancoder.ru`, and `stun.messenger.ifdancoder.ru`.
+cert-manager's HTTP-01 challenge (step 3) needs the first one resolvable
+from the public internet before it will succeed; the other two are
+coturn's own address (step 7) and carry no TLS cert of their own, since
+coturn runs with `no-tls`/`no-dtls` and is reached over raw UDP/TCP on
+port 3478, not through Traefik.
 
 ### 2. Cluster-wide quotas
 
@@ -54,9 +58,10 @@ kubectl -n cert-manager rollout status deployment/cert-manager-cainjector
 Check https://cert-manager.io/docs/releases/ for a newer patch release
 first: the pinned version above may be stale by the time you run this.
 
-Edit `cluster/cert-manager/cluster-issuer.yaml`: replace
-`REPLACE_ME@example.com` with a real address willing to receive
-Let's Encrypt expiry notices. Then:
+`cluster/cert-manager/cluster-issuer.yaml`'s `email` is already set to a
+real address (not the `REPLACE_ME@example.com` placeholder); change it
+first if a different address should receive Let's Encrypt expiry
+notices. Then:
 
 ```bash
 kubectl apply -f cluster/cert-manager/cluster-issuer.yaml
@@ -65,7 +70,7 @@ kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[0].m
 
 Expect something like "The ACME account was registered with the ACME
 server". If it errors, the usual cause is DNS from step 1 not resolving
-yet, or the email field still saying `REPLACE_ME@example.com`.
+yet.
 
 ### 4. GitHub Actions self-hosted runner
 
@@ -157,15 +162,19 @@ Keep all of these somewhere safe outside the cluster too: losing
 `JWT_ED25519_SEED_BASE64` invalidates every issued session and refresh
 token with no way back.
 
-### 7. Point TURN at the real relay address
+### 7. TURN relay address
 
-`deploy/kubernetes/base/config.yaml`'s `TURN_URL`/`STUN_URLS` still
-point at `127.0.0.1:3478`, which only works from inside a pod on the
-same node as coturn. Once coturn's real reachable address is known,
-either patch these two keys in
-`deploy/kubernetes/overlays/production/kustomization.yaml` or edit them
-directly for the production path, or calls will fail to establish a TURN
-relay path from a real client network.
+Already done: `overlays/production/kustomization.yaml` carries a patch
+pointing `TURN_URL`/`STUN_URLS` at `turn.messenger.ifdancoder.ru:3478`
+and `stun.messenger.ifdancoder.ru:3478` (step 1's DNS records), while
+`base/config.yaml` itself stays at `127.0.0.1`, which is what Minikube's
+overlay still needs (coturn on the same node there). If that domain ever
+changes, edit the patch in the production overlay, not the base
+ConfigMap, or Minikube's own TURN testing breaks.
+
+coturn's own `static-auth-secret` still needs to match `TURN_SECRET`
+from step 6, by hand, every time `TURN_SECRET` is regenerated: see that
+step's note.
 
 ## First deploy
 

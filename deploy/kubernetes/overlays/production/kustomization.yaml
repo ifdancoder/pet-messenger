@@ -14,3 +14,17 @@ images:
   - {name: registry.invalid/pet-messenger-media, newName: registry.invalid/pet-messenger-media, newTag: unset}
   - {name: registry.invalid/pet-messenger-frontend, newName: registry.invalid/pet-messenger-frontend, newTag: unset}
   - {name: registry.invalid/pet-messenger-migrate, newName: registry.invalid/pet-messenger-migrate, newTag: unset}
+
+# base/config.yaml's TURN_URL/STUN_URLS default to 127.0.0.1, which is what
+# Minikube's overlay needs (coturn on the same node). Production's coturn
+# is reachable at a real DNS name instead; point only this overlay at it so
+# Minikube's own TURN testing keeps working unchanged.
+patches:
+  - target: {kind: ConfigMap, name: pet-messenger-config}
+    patch: |-
+      - op: replace
+        path: /data/TURN_URL
+        value: turn:turn.messenger.ifdancoder.ru:3478
+      - op: replace
+        path: /data/STUN_URLS
+        value: stun:stun.messenger.ifdancoder.ru:3478
