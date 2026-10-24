@@ -16,7 +16,12 @@ func startMinioContainer(t *testing.T) *config.Config {
 	t.Helper()
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
-		Image:        "minio/minio:latest",
+		// minio/minio was pulled from Docker Hub in September 2026, and
+		// quay.io/minio/minio stopped allowing anonymous pulls three weeks
+		// after that; cgr.dev/chainguard/minio is Chainguard's
+		// free-to-pull community mirror, verified against the same
+		// Cmd/Env/WaitingFor shape this test already uses.
+		Image:        "cgr.dev/chainguard/minio:latest",
 		ExposedPorts: []string{"9000/tcp"},
 		Env:          map[string]string{"MINIO_ROOT_USER": "testuser", "MINIO_ROOT_PASSWORD": "testpassword"},
 		Cmd:          []string{"server", "/data"},

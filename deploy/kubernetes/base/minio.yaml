@@ -15,7 +15,11 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:latest
+          # minio/minio was pulled from Docker Hub in September 2026, and
+          # quay.io/minio/minio stopped allowing anonymous pulls three
+          # weeks after that; cgr.dev/chainguard/minio is a free-to-pull
+          # mirror with the same server/args invocation.
+          image: cgr.dev/chainguard/minio:latest
           imagePullPolicy: IfNotPresent
           args: [server, /data]
           env:
