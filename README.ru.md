@@ -182,16 +182,34 @@ make itest   # только internal/platform/database и internal/platform/infr
 Большая часть набора это юнит-тесты; пакеты персистентности и messaging
 используют `testcontainers-go`, поэтому для полного `make test` нужен
 запущенный Docker. В `internal/platform/adapter/sfu` есть несколько
-настоящих end-to-end тестов на WebRTC, чувствительных к задержкам
-планировщика на загруженной машине, которые иногда падают независимо
-от реальных изменений в коде (`TestSFUEndToEnd`,
+настоящих end-to-end тестов на WebRTC (`TestSFUEndToEnd`,
 `TestSFUViewerCannotPublish`, `TestSFUMuteRequiresModerator`,
-`TestSessionReconnectPreservesRoomAndOwnership`); перезапуск именно
-этого пакета отдельно, это способ отличить настоящую регрессию от флака
-по расписанию.
+`TestSessionReconnectPreservesRoomAndOwnership`), которые сейчас падают
+стабильно, а не изредка: см. "Известные ограничения".
 
 ## Известные ограничения
 
+- **End-to-end тесты SFU на настоящем WebRTC падают стабильно**
+  (`TestSFUEndToEnd`, `TestSFUViewerCannotPublish`,
+  `TestSFUMuteRequiresModerator`,
+  `TestSessionReconnectPreservesRoomAndOwnership`): подписчик не получает
+  RTP, который должен ему форвардиться. Два реальных бага в пути
+  "подписать нового участника на уже публикующего" в
+  `internal/platform/adapter/sfu/{room,forward}.go` исправлены
+  (подтверждено прямым сравнением SDP: `subscribe()` переиспользовал
+  собственный аплоад-трансивер подписчика для форвардящегося трека через
+  reuse-поведение `AddTrack`, и подписка происходила слишком рано, до
+  завершения первого собственного negotiation подписчика, что било в ту
+  же проблему другим путём). После обоих фиксов SDP чистый и `OnTrack`
+  у подписчика срабатывает корректно, но сам RTP всё равно не доходит до
+  `ReadRTP` по третьей, более глубокой причине, которую пока не удалось
+  раскопать. Трассировка самого Pion (уровни ICE/DTLS/PC) не показывает
+  вообще никакой ошибки. Более простой тест
+  `TestRoomForwardsRTPBetweenPionPeers` (форвардинг без полного пути
+  signaling/renegotiation) при этом проходит: сам механизм форвардинга
+  исправен; проблема специфична именно для подписки участника, который
+  одновременно публикует свой собственный трек, через полный offer/answer
+  путь актора.
 - `make docker-run` / сервис `app` из корневого `docker-compose.yml` не
   поднимается как есть: ему не передан `JWT_ED25519_SEED_BASE64`, и там
   нет сервисов NATS/Redis/MinIO, до которых он мог бы достучаться, даже
