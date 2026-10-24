@@ -57,12 +57,43 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Point the production overlay at the new image tags
+      - name: Apply runtime secrets
+        # Creates or updates pet-messenger-secrets from the repository's own
+        # GitHub Actions secrets on every deploy: rotating one of these
+        # secrets and pushing takes effect on the next deploy automatically,
+        # no manual kubectl needed. --dry-run=client -o yaml | apply makes
+        # this an upsert: safe whether the Secret already exists or not.
+        env:
+          JWT_ED25519_SEED_BASE64: ${{ secrets.JWT_ED25519_SEED_BASE64 }}
+          BLUEPRINT_DB_PASSWORD: ${{ secrets.BLUEPRINT_DB_PASSWORD }}
+          MEDIA_RPC_TOKEN: ${{ secrets.MEDIA_RPC_TOKEN }}
+          TURN_SECRET: ${{ secrets.TURN_SECRET }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          for v in JWT_ED25519_SEED_BASE64 BLUEPRINT_DB_PASSWORD MEDIA_RPC_TOKEN TURN_SECRET MINIO_ACCESS_KEY MINIO_SECRET_KEY; do
+            if [ -z "${!v}" ]; then
+              echo "::error::repository secret $v is not set (Settings -> Secrets and variables -> Actions)"
+              exit 1
+            fi
+          done
+          kubectl create namespace pet-messenger --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n pet-messenger create secret generic pet-messenger-secrets \
+            --from-literal=JWT_ED25519_SEED_BASE64="$JWT_ED25519_SEED_BASE64" \
+            --from-literal=BLUEPRINT_DB_PASSWORD="$BLUEPRINT_DB_PASSWORD" \
+            --from-literal=MEDIA_RPC_TOKEN="$MEDIA_RPC_TOKEN" \
+            --from-literal=TURN_SECRET="$TURN_SECRET" \
+            --from-literal=MINIO_ACCESS_KEY="$MINIO_ACCESS_KEY" \
+            --from-literal=MINIO_SECRET_KEY="$MINIO_SECRET_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Point the production overlay at the new image tags and TURN secret
         env:
           SHA: ${{ github.sha }}
+          TURN_SECRET: ${{ secrets.TURN_SECRET }}
         run: |
           OVERLAY=deploy/kubernetes/overlays/production/kustomization.yaml
           sed -i -E "s/newTag: \"?[A-Za-z0-9._-]+\"?/newTag: \"${SHA}\"/g" "$OVERLAY"
+          sed -i "s/__TURN_SECRET__/${TURN_SECRET}/" "$OVERLAY"
       - name: Re-run migrations
         run: kubectl delete job -n pet-messenger migrate --ignore-not-found
       - name: Apply

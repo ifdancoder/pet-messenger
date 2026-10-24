@@ -108,17 +108,30 @@ runner service (not necessarily the one from step 4's kubeconfig access).
 
 ### 6. Runtime secrets
 
+The `deploy` job in `deploy.yml` creates or updates the `pet-messenger-secrets`
+K8s Secret itself, on every push to `main`, straight from six GitHub Actions
+repository secrets. There's no `kubectl create secret` to run by hand: set
+the six values below once, and every future deploy (including rotations)
+picks them up automatically. The job hard-fails with `::error::` before
+touching the cluster if any of the six is unset.
+
 ```bash
 JWT_ED25519_SEED_BASE64="$(go run ./cmd/genkey)"
 MEDIA_RPC_TOKEN="$(openssl rand -hex 32)"
 TURN_SECRET="$(openssl rand -hex 32)"
-kubectl create namespace pet-messenger --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n pet-messenger create secret generic pet-messenger-secrets \
-  --from-literal=JWT_ED25519_SEED_BASE64="$JWT_ED25519_SEED_BASE64" \
-  --from-literal=BLUEPRINT_DB_PASSWORD=<a real password, not "app"> \
-  --from-literal=MEDIA_RPC_TOKEN="$MEDIA_RPC_TOKEN" \
-  --from-literal=TURN_SECRET="$TURN_SECRET"
+MINIO_ACCESS_KEY="$(openssl rand -hex 16)"
+MINIO_SECRET_KEY="$(openssl rand -hex 32)"
+
+gh secret set JWT_ED25519_SEED_BASE64 --body "$JWT_ED25519_SEED_BASE64"
+gh secret set MEDIA_RPC_TOKEN --body "$MEDIA_RPC_TOKEN"
+gh secret set TURN_SECRET --body "$TURN_SECRET"
+gh secret set MINIO_ACCESS_KEY --body "$MINIO_ACCESS_KEY"
+gh secret set MINIO_SECRET_KEY --body "$MINIO_SECRET_KEY"
+gh secret set BLUEPRINT_DB_PASSWORD --body "<a real password, not \"app\">"
 ```
+
+Use the GitHub UI (Settings -> Secrets and variables -> Actions) instead of
+`gh secret set` if the `gh` CLI isn't set up locally.
 
 `registry-credentials` (`imagePullSecrets` in `base/{api,media,migrate,frontend}.yaml`)
 is not needed with this design: there's no registry to pull from, so
@@ -142,36 +155,17 @@ picks them up with no manifest change. Minikube still defaults both to
 `devtoken`/`devsecret` (see `make minikube-secrets`), which is fine for
 a local stack nothing else can reach.
 
-**`TURN_SECRET` has a second copy that must match.** coturn validates
-TURN credentials against its own `static-auth-secret` in
+**`TURN_SECRET` can never drift out of sync with coturn.** coturn
+validates TURN credentials against its own `static-auth-secret` in
 `deploy/kubernetes/base/coturn.yaml`, which still reads the literal
-`devsecret`. Edit that line to the same value as `$TURN_SECRET` above
-before applying to production, or TURN auth will fail: the api/media
-pods and coturn will be signing and checking against two different
-secrets.
+`devsecret`, correct for Minikube. In production, the `deploy` job
+rewrites `overlays/production/kustomization.yaml`'s `coturn-config`
+patch, substituting the `__TURN_SECRET__` placeholder in that patch with
+the same `TURN_SECRET` secret `pet-messenger-secrets` was built from, so
+there's nothing left to edit by hand and no way for the two to go stale
+against each other.
 
-#### Optional: back the same values up as GitHub Actions secrets
-
-Nothing in `ci.yml`/`deploy.yml` reads these today, so this step is not
-required for the pipeline to work. It exists only so the values above
-aren't the one and only copy, living solely in the cluster's etcd and
-whoever's terminal history generated them. Run it right after the
-`kubectl create secret` step above, reusing the same shell variables:
-
-```bash
-gh secret set JWT_ED25519_SEED_BASE64 --body "$JWT_ED25519_SEED_BASE64"
-gh secret set MEDIA_RPC_TOKEN --body "$MEDIA_RPC_TOKEN"
-gh secret set TURN_SECRET --body "$TURN_SECRET"
-gh secret set BLUEPRINT_DB_PASSWORD --body "<the same real password used above>"
-```
-
-If a workflow is later changed to apply the cluster Secret itself
-(instead of a human running `kubectl create secret` by hand), it would
-read these as `${{ secrets.JWT_ED25519_SEED_BASE64 }}` etc. That change
-is not part of this design; these commands alone only store the values
-on GitHub, they do not change anything in the running cluster.
-
-Keep all of these somewhere safe outside the cluster too: losing
+Keep all of these somewhere safe outside GitHub too: losing
 `JWT_ED25519_SEED_BASE64` invalidates every issued session and refresh
 token with no way back.
 
@@ -185,9 +179,8 @@ overlay still needs (coturn on the same node there). If that domain ever
 changes, edit the patch in the production overlay, not the base
 ConfigMap, or Minikube's own TURN testing breaks.
 
-coturn's own `static-auth-secret` still needs to match `TURN_SECRET`
-from step 6, by hand, every time `TURN_SECRET` is regenerated: see that
-step's note.
+coturn's own `static-auth-secret` is kept in sync with `TURN_SECRET`
+automatically by the `deploy` job; see step 6.
 
 ## First deploy
 

@@ -3,7 +3,7 @@ resources:
   - ../../base
   - ingress.yaml
 
-# newTag here is a placeholder — the "deploy" job in
+# newTag here is a placeholder: the "deploy" job in
 # .github/workflows/deploy.yml rewrites it to the commit SHA on every push
 # to main. Never edit it by hand; a stable tag would make repeated applies
 # of the same manifest a no-op, exactly like overlays/minikube's
@@ -48,3 +48,23 @@ patches:
       - op: replace
         path: /data/STUN_URLS
         value: stun:stun.messenger.ifdancoder.ru:3478
+  # __TURN_SECRET__ is a placeholder: deploy.yml substitutes it with the
+  # real value from the TURN_SECRET GitHub Actions secret right before
+  # applying, the same one pet-messenger-secrets gets built from, so coturn
+  # and the api/media pods can never end up checking different secrets.
+  # base/coturn.yaml's own devsecret literal stays untouched for Minikube.
+  - target: {kind: ConfigMap, name: coturn-config}
+    patch: |-
+      - op: replace
+        path: /data/turnserver.conf
+        value: |
+          listening-port=3478
+          fingerprint
+          use-auth-secret
+          static-auth-secret=__TURN_SECRET__
+          realm=media.local
+          no-tls
+          no-dtls
+          min-port=49160
+          max-port=49200
+          log-file=stdout
