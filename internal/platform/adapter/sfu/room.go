@@ -307,15 +307,9 @@ func (r *room) addParticipant(userID uuid.UUID, role string, sig Signaller) erro
 	})
 
 	r.peers[userID] = p
-	// Subscribe the newcomer to everything already being published.
-	for id, other := range r.peers {
-		if id == userID {
-			continue
-		}
-		for _, local := range other.published {
-			r.subscribe(p, other, local)
-		}
-	}
+	// Subscribing the newcomer to everything already published happens
+	// later, in handleOffer, once this peer's own first offer/answer has
+	// completed (see subscribeToExisting's doc comment for why).
 
 	if previous == nil {
 		r.events.ParticipantJoined(r.callID, userID, role)
@@ -493,11 +487,38 @@ func (r *room) handleOffer(userID uuid.UUID, sdp string, trackKinds map[string]s
 		return
 	}
 	p.send(answerFrame(answer))
+	firstNegotiation := !p.negotiated
 	p.negotiated = true
+	if firstNegotiation {
+		r.subscribeToExisting(p)
+	}
 	// renegoNeeded is deliberately not cleared here: the client built this
 	// offer from its own view, which may predate tracks the room added since,
 	// so the server still owes it an offer of its own.
 	r.flushRenegotiation()
+}
+
+// subscribeToExisting adds every already-published track as a new sender on
+// p's connection. Deliberately NOT called at join time (addParticipant),
+// before p's own first offer has even arrived: SetRemoteDescription, when it
+// processes that first offer, matches each of its remote m-lines against any
+// local transceiver of the same kind that has no mid yet, not just ones
+// AddTrack itself would reuse. A forwarding transceiver added here that
+// early, still mid-less, is exactly such a target: p's own offer can claim
+// it for p's own upload instead, and the two sides end up disagreeing about
+// what that mid actually carries, so the forwarded track is never received.
+// Waiting until after p's own transceiver already has a mid (this
+// function's only caller, handleOffer, right after its first negotiation
+// completes) closes that window.
+func (r *room) subscribeToExisting(p *participant) {
+	for id, other := range r.peers {
+		if id == p.userID {
+			continue
+		}
+		for _, local := range other.published {
+			r.subscribe(p, other, local)
+		}
+	}
 }
 
 func (r *room) handleAnswer(userID uuid.UUID, sdp string) {

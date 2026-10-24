@@ -146,11 +146,22 @@ func (r *room) subscribe(sub, pub *participant, local *webrtc.TrackLocalStaticRT
 			return
 		}
 	}
-	sender, err := sub.pc.AddTrack(local)
+	// AddTrack, not used here on purpose: it reuses any existing transceiver
+	// of the same kind whose Sender is still nil and whose current direction
+	// isn't already sendrecv/sendonly, which includes a transceiver that's
+	// actively recvonly for this very subscriber's OWN uploaded track. That
+	// collision silently merges the forwarded publisher's media onto the
+	// subscriber's own upload mid: the two sides end up disagreeing about
+	// what that mid actually carries, and the forwarded track is never
+	// received. AddTransceiverFromTrack always creates a fresh transceiver
+	// instead, and sendonly is also the correct direction for a forwarding
+	// transceiver: the subscriber is never meant to send anything back on it.
+	tr, err := sub.pc.AddTransceiverFromTrack(local, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 	if err != nil {
 		log.Printf("sfu: room %s: add track %s to %s: %v", r.callID, local.ID(), sub.userID, err)
 		return
 	}
+	sender := tr.Sender()
 	go drainRTCP(sender)
 	sub.renegoNeeded = true
 
