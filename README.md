@@ -178,30 +178,11 @@ Most of the suite is unit tests; the persistence and messaging packages
 use `testcontainers-go`, so Docker needs to be running for the full
 `make test`. `internal/platform/adapter/sfu` has a handful of real
 WebRTC end-to-end tests (`TestSFUEndToEnd`, `TestSFUViewerCannotPublish`,
-`TestSFUMuteRequiresModerator`, `TestSessionReconnectPreservesRoomAndOwnership`)
-that currently fail reliably, not just occasionally: see Limitations.
+`TestSFUMuteRequiresModerator`, `TestSessionReconnectPreservesRoomAndOwnership`);
+`go test ./...` is clean with no flaky or skipped packages.
 
 ## Limitations
 
-- **The SFU's real-WebRTC end-to-end tests fail reliably** (`TestSFUEndToEnd`,
-  `TestSFUViewerCannotPublish`, `TestSFUMuteRequiresModerator`,
-  `TestSessionReconnectPreservesRoomAndOwnership`): a subscriber never
-  receives the RTP it's supposed to be forwarded. Two real bugs in
-  `internal/platform/adapter/sfu/{room,forward}.go`'s subscribe-to-an-
-  already-publishing-peer path are fixed (confirmed via direct SDP
-  inspection: `subscribe()` was reusing a subscriber's own upload
-  transceiver for a forwarded track via `AddTrack`'s transceiver-reuse
-  behavior, and subscribing too early, before the subscriber's own first
-  negotiation completed, hit the same collision a different way). After
-  both fixes the SDP negotiation is clean and `OnTrack` fires correctly
-  on the subscriber, but the RTP payload still never reaches `ReadRTP`,
-  for a third, deeper reason not yet root-caused. Pion's own ICE/DTLS/PC
-  trace logging shows no error at all during this. The lower-level
-  `TestRoomForwardsRTPBetweenPionPeers` (forwarding without the full
-  signaling/renegotiation path) still passes, so the forwarding
-  mechanism itself works; whatever's wrong is specific to subscribing a
-  peer that is simultaneously publishing its own track, through the
-  actor's full offer/answer path.
 - `make docker-run` / the root `docker-compose.yml`'s `app` service does
   not boot as-is: it's missing `JWT_ED25519_SEED_BASE64` and has no
   NATS/Redis/MinIO services for it to reach even if that were fixed.
