@@ -3,23 +3,43 @@ resources:
   - ../../base
   - ingress.yaml
 
-# images here are placeholders — the "deploy" job in
-# .github/workflows/deploy.yml rewrites both newName (registry host, from
-# the REGISTRY repository variable) and newTag (the commit SHA) on every
-# push to main. Never edit these by hand; a stable tag would make
-# repeated applies of the same manifest a no-op, exactly like
-# overlays/minikube's kustomization documents for the same reason.
+# newTag here is a placeholder — the "deploy" job in
+# .github/workflows/deploy.yml rewrites it to the commit SHA on every push
+# to main. Never edit it by hand; a stable tag would make repeated applies
+# of the same manifest a no-op, exactly like overlays/minikube's
+# kustomization documents for the same reason.
+#
+# newName strips the registry host entirely: this node has no registry to
+# push to or pull from. "deploy" imports each image straight into k3s's own
+# containerd (k3s ctr images import) right after building it, and the
+# imagePullPolicy patch below is what makes kubelet use that local image
+# instead of trying to pull one.
 images:
-  - {name: registry.invalid/pet-messenger-api, newName: registry.invalid/pet-messenger-api, newTag: unset}
-  - {name: registry.invalid/pet-messenger-media, newName: registry.invalid/pet-messenger-media, newTag: unset}
-  - {name: registry.invalid/pet-messenger-frontend, newName: registry.invalid/pet-messenger-frontend, newTag: unset}
-  - {name: registry.invalid/pet-messenger-migrate, newName: registry.invalid/pet-messenger-migrate, newTag: unset}
+  - {name: registry.invalid/pet-messenger-api, newName: pet-messenger-api, newTag: unset}
+  - {name: registry.invalid/pet-messenger-media, newName: pet-messenger-media, newTag: unset}
+  - {name: registry.invalid/pet-messenger-frontend, newName: pet-messenger-frontend, newTag: unset}
+  - {name: registry.invalid/pet-messenger-migrate, newName: pet-messenger-migrate, newTag: unset}
 
-# base/config.yaml's TURN_URL/STUN_URLS default to 127.0.0.1, which is what
-# Minikube's overlay needs (coturn on the same node). Production's coturn
-# is reachable at a real DNS name instead; point only this overlay at it so
-# Minikube's own TURN testing keeps working unchanged.
 patches:
+  # base/{api,media,migrate,frontend}.yaml all set imagePullPolicy: Always,
+  # correct for a real registry but fatal here: there's nothing to pull
+  # from, so kubelet needs to use the image k3s ctr images import already
+  # placed in its local store instead. Same patch overlays/minikube already
+  # applies, for the identical reason.
+  - target: {kind: Deployment}
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target: {kind: Job}
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  # base/config.yaml's TURN_URL/STUN_URLS default to 127.0.0.1, which is what
+  # Minikube's overlay needs (coturn on the same node). Production's coturn
+  # is reachable at a real DNS name instead; point only this overlay at it so
+  # Minikube's own TURN testing keeps working unchanged.
   - target: {kind: ConfigMap, name: pet-messenger-config}
     patch: |-
       - op: replace

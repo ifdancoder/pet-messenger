@@ -81,27 +81,30 @@ Give its service user read access to the k3s kubeconfig, typically
 runner as a user in the right group, or copy a scoped kubeconfig into
 the runner's home and set `KUBECONFIG` in its environment.
 
-`deploy.yml`'s `build-and-push` and `deploy` jobs both run on this
-runner specifically, so neither registry credentials nor the cluster API
-ever need to leave the server.
+`deploy.yml`'s `build-and-import` and `deploy` jobs both run on this
+runner specifically, so the cluster API never needs to leave the server.
+There is no registry in this design at all: `build-and-import` builds
+each image with the host's Docker daemon, then hands it straight to
+k3s's own containerd (`k3s ctr images import`), since k3s runs its own
+embedded containerd (`/run/k3s/containerd/containerd.sock`), entirely
+separate from the one the host's `dockerd` uses
+(`/run/containerd/containerd.sock`): an image `docker build` produces
+is invisible to k3s until that import step hands it over.
 
-### 5. Registry
+### 5. Passwordless sudo for the k3s image import
 
-Set the repository variable `REGISTRY` to the real registry host:port.
-`130.17.20.23:5000`, hardcoded in old manifests before this overlay
-existed, is explicitly unconfirmed: do not reuse it without checking it
-still points somewhere real and reachable from the runner.
-
-Via the GitHub UI: Settings → Secrets and variables → Actions →
-Variables → New repository variable. Via the `gh` CLI, from a clone with
-a GitHub remote and `gh auth login` already done:
+The runner's own user needs to run `k3s ctr images import` without a
+password prompt (CI has no terminal to type one into). Add a sudoers
+rule scoped to exactly that command, as root:
 
 ```bash
-gh variable set REGISTRY --body "<real-registry-host>:<port>"
+echo '<runner-user> ALL=(root) NOPASSWD: /usr/local/bin/k3s ctr images import -' \
+  | sudo tee /etc/sudoers.d/pet-messenger-runner-k3s-ctr
+sudo visudo -c   # validates every file under /etc/sudoers.d/, catches a typo before it locks sudo out
 ```
 
-`deploy.yml` reads this one as `vars.REGISTRY`; it is the only
-GitHub-side variable the pipeline actually consumes today.
+Replace `<runner-user>` with whichever user actually runs the self-hosted
+runner service (not necessarily the one from step 4's kubeconfig access).
 
 ### 6. Runtime secrets
 
@@ -115,6 +118,16 @@ kubectl -n pet-messenger create secret generic pet-messenger-secrets \
   --from-literal=BLUEPRINT_DB_PASSWORD=<a real password, not "app"> \
   --from-literal=MEDIA_RPC_TOKEN="$MEDIA_RPC_TOKEN" \
   --from-literal=TURN_SECRET="$TURN_SECRET"
+```
+
+`registry-credentials` (`imagePullSecrets` in `base/{api,media,migrate,frontend}.yaml`)
+is not needed with this design: there's no registry to pull from, so
+kubelet never attempts a pull that secret would authenticate. The
+reference to it stays in the base manifests anyway, so switching to a
+real registry later costs nothing. Only create it if that switch
+actually happens:
+
+```bash
 kubectl -n pet-messenger create secret generic registry-credentials \
   --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$HOME/.docker/config.json"
 ```
@@ -184,12 +197,14 @@ first time this sequence runs.
 
 1. `test-go` and `test-frontend` re-run (not just trusting the PR's
    earlier CI run, since `main` can move between approval and merge).
-2. `build-and-push` (self-hosted runner): builds and pushes all four
-   images (`api`, `media`, `migrate`, `frontend`) tagged
-   `${REGISTRY}/pet-messenger-<name>:${GITHUB_SHA}`.
+2. `build-and-import` (self-hosted runner): builds all four images
+   (`api`, `media`, `migrate`, `frontend`) tagged
+   `pet-messenger-<name>:${GITHUB_SHA}`, then imports each one straight
+   into k3s's own containerd (`k3s ctr images import`); there is no
+   registry to push to.
 3. `deploy` (self-hosted runner): rewrites
    `deploy/kubernetes/overlays/production/kustomization.yaml`'s `images:` block to the new
-   registry+tag, deletes and reapplies the `migrate` Job (Job pod
+   tag, deletes and reapplies the `migrate` Job (Job pod
    templates are immutable, so it can't just be patched), applies
    `kubectl apply -k overlays/production`, then waits on the migrate Job
    and all three Deployments' rollout status.
@@ -254,10 +269,15 @@ run (an active incident), redeploy a known-good tag directly without
 waiting for the pipeline:
 
 ```bash
-kubectl -n pet-messenger set image deployment/api api=${REGISTRY}/pet-messenger-api:<previous-sha>
-kubectl -n pet-messenger set image deployment/media media=${REGISTRY}/pet-messenger-media:<previous-sha>
-kubectl -n pet-messenger set image deployment/frontend frontend=${REGISTRY}/pet-messenger-frontend:<previous-sha>
+kubectl -n pet-messenger set image deployment/api api=pet-messenger-api:<previous-sha>
+kubectl -n pet-messenger set image deployment/media media=pet-messenger-media:<previous-sha>
+kubectl -n pet-messenger set image deployment/frontend frontend=pet-messenger-frontend:<previous-sha>
 ```
+
+This only works if `<previous-sha>` is still sitting in k3s's own
+containerd image store (`sudo k3s ctr images ls`): with no registry,
+there is nowhere else for `IfNotPresent` to pull a missing one from. If
+it's gone, `git revert` and letting CI rebuild it is the only path back.
 
 Follow up by reverting in git too, so the next ordinary merge to `main`
 doesn't undo the emergency rollback.

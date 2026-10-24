@@ -30,36 +30,38 @@ jobs:
       - run: npm run lint
       - run: npm run build
 
-  build-and-push:
+  build-and-import:
     needs: [test-go, test-frontend]
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Build images
         run: |
-          docker build -t "${{ vars.REGISTRY }}/pet-messenger-api:${{ github.sha }}" -f deploy/media/Dockerfile.api .
-          docker build -t "${{ vars.REGISTRY }}/pet-messenger-media:${{ github.sha }}" -f deploy/media/Dockerfile.media .
-          docker build -t "${{ vars.REGISTRY }}/pet-messenger-migrate:${{ github.sha }}" -f deploy/kubernetes/Dockerfile.migrate .
-          docker build -t "${{ vars.REGISTRY }}/pet-messenger-frontend:${{ github.sha }}" -f frontend/Dockerfile frontend
-      - name: Push images
+          docker build -t "pet-messenger-api:${{ github.sha }}" -f deploy/media/Dockerfile.api .
+          docker build -t "pet-messenger-media:${{ github.sha }}" -f deploy/media/Dockerfile.media .
+          docker build -t "pet-messenger-migrate:${{ github.sha }}" -f deploy/kubernetes/Dockerfile.migrate .
+          docker build -t "pet-messenger-frontend:${{ github.sha }}" -f frontend/Dockerfile frontend
+      - name: Import images into k3s's own containerd
+        # k3s runs its own embedded containerd (/run/k3s/containerd/containerd.sock),
+        # entirely separate from the host dockerd's containerd
+        # (/run/containerd/containerd.sock) that `docker build` just populated.
+        # There is no registry in this setup for kubelet to pull from, so the
+        # image has to be handed to k3s's own image store directly.
         run: |
-          docker push "${{ vars.REGISTRY }}/pet-messenger-api:${{ github.sha }}"
-          docker push "${{ vars.REGISTRY }}/pet-messenger-media:${{ github.sha }}"
-          docker push "${{ vars.REGISTRY }}/pet-messenger-migrate:${{ github.sha }}"
-          docker push "${{ vars.REGISTRY }}/pet-messenger-frontend:${{ github.sha }}"
+          for name in api media migrate frontend; do
+            docker save "pet-messenger-$name:${{ github.sha }}" | sudo k3s ctr images import -
+          done
 
   deploy:
-    needs: build-and-push
+    needs: build-and-import
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Point the production overlay at the new images
+      - name: Point the production overlay at the new image tags
         env:
-          REGISTRY: ${{ vars.REGISTRY }}
           SHA: ${{ github.sha }}
         run: |
           OVERLAY=deploy/kubernetes/overlays/production/kustomization.yaml
-          sed -i -E "s#newName: [A-Za-z0-9._/:-]+/pet-messenger-#newName: ${REGISTRY}/pet-messenger-#g" "$OVERLAY"
           sed -i -E "s/newTag: \"?[A-Za-z0-9._-]+\"?/newTag: \"${SHA}\"/g" "$OVERLAY"
       - name: Re-run migrations
         run: kubectl delete job -n pet-messenger migrate --ignore-not-found
