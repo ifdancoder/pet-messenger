@@ -283,6 +283,13 @@ func (p *rtcPeer) frame(t *testing.T, predicate func(sfu.Frame) bool) sfu.Frame 
 		}
 	}
 }
+// tracks waits for at least one RTP packet on each of ids. A forwarded
+// track's real p.packets ID is never the bare id a caller publishes under
+// (e.g. "audio-a"): the SFU renames it to forwardedTrackID's
+// "pm-<publisher-id>-<kind>-<source-id>" scheme to carry publisher identity
+// and resolved kind across the wire (see forward.go). The source id it was
+// published under is always that scheme's suffix, so match on that instead
+// of equality.
 func (p *rtcPeer) tracks(t *testing.T, ids ...string) {
 	t.Helper()
 	want := map[string]bool{}
@@ -294,7 +301,12 @@ func (p *rtcPeer) tracks(t *testing.T, ids ...string) {
 	for len(want) > 0 {
 		select {
 		case id := <-p.packets:
-			delete(want, id)
+			for w := range want {
+				if strings.HasSuffix(id, w) {
+					delete(want, w)
+					break
+				}
+			}
 		case err := <-p.errors:
 			t.Fatal(err)
 		case <-timer.C:
@@ -403,7 +415,7 @@ checking:
 	for {
 		select {
 		case id := <-b.packets:
-			if id == "audio-a" {
+			if strings.HasSuffix(id, "audio-a") {
 				t.Fatal("muted audio still forwarded")
 			}
 		case err := <-b.errors:
@@ -481,7 +493,7 @@ func (p *rtcPeer) noTrack(t *testing.T, forbidden string) {
 	for {
 		select {
 		case id := <-p.packets:
-			if id == forbidden {
+			if strings.HasSuffix(id, forbidden) {
 				t.Fatalf("forbidden RTP track %q", id)
 			}
 		case err := <-p.errors:

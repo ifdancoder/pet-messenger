@@ -21,7 +21,13 @@ func TestSessionReconnectPreservesRoomAndOwnership(t *testing.T) {
 				t.Fatal(err)
 			}
 			if peerCount == 2 {
-				if err := mgr.Join(callID, uuid.New(), "viewer", nopSignaller{}); err != nil {
+				// A publisher, not a viewer: this test is about reconnect and
+				// moderator-removal bookkeeping, not about the (separately
+				// tested, in room_test.go) rule that a viewer-only room
+				// drains once the last publisher leaves. A viewer here would
+				// make the moderator-removal assertion below trip that
+				// unrelated rule instead of checking what it's meant to.
+				if err := mgr.Join(callID, uuid.New(), "publisher", nopSignaller{}); err != nil {
 					t.Fatal(err)
 				}
 			}
