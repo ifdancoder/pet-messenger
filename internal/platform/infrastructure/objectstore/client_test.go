@@ -3,7 +3,10 @@ package objectstore_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/fx"
@@ -36,7 +39,31 @@ func startMinioContainer(t *testing.T) *config.Config {
 	if err != nil {
 		t.Fatalf("container endpoint: %v", err)
 	}
+	waitUntilReady(t, endpoint)
 	return &config.Config{MinIO: config.MinIOConfig{Endpoint: endpoint, AccessKey: "testuser", SecretKey: "testpassword", Bucket: "avatars-test"}}
+}
+
+// waitUntilReady closes a real gap between the health endpoint answering
+// and the erasure-set backend actually being ready to serve S3 calls:
+// under load, ListBuckets can still fail with "Server not initialized yet"
+// for a short while after /minio/health/live already returned 200 (that
+// gap is what produced "minio bucket exists avatars-test: Server not
+// initialized yet, please try again" intermittently).
+func waitUntilReady(t *testing.T, endpoint string) {
+	t.Helper()
+	client, err := minio.New(endpoint, &minio.Options{Creds: credentials.NewStaticV4("testuser", "testpassword", "")})
+	if err != nil {
+		t.Fatalf("probe client: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if _, lastErr = client.ListBuckets(context.Background()); lastErr == nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("minio never became ready to serve S3 calls: %v", lastErr)
 }
 
 func TestNewClient_CreatesBucketAndConnects(t *testing.T) {
