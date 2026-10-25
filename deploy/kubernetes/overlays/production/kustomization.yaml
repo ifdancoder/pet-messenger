@@ -40,6 +40,16 @@ patches:
   # Minikube's overlay needs (coturn on the same node). Production's coturn
   # is reachable at a real DNS name instead; point only this overlay at it so
   # Minikube's own TURN testing keeps working unchanged.
+  #
+  # MEDIA_WS_ADDR/MEDIA_WS_SCHEME/CORS_ALLOWED_ORIGINS default (base/config.yaml)
+  # to localhost, correct only for Minikube's port-forward workflow. In
+  # production the browser never reaches the media pod's port directly --
+  # frontend/nginx.conf proxies /rtc to it over the same origin the frontend
+  # itself is served on -- so the address the browser must use is the public
+  # hostname, over TLS, with no port. Getting this wrong doesn't surface as a
+  # clean error: the browser just can't open the /rtc and /api/ws sockets at
+  # all (silent connection failures), and a call nobody could actually join
+  # only ever shows as "live" until its own empty-room idle timeout ends it.
   - target: {kind: ConfigMap, name: pet-messenger-config}
     patch: |-
       - op: replace
@@ -48,6 +58,15 @@ patches:
       - op: replace
         path: /data/STUN_URLS
         value: stun:stun.messenger.ifdancoder.ru:3478
+      - op: replace
+        path: /data/MEDIA_WS_ADDR
+        value: messenger.ifdancoder.ru
+      - op: replace
+        path: /data/MEDIA_WS_SCHEME
+        value: wss
+      - op: replace
+        path: /data/CORS_ALLOWED_ORIGINS
+        value: https://messenger.ifdancoder.ru
   # __TURN_SECRET__ is a placeholder: deploy.yml substitutes it with the
   # real value from the TURN_SECRET GitHub Actions secret right before
   # applying, the same one pet-messenger-secrets gets built from, so coturn

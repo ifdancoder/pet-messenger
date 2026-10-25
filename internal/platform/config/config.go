@@ -58,9 +58,20 @@ type MinIOConfig struct {
 }
 
 type MediaConfig struct {
-	NodeID        string
-	GRPCAddr      string
+	NodeID string
+	// GRPCAddr is normally overridden per-pod to $(POD_IP):9090 -- see
+	// deploy/kubernetes/base/media.yaml -- so api's RoomControl client can
+	// dial this exact pod directly.
+	GRPCAddr string
+	// WSAddr is what a browser must reach to open /rtc -- NOT this pod's own
+	// listen address, which is always cfg.Port (see
+	// internal/platform/fx/media.go's newSignalingServer). Behind a reverse
+	// proxy that terminates TLS and proxies /rtc on the frontend's own
+	// origin (production), this is that public hostname with no port, since
+	// the port this pod actually listens on is never reachable from outside
+	// the cluster.
 	WSAddr        string
+	WSScheme      string
 	RPCToken      string
 	RoomCapacity  int
 	MaxRoomPeers  int
@@ -191,6 +202,16 @@ func Load() (*Config, error) {
 			joinTTL = d
 		}
 	}
+	// wsScheme defaults to "ws": MEDIA_WS_ADDR is a bare host[:port] -- the
+	// address a browser/api should reach, which the media pod itself always
+	// binds to on cfg.Port regardless of what this says -- so the scheme is
+	// configured separately here rather than folded into that value. A
+	// deployment that terminates TLS in front of the media node
+	// (production) sets MEDIA_WS_SCHEME=wss.
+	wsScheme := "ws"
+	if v := os.Getenv("MEDIA_WS_SCHEME"); v != "" {
+		wsScheme = v
+	}
 	credTTL := time.Hour
 	if v := os.Getenv("TURN_CREDENTIAL_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -244,6 +265,7 @@ func Load() (*Config, error) {
 			NodeID:        os.Getenv("MEDIA_NODE_ID"),
 			GRPCAddr:      os.Getenv("MEDIA_GRPC_ADDR"),
 			WSAddr:        os.Getenv("MEDIA_WS_ADDR"),
+			WSScheme:      wsScheme,
 			RPCToken:      os.Getenv("MEDIA_RPC_TOKEN"),
 			RoomCapacity:  roomCap,
 			MaxRoomPeers:  maxPeers,

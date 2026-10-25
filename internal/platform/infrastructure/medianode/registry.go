@@ -37,6 +37,7 @@ type entry struct {
 	ID           string `json:"id"`
 	GRPCAddr     string `json:"grpc_addr"`
 	WSAddr       string `json:"ws_addr"`
+	WSScheme     string `json:"ws_scheme"`
 	Capacity     int    `json:"capacity"`
 	Rooms        int    `json:"rooms"`
 	Participants int    `json:"participants"`
@@ -44,7 +45,7 @@ type entry struct {
 }
 
 func (e entry) node() callout.Node {
-	return callout.Node{ID: e.ID, GRPCAddr: e.GRPCAddr, WSAddr: e.WSAddr}
+	return callout.Node{ID: e.ID, GRPCAddr: e.GRPCAddr, WSAddr: e.WSAddr, WSScheme: e.WSScheme}
 }
 
 type RedisRegistry struct {
@@ -69,12 +70,12 @@ func (r *RedisRegistry) put(ctx context.Context, e entry) error {
 }
 
 func (r *RedisRegistry) Register(ctx context.Context, self callout.Node, capacity int) error {
-	return r.put(ctx, entry{ID: self.ID, GRPCAddr: self.GRPCAddr, WSAddr: self.WSAddr, Capacity: capacity})
+	return r.put(ctx, entry{ID: self.ID, GRPCAddr: self.GRPCAddr, WSAddr: self.WSAddr, WSScheme: self.WSScheme, Capacity: capacity})
 }
 
 func (r *RedisRegistry) Heartbeat(ctx context.Context, self callout.Node, capacity int, load Load) error {
 	return r.put(ctx, entry{
-		ID: self.ID, GRPCAddr: self.GRPCAddr, WSAddr: self.WSAddr, Capacity: capacity,
+		ID: self.ID, GRPCAddr: self.GRPCAddr, WSAddr: self.WSAddr, WSScheme: self.WSScheme, Capacity: capacity,
 		Rooms: load.Rooms, Participants: load.Participants,
 	})
 }

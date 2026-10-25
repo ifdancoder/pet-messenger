@@ -39,10 +39,12 @@ services:
       JWT_ED25519_SEED_BASE64: ${JWT_ED25519_SEED_BASE64}
       MEDIA_NODE_ID: media-1
       MEDIA_GRPC_ADDR: media:9090
-      # Advertised to the browser; the service itself binds only to this port.
+      # Advertised to the browser. The service itself binds to PORT below,
+      # not to whatever port this contains -- they only happen to match here
+      # because this compose stack exposes the container port directly.
       MEDIA_WS_ADDR: localhost:8081
       MEDIA_RPC_TOKEN: devtoken
-      PORT: "0"
+      PORT: "8081"
     depends_on: [redis, nats]
     ports: ["8081:8081", "9090:9090"]
   api:

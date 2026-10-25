@@ -16,6 +16,7 @@ data:
   NATS_URL: nats://nats:4222
   MEDIA_GRPC_ADDR: media.pet-messenger.svc.cluster.local:9090
   MEDIA_WS_ADDR: localhost:8082
+  MEDIA_WS_SCHEME: ws
   MEDIA_NODE_ID: media-1
   TURN_URL: turn:127.0.0.1:3478
   STUN_URLS: stun:127.0.0.1:3478

@@ -49,8 +49,17 @@ func callableKind(k conversation.Kind) bool {
 	return k == conversation.KindDirect || k == conversation.KindGroupChat || k == conversation.KindChannelGroup
 }
 
-// wsURL builds a call's media-node WebSocket URL.
-func wsURL(node out.Node) string { return "ws://" + node.WSAddr + "/rtc" }
+// wsURL builds a call's media-node WebSocket URL. node.WSScheme is "ws" or
+// "wss" depending on whether the deployment terminates TLS in front of the
+// media node (see config.MediaConfig.WSScheme); it defaults to "ws" for a
+// node registered before that field existed.
+func wsURL(node out.Node) string {
+	scheme := node.WSScheme
+	if scheme == "" {
+		scheme = "ws"
+	}
+	return scheme + "://" + node.WSAddr + "/rtc"
+}
 
 // joinInfo issues a join ticket and ICE config for userID to join callID
 // on node.

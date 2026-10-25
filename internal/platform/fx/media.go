@@ -103,7 +103,7 @@ var RPCServerModule = fx.Module("rpc-server",
 // --- media-node registry heartbeat ---
 
 func mediaNodeIdentity(cfg *config.Config) callout.Node {
-	return callout.Node{ID: config.MediaNodeID(cfg), GRPCAddr: cfg.Media.GRPCAddr, WSAddr: cfg.Media.WSAddr}
+	return callout.Node{ID: config.MediaNodeID(cfg), GRPCAddr: cfg.Media.GRPCAddr, WSAddr: cfg.Media.WSAddr, WSScheme: cfg.Media.WSScheme}
 }
 
 func startMediaNodeHeartbeat(lc fx.Lifecycle, cfg *config.Config, reg *medianodeinfra.RedisRegistry, mgr sfu.Manager) {
@@ -147,7 +147,7 @@ var MediaNodeModule = fx.Module("media-node",
 // --- WS signalling server ---
 
 func newSignalingServer(lc fx.Lifecycle, cfg *config.Config, srv *signaling.Server) {
-	httpSrv := &http.Server{Addr: wsListenAddr(cfg), Handler: srv.Handler()}
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.Port), Handler: srv.Handler()}
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			ln, err := net.Listen("tcp", httpSrv.Addr)
@@ -164,20 +164,6 @@ func newSignalingServer(lc fx.Lifecycle, cfg *config.Config, srv *signaling.Serv
 		},
 		OnStop: func(ctx context.Context) error { return httpSrv.Shutdown(ctx) },
 	})
-}
-
-// wsListenAddr binds to the port of MEDIA_WS_ADDR (the host part may be a
-// non-locally-bindable advertised address, same reasoning as grpcListenAddr),
-// or ":8081" if unset.
-func wsListenAddr(cfg *config.Config) string {
-	if cfg.Media.WSAddr == "" {
-		return ":8081"
-	}
-	_, port, err := net.SplitHostPort(cfg.Media.WSAddr)
-	if err != nil {
-		return ":8081"
-	}
-	return ":" + port
 }
 
 var SignalingModule = fx.Module("signaling",
