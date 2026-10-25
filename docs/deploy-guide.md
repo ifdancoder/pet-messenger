@@ -21,12 +21,15 @@ this order.
 ### 1. DNS
 
 Point three A records at the server's public IP: `messenger.ifdancoder.ru`,
-`turn.messenger.ifdancoder.ru`, and `stun.messenger.ifdancoder.ru`.
-cert-manager's HTTP-01 challenge (step 3) needs the first one resolvable
-from the public internet before it will succeed; the other two are
-coturn's own address (step 7) and carry no TLS cert of their own, since
-coturn runs with `no-tls`/`no-dtls` and is reached over raw UDP/TCP on
-port 3478, not through Traefik.
+`turn.messenger.ifdancoder.ru`, and `stun.messenger.ifdancoder.ru`. All
+three, not just the first: a missing record for any one of them fails
+silently (DNS returns NOERROR with zero answers, not an error any tool
+surfaces loudly) and is easy to not notice until something tries to use
+it. cert-manager's HTTP-01 challenge (step 3) needs the first one
+resolvable from the public internet before it will succeed; the other
+two are coturn's own address (step 7) and carry no TLS cert of their
+own, since coturn runs with `no-tls`/`no-dtls` and is reached over raw
+UDP/TCP on port 3478, not through the Ingress.
 
 ### 2. Cluster-wide quotas
 
@@ -71,6 +74,19 @@ kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[0].m
 Expect something like "The ACME account was registered with the ACME
 server". If it errors, the usual cause is DNS from step 1 not resolving
 yet.
+
+This node runs `ingress-nginx` as its real ingress controller, not k3s's
+built-in Traefik: `kubectl get ingressclass` shows only `nginx`
+(`k8s.io/ingress-nginx`), and `ingress-nginx-controller`'s own
+LoadBalancer Service holds the node's public IP on ports 80/443.
+`cluster-issuer.yaml`'s solver and `overlays/production/ingress.yaml`
+both already say `nginx`, not `traefik`, to match. If this ever changes
+on this node (Traefik re-enabled, a different controller installed),
+both files need to agree with each other and with `kubectl get
+ingressclass`'s actual output, or the Ingress's rules are silently never
+evaluated and every request falls through to the controller's default
+404 backend, exactly as a mismatch did during this project's own first
+deploy.
 
 ### 4. GitHub Actions self-hosted runner
 
@@ -218,18 +234,14 @@ runner not reachable).
   payload.
 - Open `https://messenger.ifdancoder.ru/` in two browser tabs (or two
   devices), start a call between them, and **leave it idle for 4-5
-  minutes** without talking. This is the one known, not-pre-solved risk
-  in the design: Traefik's own entrypoint `idleTimeout` (commonly 180s
-  in k3s) sits in front of `frontend/nginx.conf`'s deliberate 1-hour
-  timeout on `/rtc`. If signaling drops around the 3-minute mark here
-  but never did through the minikube port-forward path (which never
-  passes through Traefik), that confirms it: fix by raising or
-  disabling Traefik's entrypoint idle timeout (`--entrypoints.web.transport.respondingTimeouts.idleTimeout`
-  or the equivalent Helm/k3s server-arg, depending on how Traefik is
-  configured on this node). Don't change it pre-emptively without this
-  test: the k3s default may already be long enough, and this is
-  cluster-wide Traefik config, not something pet-messenger's own
-  manifests control.
+  minutes** without talking, to confirm signaling survives past
+  ingress-nginx's 60s default. `overlays/production/ingress.yaml`
+  already sets `nginx.ingress.kubernetes.io/proxy-read-timeout` and
+  `proxy-send-timeout` to `3600` to match `frontend/nginx.conf`'s own
+  1-hour `/rtc` timeout, so this should just pass; if signaling still
+  drops around the 1-minute mark, one of those two timeouts isn't
+  actually in effect: check `kubectl -n pet-messenger describe ingress
+  pet-messenger` for the annotation.
 - Confirm with the other project's administrator whether
   `cluster/quotas/other-project.yaml` has been filled in with real
   numbers and applied yet (step 2's follow-up). Not blocking, but easy
@@ -287,5 +299,15 @@ doesn't undo the emergency rollback.
 - **Certificate never becomes `Ready`**: check DNS (step 1) actually
   resolves to this node, and that nothing else is intercepting port 80
   for the HTTP-01 challenge.
-- **Calls drop signaling after ~3 minutes in production only**: see the
-  Traefik `idleTimeout` note under "After the first deploy: verify".
+- **Site unreachable, or a default 404 page with an unfamiliar footer,
+  despite every pod `Running` and the certificate `Ready`**: `kubectl get
+  ingressclass` and compare against `overlays/production/ingress.yaml`'s
+  `ingressClassName`. If they don't match, or the IngressClass you expect
+  isn't even listed, requests never reach this Ingress's rules at all and
+  fall through to whichever controller actually owns the node's public
+  IP (`kubectl get svc -A | grep LoadBalancer` finds it) and its default
+  backend. This is exactly what happened on this project's own first
+  production deploy: the node turned out to run `ingress-nginx`, not
+  Traefik.
+- **Calls drop signaling after ~1 minute in production only**: see the
+  ingress-nginx proxy-timeout note under "After the first deploy: verify".

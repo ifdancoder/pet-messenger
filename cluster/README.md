@@ -22,25 +22,36 @@ silently regress the same way.
 
 ```
 4096Mi  node total
-- 512Mi  k3s control plane + Traefik + CoreDNS + metrics-server +
+- 512Mi  k3s control plane + CoreDNS + metrics-server +
          kubelet/containerd + cert-manager (~50-100Mi of this reserve)
 = 3584Mi available to workload namespaces
 - 1792Mi pet-messenger quota (limits.memory) — see quotas/pet-messenger.yaml
-= 1792Mi left for the other namespace sharing this node
+= 1792Mi left for the other namespace sharing this node, MINUS ingress-nginx
 ```
 
 Per-workload sizing that the pet-messenger numbers above come from is in
 `../deploy/kubernetes/README.md` and the design spec
 `../docs/superpowers/specs/2026-10-12-k8s-shared-server-deploy-cicd-design.md`.
 
+**This node runs `ingress-nginx` as the real ingress controller, not k3s's
+built-in Traefik** (confirmed in production: there is no `traefik`
+IngressClass registered at all, only `nginx`, and `ingress-nginx-controller`'s
+own LoadBalancer Service holds the node's public IP on 80/443). Its pods
+run in the `ingress-nginx` namespace with their own `resources.requests`/
+`limits`, outside this 512Mi reserve and outside either project's own
+quota: nobody has pinned down that footprint's exact numbers yet. Until
+someone does (`kubectl -n ingress-nginx describe pods` against the live
+cluster), treat the 1792Mi "left over" below as an overestimate by
+whatever ingress-nginx is actually using.
+
 **The 1792Mi left over is arithmetic, not a measured fact about the other
 project.** Its real memory need was unknown when this was written — see
 `quotas/other-project.yaml`, which is a template, not a verified number.
-If that project's administrator sizes its quota at or under 1792Mi,
-everything fits with some margin left over. If it needs more, something
-has to give — tighter limits somewhere, fewer replicas, or more RAM on
-the node — and that decision belongs to whoever runs that project, not to
-this file.
+If that project's administrator sizes its quota at or under 1792Mi minus
+ingress-nginx's real footprint, everything fits with some margin left
+over. If it needs more, something has to give — tighter limits somewhere,
+fewer replicas, or more RAM on the node — and that decision belongs to
+whoever runs that project, not to this file.
 
 ## Applying
 

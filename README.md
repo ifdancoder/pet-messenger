@@ -196,8 +196,9 @@ WebRTC end-to-end tests (`TestSFUEndToEnd`, `TestSFUViewerCannotPublish`,
 - The production k3s node is shared with one other project; that
   project's own `ResourceQuota` (`cluster/quotas/other-project.yaml`) is
   still a placeholder pending its administrator's real numbers.
-- Traefik's entrypoint idle timeout in front of the production Ingress
-  has not been confirmed long enough for a quiet call's signaling
+- The production Ingress sets ingress-nginx's proxy-read/send timeouts
+  to match `frontend/nginx.conf`'s 1-hour `/rtc` timeout, but this has
+  not yet been confirmed live against a quiet call's signaling
   WebSocket; see `docs/deploy-guide.md`'s post-deploy verification step.
 - No frontend test suite; CI only lints (`oxlint`) and builds it.
 

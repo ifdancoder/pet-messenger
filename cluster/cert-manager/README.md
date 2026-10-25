@@ -39,7 +39,15 @@ kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[0].m
 
 Expected final status message: something like "The ACME account was
 registered with the ACME server" — if it instead errors, the most common
-cause is the email not being filled in, or Traefik's HTTP-01 challenge
-path not being reachable from the public internet yet (confirm DNS is
+cause is the email not being filled in, or the HTTP-01 challenge path
+not being reachable from the public internet yet (confirm DNS is
 pointed at this node before applying — see the production overlay's
 Ingress, Task 5 of the implementation plan).
+
+`cluster-issuer.yaml`'s solver uses `ingress: {class: nginx}`: this node
+runs `ingress-nginx` as its real ingress controller, not k3s's built-in
+Traefik (there is no `traefik` IngressClass registered on it at all). Any
+project applying its own Ingress on this node needs
+`ingressClassName: nginx` to match, or its traffic never reaches that
+Ingress's rules, same as pet-messenger's own
+`deploy/kubernetes/overlays/production/ingress.yaml`.

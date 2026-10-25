@@ -202,9 +202,10 @@ make itest   # только internal/platform/database и internal/platform/infr
 - Production k3s-узел общий с другим проектом; его собственная
   `ResourceQuota` (`cluster/quotas/other-project.yaml`) пока заглушка в
   ожидании реальных цифр от его администратора.
-- Idle timeout на entrypoint Traefik перед production Ingress пока не
-  подтверждён как достаточно долгий для тихого звонка с его сигнальным
-  WebSocket; см. шаг проверки после деплоя в `docs/deploy-guide.md`.
+- Production Ingress выставляет proxy-read/send timeout ingress-nginx
+  равными часовому `/rtc`-таймауту `frontend/nginx.conf`, но это пока не
+  подтверждено на живом тихом звонке с его сигнальным WebSocket; см. шаг
+  проверки после деплоя в `docs/deploy-guide.md`.
 - Нет тестового набора для фронтенда; CI только линтит (`oxlint`) и
   собирает его.
 

@@ -4,8 +4,15 @@ metadata:
   name: pet-messenger
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # ingress-nginx's own proxy to the frontend pod has a 60s default
+    # proxy_read_timeout/proxy_send_timeout, independent of and in front
+    # of frontend/nginx.conf's already-1h timeout on /rtc. Without this,
+    # ingress-nginx kills a quiet call's signaling WebSocket at ~60s
+    # regardless of what the frontend's own nginx allows.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
-  ingressClassName: traefik
+  ingressClassName: nginx
   tls:
     - hosts: [messenger.ifdancoder.ru]
       secretName: pet-messenger-tls
